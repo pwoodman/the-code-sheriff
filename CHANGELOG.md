@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.1
+
+- Version gate no longer crashes when a binary file (for example `.coverage`)
+  sits in the tree. Only version candidates are read, and decode errors are skipped.
+- Self-scan: ignore the audit package when classifying HTTP/API surfaces; do not
+  treat `subprocess.run` or a `todo` rule name as long-running work / placeholders.
+
 ## 1.4.0
 
 - Coverage gate: configurable line/branch floors. Default **80% line coverage**

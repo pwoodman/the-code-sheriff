@@ -39,3 +39,13 @@ def test_non_semver_fails(tmp_path: Path) -> None:
     result = run_version(tmp_path, load_config(tmp_path))
     assert result.status == "fail"
     assert parse_semver("next") is None
+
+
+def test_binary_file_does_not_crash_version_discovery(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "1.0.0"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "VERSION").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 80)
+    hits = discover_versions(tmp_path, load_config(tmp_path))
+    assert {hit.value for hit in hits} == {"1.0.0"}

@@ -120,10 +120,12 @@ def discover_versions(root: Path, config: QualityConfig) -> list[VersionHit]:
     hits: list[VersionHit] = []
     for path in iter_project_files(root, config):
         name = path.name.lower()
+        if not _is_version_candidate(path, name):
+            continue
         relative = path.relative_to(root).as_posix()
         try:
             text = path.read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             continue
         if name == "pyproject.toml":
             match = PYPROJECT_VERSION.search(text)
@@ -160,6 +162,14 @@ def discover_versions(root: Path, config: QualityConfig) -> list[VersionHit]:
             if match:
                 hits.append(VersionHit(path, relative, match.group(1), "dunder"))
     return hits
+
+
+def _is_version_candidate(path: Path, name: str) -> bool:
+    if name in VERSION_NAMES or name == "pom.xml":
+        return True
+    if path.suffix.lower() == ".csproj":
+        return True
+    return path.suffix == ".py" and path.name == "__init__.py"
 
 
 def apply_bump(root: Path, config: QualityConfig, part: str) -> tuple[str, list[Path]]:

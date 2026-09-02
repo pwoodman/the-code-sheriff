@@ -85,6 +85,8 @@ exclude = [
   "configs",
   "src/quality_gates/bundled",
   "src/quality_gates/tooling_js",
+  ".coverage",
+  "htmlcov",
 ]
 
 [quality.format]

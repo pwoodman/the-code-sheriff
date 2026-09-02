@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from quality_gates.audit.catalog import CHECK_COUNT, CHECKS
+from quality_gates.audit.patterns import scan_patterns
+from quality_gates.audit.walk import load_context
 from quality_gates.config import QualityConfig, load_config
 from quality_gates.gates.audit import run_audit
 
@@ -77,3 +79,13 @@ def test_audit_config_defaults(tmp_path: Path) -> None:
     assert config.audit_min_confidence == "HIGH"
     assert "audit" in config.fail_on
     assert "audit" in config.ci_github_gates
+
+
+def test_python_only_repo_has_no_http_surface(tmp_path: Path) -> None:
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("VALUE = 1\n", encoding="utf-8")
+    ctx = load_context(tmp_path, QualityConfig())
+    assert "http" not in ctx.surfaces
+    assert "frontend" not in ctx.surfaces
+    assert 4 not in scan_patterns(ctx)

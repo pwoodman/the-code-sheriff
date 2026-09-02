@@ -176,7 +176,7 @@ _DEFAULT_CREDS = re.compile(
 )
 _PLACEHOLDER = re.compile(
     r"""(?ix)
-    \b(?:TODO|FIXME|XXX|HACK)\b
+    (?:\#|//|/\*|\*)\s*(?:TODO|FIXME|XXX|HACK)\b
     |raise\s+NotImplementedError
     """
 )
@@ -257,7 +257,7 @@ _FILTER_DOS = re.compile(
 )
 _SYNC_LONG = re.compile(
     r"""(?ix)
-    (?:openai|anthropic|replicate|ffmpeg|subprocess\.run)\s*\([^)]{0,200}\)
+    (?:openai|anthropic|replicate|ffmpeg)\s*\([^)]{0,200}\)
     """
 )
 _SERIALIZE = re.compile(

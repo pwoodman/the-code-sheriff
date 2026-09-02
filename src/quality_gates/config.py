@@ -25,6 +25,8 @@ DEFAULT_EXCLUDE = [
     ".pytest_cache",
     "tests/fixtures",
     "tooling/js/node_modules",
+    ".coverage",
+    "htmlcov",
 ]
 
 

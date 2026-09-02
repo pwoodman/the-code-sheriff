@@ -220,7 +220,9 @@ def load_context(root: Path, config: QualityConfig) -> RepoContext:
 
 def _surfaces(ctx: RepoContext) -> set[str]:
     found: set[str] = set()
-    sources = [item for item in ctx.files if item.is_source]
+    sources = [
+        item for item in ctx.files if item.is_source and not _is_auditor_source(item)
+    ]
     blob = "\n".join(item.text[:8000] for item in sources).lower()
     names = " ".join(item.relative.lower() for item in ctx.files)
     if any(_contains(item.text.lower(), HTTP_NEEDLES) for item in sources):
@@ -253,6 +255,14 @@ def _surfaces(ctx: RepoContext) -> set[str]:
     ):
         found.add("deps")
     return found
+
+
+def _is_auditor_source(hit: FileHit) -> bool:
+    """Needle lists live in the audit package; they are not the product surface."""
+    posix = hit.relative.replace("\\", "/")
+    return posix.startswith("src/quality_gates/audit/") or posix.startswith(
+        "quality_gates/audit/"
+    )
 
 
 def _contains(text: str, needles: tuple[str, ...]) -> bool:
