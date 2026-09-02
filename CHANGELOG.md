@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1
+
+- UI selection is **touch-scoped**: a spec runs only if the diff hits the spec,
+  its imports, a page it visits (and that page's imports), or a coverage map
+  entry. Filename guesses like `checkout.spec.ts` ↔ `Checkout.tsx` no longer
+  pull in unrelated tests. Root `app/layout` / `_app` still runs the full suite.
+
 ## 1.2.0
 
 - UI gate: selective Playwright/Cypress. Only specs that cover added or changed

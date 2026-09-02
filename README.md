@@ -25,7 +25,7 @@ GitHub even in `github`/`both` mode unless you turn them on.
 | **DRY** | jscpd | copy-paste |
 | **Security** | gitleaks, osv-scanner, optional semgrep | secrets + CVEs + SAST |
 | **Compile** | `dotnet build`, `cargo build`, `go build`, `mvn`/`javac`, `tsc --noEmit` | **only after security passes**; never executes the program |
-| **UI** | Playwright / Cypress | **only specs that cover the diff**; skip if nothing matches |
+| **UI** | Playwright / Cypress | **only specs whose touch set hits the diff**; skip otherwise |
 | **Version** | semver files + changelog | bump required when source changes |
 | **AI review** | heuristic + optional LLM | PRs; does not fail the build |
 
@@ -61,7 +61,7 @@ mode = "local"                     # default: cheap Actions
 github_gates = ["version", "review"]
 
 [quality.ui]
-select = "changed"                 # only specs covering added/changed files
+select = "changed"                 # only specs that touch added/changed files
 on_github = false                  # keep browsers off Actions
 ```
 

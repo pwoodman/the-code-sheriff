@@ -21,9 +21,7 @@ def _app(root: Path) -> None:
         """
 import { test } from '@playwright/test';
 import { cartPath } from './helpers';
-import { Cart } from '../src/components/Cart';
 void cartPath;
-void Cart;
 test('checkout', async ({ page }) => {
   await page.goto('/checkout');
 });
@@ -41,7 +39,9 @@ test('login', async ({ page }) => {
     )
     (root / "src" / "app" / "checkout").mkdir(parents=True)
     (root / "src" / "app" / "checkout" / "page.tsx").write_text(
-        "export default function Checkout() { return null; }\n", encoding="utf-8"
+        "import { Cart } from '../../components/Cart';\n"
+        "export default function Checkout() { return Cart(); }\n",
+        encoding="utf-8",
     )
     (root / "src" / "components").mkdir(parents=True)
     (root / "src" / "components" / "Cart.tsx").write_text(
@@ -99,14 +99,13 @@ def test_selects_via_route_goto(tmp_path: Path) -> None:
     assert "login.spec.ts" not in names
 
 
-def test_selects_via_name_match(tmp_path: Path) -> None:
+def test_similar_name_without_a_touch_is_ignored(tmp_path: Path) -> None:
     _app(tmp_path)
     config = QualityConfig()
     project = detect_ui_project(tmp_path)
     assert project is not None
     selection = select_specs(tmp_path, config, project, ["src/components/Checkout.tsx"])
-    names = [path.name for path in selection.specs]
-    assert "checkout.spec.ts" in names
+    assert selection.specs == []
 
 
 def test_selects_via_relative_import(tmp_path: Path) -> None:
@@ -120,7 +119,7 @@ def test_selects_via_relative_import(tmp_path: Path) -> None:
     assert "login.spec.ts" not in names
 
 
-def test_selects_via_imported_source(tmp_path: Path) -> None:
+def test_selects_via_page_import_graph(tmp_path: Path) -> None:
     _app(tmp_path)
     config = QualityConfig()
     project = detect_ui_project(tmp_path)
@@ -129,6 +128,29 @@ def test_selects_via_imported_source(tmp_path: Path) -> None:
     names = [path.name for path in selection.specs]
     assert "checkout.spec.ts" in names
     assert "login.spec.ts" not in names
+
+
+def test_unrelated_source_selects_nothing(tmp_path: Path) -> None:
+    _app(tmp_path)
+    config = QualityConfig()
+    project = detect_ui_project(tmp_path)
+    assert project is not None
+    selection = select_specs(tmp_path, config, project, ["src/lib/format.ts"])
+    assert selection.specs == []
+
+
+def test_root_layout_runs_all(tmp_path: Path) -> None:
+    _app(tmp_path)
+    (tmp_path / "src" / "app" / "layout.tsx").write_text(
+        "export default function Root({ children }) { return children; }\n",
+        encoding="utf-8",
+    )
+    config = QualityConfig()
+    project = detect_ui_project(tmp_path)
+    assert project is not None
+    selection = select_specs(tmp_path, config, project, ["src/app/layout.tsx"])
+    assert selection.run_all
+    assert len(selection.specs) == 2
 
 
 def test_unrelated_diff_selects_nothing(tmp_path: Path) -> None:

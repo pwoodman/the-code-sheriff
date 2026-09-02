@@ -148,6 +148,8 @@ def load_config(project: Path) -> QualityConfig:
         auto_install = auto_install.lower() in {"1", "true", "yes"}
 
     ui_select = str(ui_cfg.get("select", "changed")).lower()
+    if ui_select in {"touched", "narrow"}:
+        ui_select = "changed"
     if ui_select not in {"changed", "all"}:
         ui_select = "changed"
     ui_framework = str(ui_cfg.get("framework", "auto")).lower()

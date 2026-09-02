@@ -1,9 +1,12 @@
 # Selective UI tests
 
-The **ui** gate runs Playwright or Cypress, but **only the specs that cover
-what changed**. A full browser suite on every commit is slow and burns CI
-minutes; this gate pays for browsers only when the diff actually touches a
-test, a page it visits, or a module it imports.
+The **ui** gate runs Playwright or Cypress, but **only specs that touch a
+file you added or changed**. A full browser suite on every commit is slow;
+this gate starts a browser only when the diff intersects a spec's touch set.
+
+Filename similarity is ignored. `checkout.spec.ts` does **not** run just
+because you edited `Checkout.tsx`. It runs if that spec imports it, visits a
+page that imports it, or a coverage map says it covered it.
 
 ## When it runs
 
@@ -15,25 +18,24 @@ version → review.
 | No `playwright.config.*` / `cypress.config.*` / those packages | **skip** |
 | Compile in this run **failed** | **skip** (fix the build first) |
 | Compile **skipped** (Python-only, etc.) | UI still runs |
-| Diff does not touch any spec, import, route, or coverage hit | **skip** (no browser) |
-| Shared config / global-setup / Cypress support changed | **all** specs |
-| Spec file itself changed | that spec |
+| Diff does not intersect any spec's touch set | **skip** (no browser) |
+| Shared config, global-setup, Cypress support, or root `app/layout` / `_app` | **all** specs |
+| Spec file itself added or changed | that spec |
 | GitHub Actions, default | **skip** even in `ci.mode=github\|both` |
 
 Skip does **not** fail the build.
 
-## How a spec is selected
+## Touch set (narrow scope)
 
-Changed files come from `git diff` vs `--base` (or `QUALITY_REVIEW_BASE` /
-`GITHUB_BASE_REF`). A spec is included when any of these match:
+Changed files come from `git diff` vs `--base`. A spec runs when the diff
+hits any of:
 
-1. **The spec changed**
-2. **Import graph** — relative imports and `@/` → `src/` (configurable aliases)
-3. **Name / path** — `checkout.spec.ts` ↔ `Checkout.tsx` or `app/checkout/`
-   (stems shorter than 4 characters are ignored to avoid noise)
-4. **`page.goto` / `cy.visit`** vs App Router / Pages routes
-   (`/checkout` → `app/checkout/page.tsx`, `pages/checkout.tsx`, …)
-5. **Coverage invert** — optional map of test → source files
+1. **The spec**
+2. **Its import graph** — relative imports and `@/` → `src/` (configurable)
+3. **Visited routes** — `page.goto` / `cy.visit` mapped to App Router / Pages /
+   SvelteKit files, **then that page's imports**. `/checkout` →
+   `src/app/checkout/page.tsx` → `Cart.tsx` it imports.
+4. **Coverage invert** — optional map of test → source files
 
 ```json
 {
@@ -61,7 +63,8 @@ quality run --only ui
 ```
 
 Force every spec via config or env: `[quality.ui] select = "all"` or
-`QUALITY_UI_ALL=1`.
+`QUALITY_UI_ALL=1`. `select = "changed"` (aliases `touched`, `narrow`) is
+the default.
 
 ## Stay off GitHub (default)
 

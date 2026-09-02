@@ -50,6 +50,37 @@ SHARED_NAME_HINTS = (
     "global-teardown",
     "playwright/.auth",
 )
+SHARED_APP_SHELL = {
+    "app/layout.tsx",
+    "app/layout.ts",
+    "app/layout.jsx",
+    "app/layout.js",
+    "src/app/layout.tsx",
+    "src/app/layout.ts",
+    "src/app/layout.jsx",
+    "src/app/layout.js",
+    "pages/_app.tsx",
+    "pages/_app.ts",
+    "pages/_app.jsx",
+    "pages/_app.js",
+    "pages/_document.tsx",
+    "pages/_document.js",
+    "src/pages/_app.tsx",
+    "src/pages/_app.jsx",
+    "src/pages/_document.tsx",
+    "src/routes/+layout.svelte",
+    "src/routes/+layout.ts",
+}
+PAGE_EXTS = (".tsx", ".ts", ".jsx", ".js", ".vue", ".svelte")
+APP_PAGE_STEMS = (
+    "page",
+    "layout",
+    "loading",
+    "error",
+    "template",
+    "route",
+    "default",
+)
 SOURCE_SUFFIXES = {
     ".ts",
     ".tsx",
@@ -186,50 +217,97 @@ def select_specs(
     selected: set[Path] = set()
 
     for spec in specs:
-        rel = _rel(root, spec)
-        if rel in changed_set or _norm(spec.name) in {
-            Path(c).name for c in changed_set
-        }:
-            selected.add(spec)
-            reasons[str(spec)].append("spec file changed")
-
-    for spec in specs:
-        imported = _imported_files(spec, root, config)
-        hits = [path for path in imported if _norm(path) in changed_set]
-        if hits:
-            selected.add(spec)
-            reasons[str(spec)].append("imports " + ", ".join(hits[:5]))
-
-    for spec in specs:
-        for source in changed_set:
-            if _name_related(spec, source):
-                selected.add(spec)
-                reasons[str(spec)].append(f"name/path related to {source}")
-                break
-
-    for spec in specs:
-        routes = _routes_in(spec)
-        for source in changed_set:
-            for route in routes:
-                if _route_covers(route, source):
-                    selected.add(spec)
-                    reasons[str(spec)].append(f"goto/visit {route} covers {source}")
-
-    if coverage:
-        inverted_hits = _coverage_hits(coverage, changed_set)
-        for spec in specs:
-            rel = _rel(root, spec)
-            if rel in inverted_hits:
-                selected.add(spec)
-                reasons[str(spec)].append("prior coverage map")
+        labels = _why_selected(spec, root, config, changed_set, coverage)
+        if not labels:
+            continue
+        selected.add(spec)
+        reasons[str(spec)].extend(labels)
 
     chosen = sorted(selected)
+    if not chosen:
+        return Selection(
+            specs=[],
+            reasons=reasons,
+            notes=[
+                f"no spec touches the {len(changed_set)} changed file(s) — skipping UI tests"
+            ],
+        )
     notes = [
-        f"{len(chosen)} of {len(specs)} spec(s) selected from {len(changed_set)} changed file(s)"
+        f"{len(chosen)} of {len(specs)} spec(s) whose touches overlap "
+        f"{len(changed_set)} changed file(s)"
     ]
     if coverage:
         notes.append(f"coverage map: {len(coverage)} test(s)")
     return Selection(specs=chosen, reasons=reasons, notes=notes)
+
+
+def spec_touches(
+    spec: Path,
+    root: Path,
+    config: QualityConfig,
+    coverage: dict[str, list[str]] | None = None,
+) -> set[str]:
+    """Files this spec actually uses: itself, imports, visited routes, coverage."""
+    files = {_rel(root, spec)}
+    files.update(_imported_files(spec, root, config))
+    for route in _routes_in(spec):
+        for page in _route_files(route, root):
+            files.add(_rel(root, page))
+            files.update(_imported_files(page, root, config))
+    if coverage:
+        rel = _rel(root, spec)
+        name = _norm(spec.name)
+        for test, mapped in coverage.items():
+            key = _norm(test)
+            if key in {rel, name} or key.endswith("/" + name):
+                files.update(_norm(item) for item in mapped)
+    return files
+
+
+def _why_selected(
+    spec: Path,
+    root: Path,
+    config: QualityConfig,
+    changed: set[str],
+    coverage: dict[str, list[str]],
+) -> list[str]:
+    rel = _rel(root, spec)
+    imported = set(_imported_files(spec, root, config))
+    pages: set[str] = set()
+    page_imports: set[str] = set()
+    for route in _routes_in(spec):
+        for page in _route_files(route, root):
+            page_rel = _rel(root, page)
+            pages.add(page_rel)
+            page_imports.update(_imported_files(page, root, config))
+    covered: set[str] = set()
+    if coverage:
+        name = _norm(spec.name)
+        for test, mapped in coverage.items():
+            key = _norm(test)
+            if key in {rel, name} or key.endswith("/" + name):
+                covered.update(_norm(item) for item in mapped)
+
+    touch = {rel} | imported | pages | page_imports | covered
+    hits = sorted(path for path in touch if path in changed)
+    if not hits:
+        return []
+
+    labels: list[str] = []
+    if rel in changed:
+        labels.append("spec file changed")
+    import_hits = [path for path in hits if path in imported]
+    if import_hits:
+        labels.append("imports " + ", ".join(import_hits[:5]))
+    page_hits = [path for path in hits if path in pages or path in page_imports]
+    if page_hits:
+        labels.append("visited page uses " + ", ".join(page_hits[:5]))
+    cover_hits = [path for path in hits if path in covered]
+    if cover_hits:
+        labels.append("coverage map " + ", ".join(cover_hits[:5]))
+    if not labels:
+        labels.append("touches " + ", ".join(hits[:5]))
+    return labels
 
 
 def _looks_like_spec(path: Path) -> bool:
@@ -263,6 +341,8 @@ def _shared_config_changed(root: Path, project: UiProject, changed: set[str]) ->
     for name in changed:
         lower = name.lower()
         if any(hint in lower for hint in SHARED_NAME_HINTS):
+            return True
+        if _norm(name) in SHARED_APP_SHELL:
             return True
         if lower.endswith("cypress/support/e2e.ts") or lower.endswith(
             "cypress/support/e2e.js"
@@ -336,28 +416,62 @@ def _resolve_import(
     return None
 
 
-def _name_related(spec: Path, changed: str) -> bool:
-    spec_stem = _spec_stem(spec)
-    if len(spec_stem) < 4:
-        return False
-    changed_path = Path(changed)
-    if changed_path.suffix.lower() not in SOURCE_SUFFIXES:
-        return False
-    parts = [changed_path.stem.lower()] + [part.lower() for part in changed_path.parts]
-    if spec_stem in parts:
-        return True
-    collapsed = spec_stem.replace("-", "").replace("_", "")
-    file_stem = changed_path.stem.lower().replace("-", "").replace("_", "")
-    return len(collapsed) >= 4 and collapsed == file_stem
-
-
-def _spec_stem(spec: Path) -> str:
-    name = spec.name.lower()
-    for suffix in SPEC_SUFFIXES:
-        if name.endswith(suffix):
-            name = name[: -len(suffix)]
+def _route_segments(route: str) -> list[str]:
+    trimmed = route.strip("/")
+    if not trimmed:
+        return []
+    parts: list[str] = []
+    for part in trimmed.split("/"):
+        if (
+            not part
+            or part.startswith(":")
+            or part.startswith("*")
+            or part.startswith("[")
+            or part.isdigit()
+        ):
             break
-    return name.replace(".spec", "").replace(".test", "").replace(".cy", "")
+        parts.append(part)
+    return parts
+
+
+def _route_files(route: str, root: Path) -> list[Path]:
+    found: list[Path] = []
+    seen: set[Path] = set()
+    segments = _route_segments(route)
+    prefixes: list[list[str]] = []
+    if not segments:
+        prefixes.append([])
+    else:
+        prefixes.extend(segments[:index] for index in range(len(segments), 0, -1))
+
+    for prefix in prefixes:
+        for base in ("app", "src/app"):
+            folder = root.joinpath(*Path(base).parts, *prefix)
+            for stem in APP_PAGE_STEMS:
+                for ext in PAGE_EXTS:
+                    candidate = folder / f"{stem}{ext}"
+                    if candidate.is_file() and candidate not in seen:
+                        seen.add(candidate)
+                        found.append(candidate)
+        for base in ("pages", "src/pages"):
+            file_base = root.joinpath(*Path(base).parts, *prefix)
+            for ext in PAGE_EXTS:
+                candidate = Path(str(file_base) + ext)
+                if candidate.is_file() and candidate not in seen:
+                    seen.add(candidate)
+                    found.append(candidate)
+                index = file_base / f"index{ext}"
+                if index.is_file() and index not in seen:
+                    seen.add(index)
+                    found.append(index)
+        svelte = root.joinpath("src", "routes", *prefix)
+        for stem in ("+page", "+layout"):
+            for ext in (".svelte", ".ts", ".js"):
+                candidate = svelte / f"{stem}{ext}"
+                if candidate.is_file() and candidate not in seen:
+                    seen.add(candidate)
+                    found.append(candidate)
+    return found
 
 
 def _routes_in(spec: Path) -> list[str]:
@@ -373,35 +487,10 @@ def _routes_in(spec: Path) -> list[str]:
 
             path = urlparse(raw).path or "/"
         else:
-            path = raw.split("?")[0]
+            path = raw.split("?")[0].split("#")[0]
         if path.startswith("/"):
             routes.append(path)
     return routes
-
-
-def _route_covers(route: str, changed: str) -> bool:
-    trimmed = route.strip("/")
-    if not trimmed:
-        return False
-    first = trimmed.split("/")[0].lower()
-    if len(first) < 3:
-        return False
-    posix = changed.replace("\\", "/").lower()
-    needles = (
-        f"/{first}/",
-        f"/{first}.",
-        f"app/{first}/",
-        f"pages/{first}/",
-        f"src/pages/{first}",
-        f"src/app/{first}/",
-        f"src/routes/{first}",
-        f"app/{first}/page.",
-        f"pages/{first}.",
-    )
-    return any(
-        needle in f"/{posix}" or posix.startswith(needle.lstrip("/"))
-        for needle in needles
-    )
 
 
 def _load_coverage(root: Path, config: QualityConfig) -> dict[str, list[str]]:
@@ -438,16 +527,6 @@ def _spec_dir_hints(config: QualityConfig) -> list[str]:
             seen.add(key)
             unique.append(hint)
     return unique
-
-
-def _coverage_hits(coverage: dict[str, list[str]], changed: set[str]) -> set[str]:
-    hits: set[str] = set()
-    changed_norm = changed
-    for test, files in coverage.items():
-        if any(_norm(item) in changed_norm for item in files):
-            hits.add(_norm(test))
-            hits.add(_norm(Path(test).name))
-    return hits
 
 
 def _rel(root: Path, path: Path) -> str:
