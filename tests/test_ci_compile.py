@@ -11,7 +11,7 @@ def test_local_mode_on_github_is_cheap(monkeypatch) -> None:
     monkeypatch.delenv("QUALITY_CI_FULL", raising=False)
     config = QualityConfig()
     assert config.ci_mode == "local"
-    assert select_gates(config) == ["impact", "version", "review"]
+    assert select_gates(config) == ["impact", "audit", "version", "review"]
 
 
 def test_both_or_full_flag_runs_heavy_gates(monkeypatch) -> None:
@@ -53,3 +53,11 @@ def test_ui_stays_in_full_local_plan(monkeypatch) -> None:
     assert gates.index("compile") < gates.index("impact") < gates.index("ui")
     assert "impact" in gates
     assert "ui" in gates
+    assert "coverage" in gates
+    assert "audit" in gates
+    assert (
+        gates.index("impact")
+        < gates.index("coverage")
+        < gates.index("audit")
+        < gates.index("ui")
+    )

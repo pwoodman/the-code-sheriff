@@ -11,7 +11,9 @@ from quality_gates import __version__
 from quality_gates.ci_plan import select_gates
 from quality_gates.config import QualityConfig, is_pr_event, load_config
 from quality_gates.detect import detect_languages, git_changed_files
+from quality_gates.gates.audit import run_audit
 from quality_gates.gates.compile import run_compile
+from quality_gates.gates.coverage import run_coverage
 from quality_gates.gates.dry import run_dry
 from quality_gates.gates.format import run_format
 from quality_gates.gates.impact import run_impact
@@ -89,7 +91,7 @@ jobs:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="quality",
-        description="Multi-language format, lint, DRY, security, compile, impact, UI, version, and AI review gates.",
+        description="Multi-language format, lint, DRY, security, compile, impact, coverage, 120-point audit, UI, version, and AI review gates.",
     )
     parser.add_argument(
         "--version", action="version", version=f"quality-gates {__version__}"
@@ -165,6 +167,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="upstream/downstream impact: who uses this change, and is it validated",
     )
     impact_p.add_argument("--base", default=None, help="git ref to diff against")
+
+    sub.add_parser(
+        "coverage",
+        help="test coverage vs configurable floor (default 80% lines)",
+    )
+    sub.add_parser(
+        "audit",
+        help="120-point evidence-backed repo inspection (security, API, architecture)",
+    )
 
     run_p = sub.add_parser("run", help="run selected gates in order")
     run_p.add_argument("--only", default=None, help="comma-separated gates")
@@ -256,6 +267,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "impact":
         result = run_impact(root, config, base=args.base)
         return _emit([result], root, config, args.json, ["impact"])
+    if args.command == "coverage":
+        result = run_coverage(root, config)
+        return _emit([result], root, config, args.json, ["coverage"])
+    if args.command == "audit":
+        result = run_audit(root, config)
+        return _emit([result], root, config, args.json, ["audit"])
     if args.command == "run":
         gates = select_gates(
             config,
@@ -297,6 +314,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 item = run_version(root, config, base=args.base)
             elif gate == "impact":
                 item = run_impact(root, config, base=args.base)
+            elif gate == "coverage":
+                item = run_coverage(root, config)
+            elif gate == "audit":
+                item = run_audit(root, config)
             elif gate == "ui":
                 compile_prior = next(
                     (row for row in prior if row.name == "compile"), None
@@ -410,6 +431,7 @@ def _doctor(root: Path, config: QualityConfig, *, install: bool, as_json: bool) 
         ("semgrep", "semgrep", ("--version",)),
         ("playwright", "playwright", ("--version",)),
         ("cypress", "cypress", ("--version",)),
+        ("coverage", "coverage", ("--version",)),
     ]
     for label, command, argv in checks:
         path = which(command, project=root, prefer_project=True)
@@ -487,15 +509,24 @@ def _init(root: Path, org: str) -> int:
 def _default_toml() -> str:
     return """[quality]
 languages = ["auto"]
-fail_on = ["format", "lint", "dry", "security", "compile", "impact", "ui", "version"]
+fail_on = ["format", "lint", "dry", "security", "compile", "impact", "coverage", "audit", "ui", "version"]
 ai_review = "pr-only"
 
 [quality.ci]
 mode = "local"
-github_gates = ["impact", "version", "review"]
+github_gates = ["impact", "audit", "version", "review"]
 
 [quality.compile]
 require_security = true
+
+[quality.coverage]
+line = 80
+branch = 0
+tool = "auto"
+
+[quality.audit]
+fail_on_priority = ["P0"]
+min_confidence = "HIGH"
 
 [quality.ui]
 select = "changed"

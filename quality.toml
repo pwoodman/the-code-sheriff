@@ -7,7 +7,7 @@ languages = ["auto"]
 
 # Gates that fail CI when they report errors. review never fails the
 # build unless you add it here — it posts findings as a PR comment.
-fail_on = ["format", "lint", "dry", "security", "compile", "impact", "ui", "version"]
+fail_on = ["format", "lint", "dry", "security", "compile", "impact", "coverage", "audit", "ui", "version"]
 
 # pr-only | always | never
 ai_review = "pr-only"
@@ -16,14 +16,14 @@ ai_review = "pr-only"
 # and Java tooling into ~/.cache/quality-gates on first use.
 auto_install = false
 
-# local  = heavy gates (format/lint/DRY/security/compile/ui) run on developer
-#          machines; GitHub Actions runs cheap jobs (impact + version + PR review).
+# local  = heavy gates (format/lint/DRY/security/compile/coverage/ui) run on developer
+#          machines; GitHub Actions runs cheap jobs (impact + audit + version + PR review).
 # github = full suite on Actions (costs minutes and runners). UI still off
 #          unless [quality.ui] on_github = true.
 # both   = local hooks AND the full Actions suite.
 [quality.ci]
 mode = "local"
-github_gates = ["impact", "version", "review"]
+github_gates = ["impact", "audit", "version", "review"]
 
 [quality.compile]
 # Never compile if secrets/CVEs/SAST errors are present, or if scanners skipped.
@@ -49,6 +49,21 @@ depth = 4
 require_downstream = true
 # If true, also fail when a changed file has no test (otherwise warning only).
 require_own_tests = false
+
+# 80% is the package default (industry / ISTQB-style). This toolkit's own
+# suite currently measures ~52% — keep a floor so coverage cannot regress,
+# without pretending a CLI helper is an 80% product.
+[quality.coverage]
+line = 50
+branch = 0
+tool = "auto"                      # auto | pytest | jest | vitest | go | existing
+
+# 120-point static inspection. Fail only on HIGH-confidence P0 evidence.
+# Checks that need a browser, HTTP runtime, or an API this repo does not
+# have are not_applicable / not_statically_provable — not failures.
+[quality.audit]
+fail_on_priority = ["P0"]
+min_confidence = "HIGH"
 
 [quality.detect]
 exclude = [

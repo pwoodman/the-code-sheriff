@@ -1,7 +1,8 @@
 # Multi-step quality gates. Default ci.mode=local keeps GitHub Actions cheap:
-# impact + version + PR review. Set [quality.ci] mode = "github" or "both", or
-# dispatch this workflow with full_suite=true, to run format/lint/DRY/security/compile here.
+# impact + audit + version + PR review. Set [quality.ci] mode = "github" or "both",
+# or dispatch this workflow with full_suite=true, to run the heavy suite here.
 # Playwright/Cypress stay off Actions unless [quality.ui] on_github = true.
+# Coverage stays off Actions in local mode (it runs the test suite). Audit is cheap static.
 
 name: Quality gates
 
@@ -88,7 +89,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "ci.mode=${{ needs.plan.outputs.mode }} — format/lint/DRY/security/compile/ui run locally via pre-commit/pre-push. impact runs here (cheap)."
+          echo "ci.mode=${{ needs.plan.outputs.mode }} — format/lint/DRY/security/compile/coverage/ui run locally via pre-commit/pre-push. impact + audit run here (cheap)."
           echo "Re-run this workflow with full_suite, or set [quality.ci] mode = \"both\", to run them on GitHub."
           quality run --base "origin/${{ github.base_ref || github.event.repository.default_branch }}"
 

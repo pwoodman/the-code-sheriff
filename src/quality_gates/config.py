@@ -54,26 +54,53 @@ def _as_bool(value: Any, fallback: bool = False) -> bool:
     return bool(value)
 
 
+def _as_float(value: Any, fallback: float) -> float:
+    if value is None:
+        return fallback
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _as_ints(value: Any, fallback: list[int]) -> list[int]:
+    if value is None:
+        return list(fallback)
+    if isinstance(value, list):
+        out: list[int] = []
+        for item in value:
+            try:
+                out.append(int(item))
+            except (TypeError, ValueError):
+                continue
+        return out
+    return list(fallback)
+
+
+DEFAULT_FAIL_ON = [
+    "format",
+    "lint",
+    "dry",
+    "security",
+    "compile",
+    "impact",
+    "coverage",
+    "audit",
+    "ui",
+    "version",
+]
+DEFAULT_GITHUB_GATES = ["impact", "audit", "version", "review"]
+
+
 @dataclass
 class QualityConfig:
     languages: list[str] = field(default_factory=lambda: ["auto"])
-    fail_on: list[str] = field(
-        default_factory=lambda: [
-            "format",
-            "lint",
-            "dry",
-            "security",
-            "compile",
-            "impact",
-            "ui",
-            "version",
-        ]
-    )
+    fail_on: list[str] = field(default_factory=lambda: list(DEFAULT_FAIL_ON))
     ai_review: str = "pr-only"
     auto_install: bool = False
     ci_mode: str = "local"
     ci_github_gates: list[str] = field(
-        default_factory=lambda: ["impact", "version", "review"]
+        default_factory=lambda: list(DEFAULT_GITHUB_GATES)
     )
     require_changelog: str = "if-present"
     compile_require_security: bool = True
@@ -106,6 +133,14 @@ class QualityConfig:
     impact_depth: int = 4
     impact_require_downstream: bool = True
     impact_require_own_tests: bool = False
+    coverage_enabled: bool = True
+    coverage_line: float = 80.0
+    coverage_branch: float = 0.0
+    coverage_tool: str = "auto"
+    audit_enabled: bool = True
+    audit_fail_on_priority: list[str] = field(default_factory=lambda: ["P0"])
+    audit_min_confidence: str = "HIGH"
+    audit_skip_ids: list[int] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
 
     def language_filter(self) -> list[str] | None:
@@ -149,6 +184,8 @@ def load_config(project: Path) -> QualityConfig:
     version_cfg = _section(data, "quality", "version")
     ui_cfg = _section(data, "quality", "ui")
     impact_cfg = _section(data, "quality", "impact")
+    coverage_cfg = _section(data, "quality", "coverage")
+    audit_cfg = _section(data, "quality", "audit")
 
     auto_install = quality.get("auto_install", False)
     if isinstance(auto_install, str):
@@ -174,18 +211,25 @@ def load_config(project: Path) -> QualityConfig:
     if changelog not in {"if-present", "always", "never"}:
         changelog = "if-present"
 
+    coverage_tool = str(coverage_cfg.get("tool", "auto")).lower()
+    if coverage_tool not in {"auto", "pytest", "jest", "vitest", "go", "existing"}:
+        coverage_tool = "auto"
+    audit_conf = str(audit_cfg.get("min_confidence", "HIGH")).upper()
+    if audit_conf not in {"HIGH", "MEDIUM", "LOW"}:
+        audit_conf = "HIGH"
+    fail_prios = [
+        item.upper() for item in _as_list(audit_cfg.get("fail_on_priority"), ["P0"])
+    ]
+    if not fail_prios:
+        fail_prios = ["P0"]
+
     return QualityConfig(
         languages=_as_list(quality.get("languages"), ["auto"]),
-        fail_on=_as_list(
-            quality.get("fail_on"),
-            ["format", "lint", "dry", "security", "compile", "impact", "ui", "version"],
-        ),
+        fail_on=_as_list(quality.get("fail_on"), DEFAULT_FAIL_ON),
         ai_review=str(quality.get("ai_review", "pr-only")),
         auto_install=bool(auto_install),
         ci_mode=ci_mode,
-        ci_github_gates=_as_list(
-            ci.get("github_gates"), ["impact", "version", "review"]
-        ),
+        ci_github_gates=_as_list(ci.get("github_gates"), DEFAULT_GITHUB_GATES),
         require_changelog=changelog,
         compile_require_security=bool(compile_cfg.get("require_security", True)),
         detect_exclude=_as_list(detect.get("exclude"), DEFAULT_EXCLUDE),
@@ -213,6 +257,14 @@ def load_config(project: Path) -> QualityConfig:
         impact_require_own_tests=_as_bool(
             impact_cfg.get("require_own_tests", False), False
         ),
+        coverage_enabled=_as_bool(coverage_cfg.get("enabled"), True),
+        coverage_line=_as_float(coverage_cfg.get("line"), 80.0),
+        coverage_branch=_as_float(coverage_cfg.get("branch"), 0.0),
+        coverage_tool=coverage_tool,
+        audit_enabled=_as_bool(audit_cfg.get("enabled"), True),
+        audit_fail_on_priority=fail_prios,
+        audit_min_confidence=audit_conf,
+        audit_skip_ids=_as_ints(audit_cfg.get("skip", audit_cfg.get("skip_ids")), []),
         raw=data,
     )
 

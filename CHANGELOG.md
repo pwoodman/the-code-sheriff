@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.4.0
+
+- Coverage gate: configurable line/branch floors. Default **80% line coverage**
+  (industry / ISTQB-style baseline); branch coverage off unless set. Collects
+  pytest-cov, Jest/Vitest summary, Go coverprofile, or existing XML/LCOV.
+  Skip ≠ fail when there are no tests or no tool. Heavy — stays off default
+  GitHub `github_gates`.
+- Audit gate: 120-point evidence-backed inspection (security, API, architecture,
+  incomplete AI implementations, persistence, performance hints, frontend, UX).
+  Only HIGH-confidence static evidence becomes a defect. Default fail-on is P0.
+  Not applicable when the repo has no HTTP/frontend surface. Cheap — included
+  in default `github_gates`.
+- Gate order: format → lint → DRY → security → compile → impact → coverage →
+  audit → UI → version → review.
+
 ## 1.3.0
 
 - Impact gate: upstream (imports) and downstream (importers) analysis on the

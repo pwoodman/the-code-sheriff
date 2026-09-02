@@ -31,8 +31,8 @@ repos:
         pass_filenames: false
         stages: [pre-commit]
       - id: quality-push
-        name: quality dry, security, compile, impact, ui
-        entry: python -m quality_gates run --only dry,security,compile,impact,ui
+        name: quality dry, security, compile, impact, coverage, audit, ui
+        entry: python -m quality_gates run --only dry,security,compile,impact,coverage,audit,ui
         language: system
         pass_filenames: false
         stages: [pre-push]

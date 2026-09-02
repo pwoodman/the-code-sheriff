@@ -43,6 +43,12 @@ def test_impact_gate_skips_without_changes(tmp_path: Path, monkeypatch) -> None:
 def test_impact_is_in_gate_order() -> None:
     assert "impact" in GATES
     assert GATES.index("compile") < GATES.index("impact") < GATES.index("ui")
+    assert (
+        GATES.index("impact")
+        < GATES.index("coverage")
+        < GATES.index("audit")
+        < GATES.index("ui")
+    )
 
 
 def test_downstream_and_upstream_walk(tmp_path: Path) -> None:

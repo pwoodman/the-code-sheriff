@@ -1,14 +1,14 @@
 # Quality gates
 
-A reusable **format → lint → DRY → security → compile → impact → UI → version → AI review**
+A reusable **format → lint → DRY → security → compile → impact → coverage → audit → UI → version → AI review**
 pipeline. Heavy work defaults to **your PC**. GitHub Actions stays cheap unless
 you opt in.
 
 | When | What | Where |
 | --- | --- | --- |
 | `git commit` | format, lint, version | laptop |
-| `git push` | DRY, security, compile, impact, selective UI | laptop |
-| Push / PR on GitHub | impact + version + PR review | Actions (seconds) |
+| `git push` | DRY, security, compile, impact, coverage, audit, selective UI | laptop |
+| Push / PR on GitHub | impact + audit + version + PR review | Actions (seconds) |
 | Optional | full suite on Actions | `ci.mode = "both"` / `"github"`, or workflow **full_suite** |
 | Optional | Playwright/Cypress on Actions | `[quality.ui] on_github = true` |
 
@@ -26,6 +26,8 @@ GitHub even in `github`/`both` mode unless you turn them on.
 | **Security** | gitleaks, osv-scanner, optional semgrep | secrets + CVEs + SAST |
 | **Compile** | `dotnet build`, `cargo build`, `go build`, `mvn`/`javac`, `tsc --noEmit` | **only after security passes**; never executes the program |
 | **Impact** | import graph | upstream deps + downstream consumers; fail if callers weren’t updated or tested |
+| **Coverage** | pytest-cov / Jest / Go cover / LCOV | default **80% line** floor (industry baseline); skip if no tests |
+| **Audit** | 120-point static inspection | HIGH-confidence evidence only; fail on P0; N/A when no API/UI |
 | **UI** | Playwright / Cypress | **only specs whose touch set hits the diff** (plus downstream files) |
 | **Version** | semver files + changelog | bump required when source changes |
 | **AI review** | heuristic + optional LLM | PRs; does not fail the build |
@@ -35,7 +37,7 @@ security scan blocks compile** so a tree with known vulns or no scanners is not
 built. UI is skipped when compile failed, and when the diff does not touch a
 spec, its imports, a matching route, or a coverage-map hit.
 
-Standards: [`standards/`](standards/FORMATTING.md) · [`VERSIONING`](standards/VERSIONING.md) · [`COMPILE`](standards/COMPILE.md) · [`IMPACT`](standards/IMPACT.md) · [`UI`](standards/UI.md) · [`CI`](standards/CI.md).
+Standards: [`standards/`](standards/FORMATTING.md) · [`VERSIONING`](standards/VERSIONING.md) · [`COMPILE`](standards/COMPILE.md) · [`IMPACT`](standards/IMPACT.md) · [`COVERAGE`](standards/COVERAGE.md) · [`AUDIT`](standards/AUDIT.md) · [`UI`](standards/UI.md) · [`CI`](standards/CI.md).
 
 ## Quick start
 
@@ -51,6 +53,8 @@ quality bump auto                  # feat/fix/breaking → minor/patch/major
 quality compile                    # runs security first, then builds
 quality ui --list                  # which Playwright/Cypress specs the diff selects
 quality impact                     # who is upstream/downstream of the diff
+quality coverage                   # line coverage vs 80% floor
+quality audit                      # 120-point evidence-backed inspection
 ```
 
 ## GitHub cost knob
@@ -60,7 +64,7 @@ quality impact                     # who is upstream/downstream of the diff
 mode = "local"                     # default: cheap Actions
 # mode = "github"                  # full suite on runners
 # mode = "both"                    # hooks + full Actions
-github_gates = ["impact", "version", "review"]
+github_gates = ["impact", "audit", "version", "review"]
 
 [quality.ui]
 select = "changed"                 # only specs that touch added/changed files
@@ -82,7 +86,7 @@ Consumers: [`examples/CONSUMING.md`](examples/CONSUMING.md).
 ```toml
 [quality]
 languages = ["auto"]
-fail_on = ["format", "lint", "dry", "security", "compile", "impact", "ui", "version"]
+fail_on = ["format", "lint", "dry", "security", "compile", "impact", "coverage", "audit", "ui", "version"]
 ai_review = "pr-only"
 
 [quality.ci]
@@ -90,6 +94,15 @@ mode = "local"
 
 [quality.compile]
 require_security = true
+
+[quality.coverage]
+line = 80                          # industry-standard statement-coverage floor
+branch = 0                         # 0 = do not enforce branch coverage
+tool = "auto"
+
+[quality.audit]
+fail_on_priority = ["P0"]
+min_confidence = "HIGH"
 
 [quality.impact]
 depth = 4
@@ -125,11 +138,13 @@ quality dry
 quality security
 quality compile [--force]
 quality impact [--base origin/main]
+quality coverage
+quality audit
 quality ui [--list] [--all] [--base origin/main]
 quality version [--base origin/main]
 quality bump auto|major|minor|patch
 quality review [--base origin/main] [--post]
-quality run [--only security,compile,impact,ui] [--skip review] [--full]
+quality run [--only security,compile,impact,coverage,audit,ui] [--skip review] [--full]
 quality init --org YOUR_ORG
 ```
 

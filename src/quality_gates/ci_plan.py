@@ -5,8 +5,17 @@ import os
 from quality_gates import GATES
 from quality_gates.config import QualityConfig
 
-HEAVY_GATES = ("format", "lint", "dry", "security", "compile", "impact", "ui")
-CHEAP_GITHUB_GATES = ("impact", "version", "review")
+HEAVY_GATES = (
+    "format",
+    "lint",
+    "dry",
+    "security",
+    "compile",
+    "impact",
+    "coverage",
+    "ui",
+)
+CHEAP_GITHUB_GATES = ("impact", "audit", "version", "review")
 
 
 def on_github_actions() -> bool:

@@ -1,4 +1,6 @@
+from quality_gates.gates.audit import run_audit
 from quality_gates.gates.compile import run_compile
+from quality_gates.gates.coverage import run_coverage
 from quality_gates.gates.dry import run_dry
 from quality_gates.gates.format import run_format
 from quality_gates.gates.impact import run_impact
@@ -9,7 +11,9 @@ from quality_gates.gates.ui import run_ui
 from quality_gates.gates.version import run_version
 
 __all__ = [
+    "run_audit",
     "run_compile",
+    "run_coverage",
     "run_dry",
     "run_format",
     "run_impact",
