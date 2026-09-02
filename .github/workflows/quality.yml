@@ -1,5 +1,5 @@
 # Multi-step quality gates. Default ci.mode=local keeps GitHub Actions cheap:
-# version + PR review only. Set [quality.ci] mode = "github" or "both", or
+# impact + version + PR review. Set [quality.ci] mode = "github" or "both", or
 # dispatch this workflow with full_suite=true, to run format/lint/DRY/security/compile here.
 # Playwright/Cypress stay off Actions unless [quality.ui] on_github = true.
 
@@ -88,7 +88,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "ci.mode=${{ needs.plan.outputs.mode }} — format/lint/DRY/security/compile/ui run locally via pre-commit/pre-push."
+          echo "ci.mode=${{ needs.plan.outputs.mode }} — format/lint/DRY/security/compile/ui run locally via pre-commit/pre-push. impact runs here (cheap)."
           echo "Re-run this workflow with full_suite, or set [quality.ci] mode = \"both\", to run them on GitHub."
           quality run --base "origin/${{ github.base_ref || github.event.repository.default_branch }}"
 
@@ -243,7 +243,22 @@ jobs:
       - name: Compile only if security still clears
         env:
           QUALITY_GATES_AUTO_INSTALL: "1"
-        run:           quality run --only compile
+        run: quality run --only compile
+
+  impact:
+    name: 6a · Impact (upstream / downstream)
+    needs: [plan, detect]
+    if: needs.plan.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bootstrap
+        with:
+          install-binaries: "false"
+      - name: Impact analysis
+        run: quality impact --base "origin/${{ github.base_ref || github.event.repository.default_branch }}"
 
   ui:
     name: 6b · UI tests (opt-in Playwright/Cypress)
@@ -303,7 +318,7 @@ jobs:
 
   summary:
     name: Quality summary
-    needs: [plan, local, detect, format, lint, dry, security, compile, ui, version, review]
+    needs: [plan, local, detect, format, lint, dry, security, compile, impact, ui, version, review]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -322,6 +337,7 @@ jobs:
             "dry": "${{ needs.dry.result }}",
             "security": "${{ needs.security.result }}",
             "compile": "${{ needs.compile.result }}",
+            "impact": "${{ needs.impact.result }}",
             "ui": "${{ needs.ui.result }}",
             "version": "${{ needs.version.result }}",
             "review": "${{ needs.review.result }}",
@@ -329,7 +345,7 @@ jobs:
           print("full=", full, "ui_wanted=", ui_wanted)
           print("\n".join(f"{k}={v}" for k, v in results.items()))
           if full:
-              blocking = ["plan", "detect", "format", "lint", "dry", "security", "compile", "version"]
+              blocking = ["plan", "detect", "format", "lint", "dry", "security", "compile", "impact", "version"]
               if ui_wanted:
                   blocking.append("ui")
           else:

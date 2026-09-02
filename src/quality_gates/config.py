@@ -64,6 +64,7 @@ class QualityConfig:
             "dry",
             "security",
             "compile",
+            "impact",
             "ui",
             "version",
         ]
@@ -71,7 +72,9 @@ class QualityConfig:
     ai_review: str = "pr-only"
     auto_install: bool = False
     ci_mode: str = "local"
-    ci_github_gates: list[str] = field(default_factory=lambda: ["version", "review"])
+    ci_github_gates: list[str] = field(
+        default_factory=lambda: ["impact", "version", "review"]
+    )
     require_changelog: str = "if-present"
     compile_require_security: bool = True
     detect_exclude: list[str] = field(default_factory=lambda: list(DEFAULT_EXCLUDE))
@@ -100,6 +103,9 @@ class QualityConfig:
     ui_path_aliases: dict[str, str] = field(default_factory=lambda: {"@/": "src/"})
     ui_coverage_map: str = ".quality-reports/ui-coverage.json"
     ui_on_github: bool = False
+    impact_depth: int = 4
+    impact_require_downstream: bool = True
+    impact_require_own_tests: bool = False
     raw: dict[str, Any] = field(default_factory=dict)
 
     def language_filter(self) -> list[str] | None:
@@ -142,6 +148,7 @@ def load_config(project: Path) -> QualityConfig:
     compile_cfg = _section(data, "quality", "compile")
     version_cfg = _section(data, "quality", "version")
     ui_cfg = _section(data, "quality", "ui")
+    impact_cfg = _section(data, "quality", "impact")
 
     auto_install = quality.get("auto_install", False)
     if isinstance(auto_install, str):
@@ -171,12 +178,14 @@ def load_config(project: Path) -> QualityConfig:
         languages=_as_list(quality.get("languages"), ["auto"]),
         fail_on=_as_list(
             quality.get("fail_on"),
-            ["format", "lint", "dry", "security", "compile", "ui", "version"],
+            ["format", "lint", "dry", "security", "compile", "impact", "ui", "version"],
         ),
         ai_review=str(quality.get("ai_review", "pr-only")),
         auto_install=bool(auto_install),
         ci_mode=ci_mode,
-        ci_github_gates=_as_list(ci.get("github_gates"), ["version", "review"]),
+        ci_github_gates=_as_list(
+            ci.get("github_gates"), ["impact", "version", "review"]
+        ),
         require_changelog=changelog,
         compile_require_security=bool(compile_cfg.get("require_security", True)),
         detect_exclude=_as_list(detect.get("exclude"), DEFAULT_EXCLUDE),
@@ -197,6 +206,13 @@ def load_config(project: Path) -> QualityConfig:
             ui_cfg.get("coverage_map", ".quality-reports/ui-coverage.json")
         ),
         ui_on_github=_as_bool(ui_cfg.get("on_github"), False),
+        impact_depth=int(impact_cfg.get("depth", 4)),
+        impact_require_downstream=_as_bool(
+            impact_cfg.get("require_downstream", True), True
+        ),
+        impact_require_own_tests=_as_bool(
+            impact_cfg.get("require_own_tests", False), False
+        ),
         raw=data,
     )
 

@@ -5,12 +5,12 @@ Default is **your machine**, not GitHub-hosted runners.
 ```toml
 [quality.ci]
 mode = "local"                 # local | github | both
-github_gates = ["version", "review"]
+github_gates = ["impact", "version", "review"]
 ```
 
 | Mode | Developer PC (hooks + `quality run`) | GitHub Actions |
 | --- | --- | --- |
-| `local` (default) | format, lint, DRY, security, compile, UI, version | version + PR review only |
+| `local` (default) | format, lint, DRY, security, compile, impact, UI, version | impact + version + PR review |
 | `github` | optional hooks | full suite including compile-after-security; UI still off |
 | `both` | full hooks | full suite; UI still off unless opted in |
 
@@ -32,8 +32,9 @@ pre-commit install --hook-type pre-commit --hook-type pre-push
 ```
 
 - commit: format, lint, version
-- push: DRY, security, compile, selective UI (compile runs only if security passed;
-  UI runs only the Playwright/Cypress specs that cover the diff)
+- push: DRY, security, compile, impact, selective UI (compile runs only if security
+  passed; impact requires downstream consumers to be updated or tested; UI only
+  runs specs that cover the diff plus downstream importers)
 
 Playwright/Cypress stay **off GitHub** by default even when `mode` is `github`
 or `both`. Browser installs are the expensive part. Opt in:

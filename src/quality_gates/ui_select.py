@@ -7,6 +7,7 @@ from pathlib import Path
 
 from quality_gates.config import QualityConfig
 from quality_gates.detect import iter_project_files
+from quality_gates.js_resolve import resolve_js_module
 
 IMPORT_RE = re.compile(
     r"""(?:from\s+['"]([^'"]+)['"]|import\(\s*['"]([^'"]+)['"]\s*\)|require\(\s*['"]([^'"]+)['"]\s*\))"""
@@ -387,33 +388,7 @@ def _imported_files(spec: Path, root: Path, config: QualityConfig) -> list[str]:
 def _resolve_import(
     current: Path, spec: str, root: Path, aliases: dict[str, str]
 ) -> Path | None:
-    if not spec or spec.startswith("node:"):
-        return None
-    for prefix, target in aliases.items():
-        if spec.startswith(prefix):
-            spec = str(Path(target) / spec[len(prefix) :])
-            break
-    if spec.startswith("."):
-        base = current.parent / spec
-    elif "/" in spec and not spec.startswith("@"):
-        base = root / spec
-    else:
-        return None
-    candidates = [
-        base,
-        Path(str(base) + ".ts"),
-        Path(str(base) + ".tsx"),
-        Path(str(base) + ".js"),
-        Path(str(base) + ".jsx"),
-        Path(str(base) + ".mjs"),
-        base / "index.ts",
-        base / "index.tsx",
-        base / "index.js",
-    ]
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate.resolve()
-    return None
+    return resolve_js_module(current, spec, root, aliases)
 
 
 def _route_segments(route: str) -> list[str]:

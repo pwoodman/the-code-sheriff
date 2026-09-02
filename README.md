@@ -1,14 +1,14 @@
 # Quality gates
 
-A reusable **format → lint → DRY → security → compile → UI → version → AI review**
+A reusable **format → lint → DRY → security → compile → impact → UI → version → AI review**
 pipeline. Heavy work defaults to **your PC**. GitHub Actions stays cheap unless
 you opt in.
 
 | When | What | Where |
 | --- | --- | --- |
 | `git commit` | format, lint, version | laptop |
-| `git push` | DRY, security, compile, selective UI | laptop |
-| Push / PR on GitHub | version + PR review | Actions (seconds) |
+| `git push` | DRY, security, compile, impact, selective UI | laptop |
+| Push / PR on GitHub | impact + version + PR review | Actions (seconds) |
 | Optional | full suite on Actions | `ci.mode = "both"` / `"github"`, or workflow **full_suite** |
 | Optional | Playwright/Cypress on Actions | `[quality.ui] on_github = true` |
 
@@ -25,7 +25,8 @@ GitHub even in `github`/`both` mode unless you turn them on.
 | **DRY** | jscpd | copy-paste |
 | **Security** | gitleaks, osv-scanner, optional semgrep | secrets + CVEs + SAST |
 | **Compile** | `dotnet build`, `cargo build`, `go build`, `mvn`/`javac`, `tsc --noEmit` | **only after security passes**; never executes the program |
-| **UI** | Playwright / Cypress | **only specs whose touch set hits the diff**; skip otherwise |
+| **Impact** | import graph | upstream deps + downstream consumers; fail if callers weren’t updated or tested |
+| **UI** | Playwright / Cypress | **only specs whose touch set hits the diff** (plus downstream files) |
 | **Version** | semver files + changelog | bump required when source changes |
 | **AI review** | heuristic + optional LLM | PRs; does not fail the build |
 
@@ -34,7 +35,7 @@ security scan blocks compile** so a tree with known vulns or no scanners is not
 built. UI is skipped when compile failed, and when the diff does not touch a
 spec, its imports, a matching route, or a coverage-map hit.
 
-Standards: [`standards/`](standards/FORMATTING.md) · [`VERSIONING`](standards/VERSIONING.md) · [`COMPILE`](standards/COMPILE.md) · [`UI`](standards/UI.md) · [`CI`](standards/CI.md).
+Standards: [`standards/`](standards/FORMATTING.md) · [`VERSIONING`](standards/VERSIONING.md) · [`COMPILE`](standards/COMPILE.md) · [`IMPACT`](standards/IMPACT.md) · [`UI`](standards/UI.md) · [`CI`](standards/CI.md).
 
 ## Quick start
 
@@ -49,6 +50,7 @@ pre-commit install --hook-type pre-commit --hook-type pre-push
 quality bump auto                  # feat/fix/breaking → minor/patch/major
 quality compile                    # runs security first, then builds
 quality ui --list                  # which Playwright/Cypress specs the diff selects
+quality impact                     # who is upstream/downstream of the diff
 ```
 
 ## GitHub cost knob
@@ -58,7 +60,7 @@ quality ui --list                  # which Playwright/Cypress specs the diff sel
 mode = "local"                     # default: cheap Actions
 # mode = "github"                  # full suite on runners
 # mode = "both"                    # hooks + full Actions
-github_gates = ["version", "review"]
+github_gates = ["impact", "version", "review"]
 
 [quality.ui]
 select = "changed"                 # only specs that touch added/changed files
@@ -80,7 +82,7 @@ Consumers: [`examples/CONSUMING.md`](examples/CONSUMING.md).
 ```toml
 [quality]
 languages = ["auto"]
-fail_on = ["format", "lint", "dry", "security", "compile", "ui", "version"]
+fail_on = ["format", "lint", "dry", "security", "compile", "impact", "ui", "version"]
 ai_review = "pr-only"
 
 [quality.ci]
@@ -88,6 +90,10 @@ mode = "local"
 
 [quality.compile]
 require_security = true
+
+[quality.impact]
+depth = 4
+require_downstream = true
 
 [quality.ui]
 select = "changed"                 # changed | all
@@ -118,11 +124,12 @@ quality lint
 quality dry
 quality security
 quality compile [--force]
+quality impact [--base origin/main]
 quality ui [--list] [--all] [--base origin/main]
 quality version [--base origin/main]
 quality bump auto|major|minor|patch
 quality review [--base origin/main] [--post]
-quality run [--only security,compile,ui] [--skip review] [--full]
+quality run [--only security,compile,impact,ui] [--skip review] [--full]
 quality init --org YOUR_ORG
 ```
 

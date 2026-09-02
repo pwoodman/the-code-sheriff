@@ -14,6 +14,7 @@ from quality_gates.detect import detect_languages, git_changed_files
 from quality_gates.gates.compile import run_compile
 from quality_gates.gates.dry import run_dry
 from quality_gates.gates.format import run_format
+from quality_gates.gates.impact import run_impact
 from quality_gates.gates.lint import run_lint
 from quality_gates.gates.review import run_review
 from quality_gates.gates.security import run_security
@@ -88,7 +89,7 @@ jobs:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="quality",
-        description="Multi-language format, lint, DRY, security, compile, UI, version, and AI review gates.",
+        description="Multi-language format, lint, DRY, security, compile, impact, UI, version, and AI review gates.",
     )
     parser.add_argument(
         "--version", action="version", version=f"quality-gates {__version__}"
@@ -158,6 +159,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="run every spec instead of selecting from the diff",
     )
     ui_p.add_argument("--base", default=None, help="git ref to diff against")
+
+    impact_p = sub.add_parser(
+        "impact",
+        help="upstream/downstream impact: who uses this change, and is it validated",
+    )
+    impact_p.add_argument("--base", default=None, help="git ref to diff against")
 
     run_p = sub.add_parser("run", help="run selected gates in order")
     run_p.add_argument("--only", default=None, help="comma-separated gates")
@@ -246,6 +253,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             list_only=args.list,
         )
         return _emit([result], root, config, args.json, ["ui"])
+    if args.command == "impact":
+        result = run_impact(root, config, base=args.base)
+        return _emit([result], root, config, args.json, ["impact"])
     if args.command == "run":
         gates = select_gates(
             config,
@@ -285,6 +295,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 item = run_compile(root, config, languages, security=security)
             elif gate == "version":
                 item = run_version(root, config, base=args.base)
+            elif gate == "impact":
+                item = run_impact(root, config, base=args.base)
             elif gate == "ui":
                 compile_prior = next(
                     (row for row in prior if row.name == "compile"), None
@@ -475,12 +487,12 @@ def _init(root: Path, org: str) -> int:
 def _default_toml() -> str:
     return """[quality]
 languages = ["auto"]
-fail_on = ["format", "lint", "dry", "security", "compile", "ui", "version"]
+fail_on = ["format", "lint", "dry", "security", "compile", "impact", "ui", "version"]
 ai_review = "pr-only"
 
 [quality.ci]
 mode = "local"
-github_gates = ["version", "review"]
+github_gates = ["impact", "version", "review"]
 
 [quality.compile]
 require_security = true
@@ -488,6 +500,10 @@ require_security = true
 [quality.ui]
 select = "changed"
 on_github = false
+
+[quality.impact]
+depth = 4
+require_downstream = true
 
 [quality.version]
 require_changelog = "if-present"

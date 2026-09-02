@@ -10,8 +10,8 @@ page that imports it, or a coverage map says it covered it.
 
 ## When it runs
 
-Order in `quality run`: format → lint → DRY → security → compile → **ui** →
-version → review.
+Order in `quality run`: format → lint → DRY → security → compile → **impact** →
+**ui** → version → review.
 
 | Situation | What happens |
 | --- | --- |
@@ -46,7 +46,11 @@ hits any of:
 }
 ```
 
-Default path: `.quality-reports/ui-coverage.json`. Override with
+The impact graph is merged into this set: importers of a changed file count
+as changed for selection. A util used by `Cart.tsx` used by `/checkout` still
+runs `checkout.spec.ts`.
+
+Default coverage map path: `.quality-reports/ui-coverage.json`. Override with
 `[quality.ui] coverage_map`.
 
 Unit tests named `*.test.ts` under `src/` are ignored unless they import
@@ -84,7 +88,7 @@ on_github = false
 ```
 
 Opt into Actions with `on_github = true` or `QUALITY_UI_ON_GITHUB=1`. Pre-push
-already runs `dry,security,compile,ui` on the developer machine.
+already runs `dry,security,compile,impact,ui` on the developer machine.
 
 ## Runners
 

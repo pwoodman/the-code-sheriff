@@ -8,6 +8,7 @@ from quality_gates.ci_plan import on_github_actions, ui_allowed_on_github
 from quality_gates.config import QualityConfig
 from quality_gates.gates.common import fail_or_pass, findings_from_text, skip_result
 from quality_gates.gitutil import git_base_ref, git_changed_names
+from quality_gates.impact_graph import expand_downstream
 from quality_gates.models import Finding, GateResult
 from quality_gates.tools import run, which
 from quality_gates.ui_select import (
@@ -56,6 +57,9 @@ def run_ui(
         "yes",
     }
     changed = git_changed_names(root, git_base_ref(base))
+    original = list(changed or [])
+    if changed:
+        changed = expand_downstream(root, config, changed)
     selection = select_specs(root, config, project, changed, force_all=force_all)
     _write_selection(root, project.framework, selection)
 
@@ -64,6 +68,11 @@ def run_ui(
         return skip_result("ui", reason)
 
     notes = list(selection.notes)
+    if changed and original and len(changed) > len(set(original)):
+        notes.insert(
+            0,
+            f"impact: {len(changed) - len(set(original))} downstream file(s) added to UI selection",
+        )
     if selection.run_all:
         notes.insert(0, f"running all specs: {selection.run_all_reason}")
     for spec in selection.specs:

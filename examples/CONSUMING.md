@@ -2,8 +2,8 @@
 
 After this repo lives on GitHub as `YOUR_ORG/quality-gates`, pick one path.
 
-Heavy gates default to **developer machines**. GitHub Actions only does version
-+ PR review unless you set `ci.mode` to `github` or `both`.
+Heavy gates default to **developer machines**. GitHub Actions runs impact +
+version + PR review unless you set `ci.mode` to `github` or `both`.
 
 ## Path A — CLI (recommended)
 
@@ -38,6 +38,7 @@ Detect → Format → … UI. With `ci.mode = "local"` those heavy jobs stay ski
 pre-commit install --hook-type pre-commit --hook-type pre-push
 ```
 
-Commit: format, lint, version. Push: DRY, security, compile, selective UI
-(compile is refused until security is clean; UI only runs specs that cover
-the diff). Playwright/Cypress stay off GitHub unless `[quality.ui] on_github = true`.
+Commit: format, lint, version. Push: DRY, security, compile, impact, selective UI
+(compile is refused until security is clean; impact requires downstream callers
+to be updated or tested; UI only runs specs that cover the diff). Playwright/Cypress
+stay off GitHub unless `[quality.ui] on_github = true`.

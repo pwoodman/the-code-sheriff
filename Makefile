@@ -1,4 +1,4 @@
-.PHONY: doctor detect format lint dry security compile ui version review check test install hooks
+.PHONY: doctor detect format lint dry security compile impact ui version review check test install hooks
 
 install:
 	python3 -m pip install -e ".[dev]"
@@ -23,6 +23,9 @@ security:
 
 compile:
 	quality compile
+
+impact:
+	quality impact
 
 ui:
 	quality ui

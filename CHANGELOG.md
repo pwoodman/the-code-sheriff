@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.0
+
+- Impact gate: upstream (imports) and downstream (importers) analysis on the
+  git diff. Fails when a downstream consumer was not updated and no test covers
+  the change. Broken in-repo imports fail. Report: `.quality-reports/impact.json`.
+- UI selection now expands the diff with downstream importers, so a util change
+  still runs specs that visit pages that consume it.
+- Cheap GitHub Actions path includes `impact` (no browsers).
+
 ## 1.2.1
 
 - UI selection is **touch-scoped**: a spec runs only if the diff hits the spec,
