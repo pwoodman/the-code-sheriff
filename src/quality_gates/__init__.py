@@ -1,8 +1,8 @@
-"""Multi-language quality gates: format, lint, DRY, security, and AI review."""
+"""Multi-language quality gates: format, lint, DRY, security, compile, UI, and AI review."""
 
 from __future__ import annotations
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 ALL_LANGUAGES = (
     "csharp",
@@ -16,4 +16,4 @@ ALL_LANGUAGES = (
     "sql",
 )
 
-GATES = ("format", "lint", "dry", "security", "compile", "version", "review")
+GATES = ("format", "lint", "dry", "security", "compile", "ui", "version", "review")

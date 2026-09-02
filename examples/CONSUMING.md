@@ -38,5 +38,6 @@ Detect → Format → … UI. With `ci.mode = "local"` those heavy jobs stay ski
 pre-commit install --hook-type pre-commit --hook-type pre-push
 ```
 
-Commit: format, lint, version. Push: DRY, security, compile (compile is refused
-until security is clean).
+Commit: format, lint, version. Push: DRY, security, compile, selective UI
+(compile is refused until security is clean; UI only runs specs that cover
+the diff). Playwright/Cypress stay off GitHub unless `[quality.ui] on_github = true`.

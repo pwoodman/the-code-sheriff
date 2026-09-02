@@ -5,7 +5,7 @@ import os
 from quality_gates import GATES
 from quality_gates.config import QualityConfig
 
-HEAVY_GATES = ("format", "lint", "dry", "security", "compile")
+HEAVY_GATES = ("format", "lint", "dry", "security", "compile", "ui")
 CHEAP_GITHUB_GATES = ("version", "review")
 
 
@@ -21,6 +21,17 @@ def github_runs_full_suite(config: QualityConfig) -> bool:
     if force_full_suite():
         return True
     return config.ci_mode in {"github", "both"}
+
+
+def ui_allowed_on_github(config: QualityConfig) -> bool:
+    """Browser UI tests stay off Actions unless explicitly opted in.
+
+    Installing Playwright/Cypress browsers on GitHub is the expensive part;
+    local-first still applies even when ci.mode is github/both.
+    """
+    if os.environ.get("QUALITY_UI_ON_GITHUB", "").lower() in {"1", "true", "yes"}:
+        return True
+    return bool(config.ui_on_github)
 
 
 def select_gates(

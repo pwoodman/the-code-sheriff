@@ -44,3 +44,11 @@ def test_compile_allowed_when_security_passed() -> None:
     passed = GateResult(name="security", status="pass")
     ok, _reason = security_cleared(passed)
     assert ok is True
+
+
+def test_ui_stays_in_full_local_plan(monkeypatch) -> None:
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    config = QualityConfig()
+    gates = select_gates(config)
+    assert gates.index("compile") < gates.index("ui")
+    assert "ui" in gates

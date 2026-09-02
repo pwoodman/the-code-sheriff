@@ -38,6 +38,22 @@ def _as_list(value: Any, fallback: list[str]) -> list[str]:
     return list(fallback)
 
 
+def _as_dict(value: Any, fallback: dict[str, str]) -> dict[str, str]:
+    if not isinstance(value, dict) or not value:
+        return dict(fallback)
+    return {str(key): str(val) for key, val in value.items()}
+
+
+def _as_bool(value: Any, fallback: bool = False) -> bool:
+    if value is None:
+        return fallback
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
 @dataclass
 class QualityConfig:
     languages: list[str] = field(default_factory=lambda: ["auto"])
@@ -48,6 +64,7 @@ class QualityConfig:
             "dry",
             "security",
             "compile",
+            "ui",
             "version",
         ]
     )
@@ -77,6 +94,12 @@ class QualityConfig:
     review_provider: str = "auto"
     review_model: str = ""
     max_diff_bytes: int = 120_000
+    ui_select: str = "changed"
+    ui_framework: str = "auto"
+    ui_spec_dirs: list[str] = field(default_factory=list)
+    ui_path_aliases: dict[str, str] = field(default_factory=lambda: {"@/": "src/"})
+    ui_coverage_map: str = ".quality-reports/ui-coverage.json"
+    ui_on_github: bool = False
     raw: dict[str, Any] = field(default_factory=dict)
 
     def language_filter(self) -> list[str] | None:
@@ -118,10 +141,21 @@ def load_config(project: Path) -> QualityConfig:
     ci = _section(data, "quality", "ci")
     compile_cfg = _section(data, "quality", "compile")
     version_cfg = _section(data, "quality", "version")
+    ui_cfg = _section(data, "quality", "ui")
 
     auto_install = quality.get("auto_install", False)
     if isinstance(auto_install, str):
         auto_install = auto_install.lower() in {"1", "true", "yes"}
+
+    ui_select = str(ui_cfg.get("select", "changed")).lower()
+    if ui_select not in {"changed", "all"}:
+        ui_select = "changed"
+    ui_framework = str(ui_cfg.get("framework", "auto")).lower()
+    if ui_framework not in {"auto", "playwright", "cypress"}:
+        ui_framework = "auto"
+    aliases = ui_cfg.get("path_aliases")
+    if not isinstance(aliases, dict):
+        aliases = _section(data, "quality", "ui", "path_aliases")
 
     ci_mode = str(ci.get("mode", "local")).lower()
     if ci_mode not in {"local", "github", "both"}:
@@ -135,7 +169,7 @@ def load_config(project: Path) -> QualityConfig:
         languages=_as_list(quality.get("languages"), ["auto"]),
         fail_on=_as_list(
             quality.get("fail_on"),
-            ["format", "lint", "dry", "security", "compile", "version"],
+            ["format", "lint", "dry", "security", "compile", "ui", "version"],
         ),
         ai_review=str(quality.get("ai_review", "pr-only")),
         auto_install=bool(auto_install),
@@ -153,6 +187,14 @@ def load_config(project: Path) -> QualityConfig:
         review_provider=str(review.get("provider", "auto")),
         review_model=str(review.get("model", "")),
         max_diff_bytes=int(review.get("max_diff_bytes", 120_000)),
+        ui_select=ui_select,
+        ui_framework=ui_framework,
+        ui_spec_dirs=_as_list(ui_cfg.get("spec_dirs"), []),
+        ui_path_aliases=_as_dict(aliases, {"@/": "src/"}),
+        ui_coverage_map=str(
+            ui_cfg.get("coverage_map", ".quality-reports/ui-coverage.json")
+        ),
+        ui_on_github=_as_bool(ui_cfg.get("on_github"), False),
         raw=data,
     )
 

@@ -17,6 +17,7 @@ from quality_gates.gates.format import run_format
 from quality_gates.gates.lint import run_lint
 from quality_gates.gates.review import run_review
 from quality_gates.gates.security import run_security
+from quality_gates.gates.ui import run_ui
 from quality_gates.gates.version import apply_bump, run_version
 from quality_gates.installers import (
     ensure_checkstyle,
@@ -87,7 +88,7 @@ jobs:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="quality",
-        description="Multi-language format, lint, DRY, security, compile, version, and AI review gates.",
+        description="Multi-language format, lint, DRY, security, compile, UI, version, and AI review gates.",
     )
     parser.add_argument(
         "--version", action="version", version=f"quality-gates {__version__}"
@@ -141,6 +142,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     review.add_argument(
         "--post", action="store_true", help="post the review on the GitHub PR"
     )
+
+    ui_p = sub.add_parser(
+        "ui",
+        help="selective Playwright/Cypress tests for files changed vs --base",
+    )
+    ui_p.add_argument(
+        "--list",
+        action="store_true",
+        help="print which specs would run, without launching a browser",
+    )
+    ui_p.add_argument(
+        "--all",
+        action="store_true",
+        help="run every spec instead of selecting from the diff",
+    )
+    ui_p.add_argument("--base", default=None, help="git ref to diff against")
 
     run_p = sub.add_parser("run", help="run selected gates in order")
     run_p.add_argument("--only", default=None, help="comma-separated gates")
@@ -220,6 +237,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "review":
         result = run_review(root, config, languages, base=args.base, post=args.post)
         return _emit([result], root, config, args.json, ["review"])
+    if args.command == "ui":
+        result = run_ui(
+            root,
+            config,
+            base=args.base,
+            force_all=args.all,
+            list_only=args.list,
+        )
+        return _emit([result], root, config, args.json, ["ui"])
     if args.command == "run":
         gates = select_gates(
             config,
@@ -259,6 +285,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 item = run_compile(root, config, languages, security=security)
             elif gate == "version":
                 item = run_version(root, config, base=args.base)
+            elif gate == "ui":
+                compile_prior = next(
+                    (row for row in prior if row.name == "compile"), None
+                )
+                item = run_ui(
+                    root,
+                    config,
+                    base=args.base,
+                    compile_result=compile_prior,
+                )
             elif gate == "review":
                 post = args.post_review or (
                     is_pr_event() and config.ai_review != "never"
@@ -360,6 +396,8 @@ def _doctor(root: Path, config: QualityConfig, *, install: bool, as_json: bool) 
         ("gitleaks", "gitleaks", ("version",)),
         ("osv-scanner", "osv-scanner", ("--version",)),
         ("semgrep", "semgrep", ("--version",)),
+        ("playwright", "playwright", ("--version",)),
+        ("cypress", "cypress", ("--version",)),
     ]
     for label, command, argv in checks:
         path = which(command, project=root, prefer_project=True)
@@ -437,7 +475,7 @@ def _init(root: Path, org: str) -> int:
 def _default_toml() -> str:
     return """[quality]
 languages = ["auto"]
-fail_on = ["format", "lint", "dry", "security", "compile", "version"]
+fail_on = ["format", "lint", "dry", "security", "compile", "ui", "version"]
 ai_review = "pr-only"
 
 [quality.ci]
@@ -446,6 +484,10 @@ github_gates = ["version", "review"]
 
 [quality.compile]
 require_security = true
+
+[quality.ui]
+select = "changed"
+on_github = false
 
 [quality.version]
 require_changelog = "if-present"

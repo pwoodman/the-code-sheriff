@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0
+
+- UI gate: selective Playwright/Cypress. Only specs that cover added or changed
+  files run (spec itself, imports, route `goto`/`visit`, name/path, optional
+  coverage map). Shared config changes run the full suite; unrelated diffs skip.
+- UI stays **off GitHub Actions** by default even when `ci.mode` is `github` /
+  `both` — browser installs are the expensive part. Opt in with
+  `[quality.ui] on_github = true` or `QUALITY_UI_ON_GITHUB=1`.
+- Pre-push now includes `ui` after compile. Skip ≠ fail when no UI project exists.
+
 ## 1.1.0
 
 - Version gate: semver consistency, required bumps on source changes, `quality bump`.

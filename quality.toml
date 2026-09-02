@@ -7,7 +7,7 @@ languages = ["auto"]
 
 # Gates that fail CI when they report errors. review never fails the
 # build unless you add it here — it posts findings as a PR comment.
-fail_on = ["format", "lint", "dry", "security", "compile", "version"]
+fail_on = ["format", "lint", "dry", "security", "compile", "ui", "version"]
 
 # pr-only | always | never
 ai_review = "pr-only"
@@ -16,9 +16,10 @@ ai_review = "pr-only"
 # and Java tooling into ~/.cache/quality-gates on first use.
 auto_install = false
 
-# local  = heavy gates (format/lint/DRY/security/compile) run on developer
+# local  = heavy gates (format/lint/DRY/security/compile/ui) run on developer
 #          machines; GitHub Actions only runs cheap jobs (version + PR review).
-# github = full suite on Actions (costs minutes and runners).
+# github = full suite on Actions (costs minutes and runners). UI still off
+#          unless [quality.ui] on_github = true.
 # both   = local hooks AND the full Actions suite.
 [quality.ci]
 mode = "local"
@@ -31,6 +32,15 @@ require_security = true
 [quality.version]
 # if-present | always | never
 require_changelog = "if-present"
+
+# Playwright/Cypress: run only specs that cover the git diff. This toolkit
+# repo has no UI app, so the gate skips. Consumers with e2e tests get the
+# selection for free. Browser installs stay off GitHub unless on_github=true.
+[quality.ui]
+select = "changed"                 # changed | all
+framework = "auto"                 # auto | playwright | cypress
+on_github = false
+coverage_map = ".quality-reports/ui-coverage.json"
 
 [quality.detect]
 exclude = [
