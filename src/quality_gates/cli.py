@@ -7,14 +7,17 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from quality_gates import GATES, __version__
+from quality_gates import __version__
+from quality_gates.ci_plan import select_gates
 from quality_gates.config import QualityConfig, is_pr_event, load_config
 from quality_gates.detect import detect_languages, git_changed_files
+from quality_gates.gates.compile import run_compile
 from quality_gates.gates.dry import run_dry
 from quality_gates.gates.format import run_format
 from quality_gates.gates.lint import run_lint
 from quality_gates.gates.review import run_review
 from quality_gates.gates.security import run_security
+from quality_gates.gates.version import apply_bump, run_version
 from quality_gates.installers import (
     ensure_checkstyle,
     ensure_gitleaks,
@@ -76,7 +79,7 @@ jobs:
         run: pip install "git+https://github.com/REPLACE_ORG/quality-gates.git@v1"
       - name: Run gates
         env:
-          QUALITY_GATES_AUTO_INSTALL: "1"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: quality run
 """
 
@@ -84,7 +87,7 @@ jobs:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="quality",
-        description="Multi-language format, lint, DRY, security, and AI review gates.",
+        description="Multi-language format, lint, DRY, security, compile, version, and AI review gates.",
     )
     parser.add_argument(
         "--version", action="version", version=f"quality-gates {__version__}"
@@ -113,6 +116,25 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     sub.add_parser("dry", help="copy-paste / duplication scan")
     sub.add_parser("security", help="secrets, dependency CVEs, SAST")
+    compile_p = sub.add_parser(
+        "compile",
+        help="build compiled languages (only after a clean security gate)",
+    )
+    compile_p.add_argument("--language", action="append", dest="languages")
+    compile_p.add_argument(
+        "--force",
+        action="store_true",
+        help="compile even if security has not passed (not recommended)",
+    )
+    version_p = sub.add_parser("version", help="semver consistency and required bumps")
+    version_p.add_argument("--base", default=None)
+
+    bump = sub.add_parser("bump", help="write a semver bump into version files")
+    bump.add_argument(
+        "part",
+        choices=["auto", "major", "minor", "patch"],
+        help="auto uses conventional commits since the base ref",
+    )
 
     review = sub.add_parser("review", help="AI / heuristic code review")
     review.add_argument("--base", default=None, help="git ref to diff against")
@@ -129,6 +151,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--changed", action="store_true", help="only files changed vs --base"
     )
     run_p.add_argument("--language", action="append", dest="languages")
+    run_p.add_argument(
+        "--full",
+        action="store_true",
+        help="on GitHub Actions, run the heavy suite even when ci.mode=local",
+    )
 
     init = sub.add_parser("init", help="write quality.toml and a starter workflow")
     init.add_argument(
@@ -148,6 +175,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         info = detect_languages(root, config)
         return _print_detect(info, args.json)
 
+    if args.command == "bump":
+        try:
+            new, written = apply_bump(root, config, args.part)
+        except ValueError as exc:
+            print(f"bump failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"bumped to {new}")
+        for path in written:
+            print(f"  {path.relative_to(root)}")
+        return 0
+
     languages = _resolve_languages(root, config, getattr(args, "languages", None), None)
     if args.command == "format":
         result = run_format(root, config, languages, check=not args.write)
@@ -161,17 +199,40 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "security":
         result = run_security(root, config, languages)
         return _emit([result], root, config, args.json, ["security"])
+    if args.command == "compile":
+        security = None
+        if not args.force and config.compile_require_security:
+            security = run_security(root, config, languages)
+            results = [security]
+            compile_result = run_compile(root, config, languages, security=security)
+            results.append(compile_result)
+            return _emit(results, root, config, args.json, ["security", "compile"])
+        from quality_gates.models import GateResult as GR
+
+        fake = GR(
+            name="security", status="pass", notes=["--force or require_security=false"]
+        )
+        result = run_compile(root, config, languages, security=fake)
+        return _emit([result], root, config, args.json, ["compile"])
+    if args.command == "version":
+        result = run_version(root, config, base=args.base)
+        return _emit([result], root, config, args.json, ["version"])
     if args.command == "review":
         result = run_review(root, config, languages, base=args.base, post=args.post)
         return _emit([result], root, config, args.json, ["review"])
     if args.command == "run":
-        only = _csv(args.only) or list(GATES)
-        skip = set(_csv(args.skip))
-        gates = [gate for gate in only if gate not in skip]
+        gates = select_gates(
+            config,
+            only=_csv(args.only) or None,
+            skip=_csv(args.skip),
+            full=args.full,
+        )
+        if not args.only and not args.full:
+            print(f"ci.mode={config.ci_mode} · gates: {', '.join(gates)}")
         changed = git_changed_files(root, args.base) if args.changed else None
         languages = _resolve_languages(root, config, args.languages, changed)
-        results: list[GateResult] = []
-        prior: list[GateResult] = []
+        results = []
+        prior = []
         for gate in gates:
             if gate == "format":
                 item = run_format(root, config, languages, check=True)
@@ -181,6 +242,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 item = run_dry(root, config, languages)
             elif gate == "security":
                 item = run_security(root, config, languages)
+            elif gate == "compile":
+                security = next((row for row in prior if row.name == "security"), None)
+                if (
+                    security is None
+                    and config.compile_require_security
+                    and "security" not in gates
+                ):
+                    security = run_security(root, config, languages)
+                    results.append(security)
+                    prior.append(security)
+                if not config.compile_require_security and security is None:
+                    from quality_gates.models import GateResult as GR
+
+                    security = GR(name="security", status="pass")
+                item = run_compile(root, config, languages, security=security)
+            elif gate == "version":
+                item = run_version(root, config, base=args.base)
             elif gate == "review":
                 post = args.post_review or (
                     is_pr_event() and config.ai_review != "never"
@@ -359,8 +437,18 @@ def _init(root: Path, org: str) -> int:
 def _default_toml() -> str:
     return """[quality]
 languages = ["auto"]
-fail_on = ["format", "lint", "dry", "security"]
+fail_on = ["format", "lint", "dry", "security", "compile", "version"]
 ai_review = "pr-only"
+
+[quality.ci]
+mode = "local"
+github_gates = ["version", "review"]
+
+[quality.compile]
+require_security = true
+
+[quality.version]
+require_changelog = "if-present"
 """
 
 

@@ -24,9 +24,15 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-commit]
-      - id: quality-security
-        name: quality security
-        entry: python -m quality_gates security
+      - id: quality-version
+        name: quality version
+        entry: python -m quality_gates version
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: quality-push
+        name: quality dry, security, compile
+        entry: python -m quality_gates run --only dry,security,compile
         language: system
         pass_filenames: false
         stages: [pre-push]

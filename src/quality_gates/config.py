@@ -42,10 +42,21 @@ def _as_list(value: Any, fallback: list[str]) -> list[str]:
 class QualityConfig:
     languages: list[str] = field(default_factory=lambda: ["auto"])
     fail_on: list[str] = field(
-        default_factory=lambda: ["format", "lint", "dry", "security"]
+        default_factory=lambda: [
+            "format",
+            "lint",
+            "dry",
+            "security",
+            "compile",
+            "version",
+        ]
     )
     ai_review: str = "pr-only"
     auto_install: bool = False
+    ci_mode: str = "local"
+    ci_github_gates: list[str] = field(default_factory=lambda: ["version", "review"])
+    require_changelog: str = "if-present"
+    compile_require_security: bool = True
     detect_exclude: list[str] = field(default_factory=lambda: list(DEFAULT_EXCLUDE))
     prefer_project_tools: bool = True
     dry_min_lines: int = 6
@@ -104,16 +115,34 @@ def load_config(project: Path) -> QualityConfig:
     dry = _section(data, "quality", "dry")
     sql = _section(data, "quality", "sql")
     review = _section(data, "quality", "review")
+    ci = _section(data, "quality", "ci")
+    compile_cfg = _section(data, "quality", "compile")
+    version_cfg = _section(data, "quality", "version")
 
     auto_install = quality.get("auto_install", False)
     if isinstance(auto_install, str):
         auto_install = auto_install.lower() in {"1", "true", "yes"}
 
+    ci_mode = str(ci.get("mode", "local")).lower()
+    if ci_mode not in {"local", "github", "both"}:
+        ci_mode = "local"
+
+    changelog = str(version_cfg.get("require_changelog", "if-present"))
+    if changelog not in {"if-present", "always", "never"}:
+        changelog = "if-present"
+
     return QualityConfig(
         languages=_as_list(quality.get("languages"), ["auto"]),
-        fail_on=_as_list(quality.get("fail_on"), ["format", "lint", "dry", "security"]),
+        fail_on=_as_list(
+            quality.get("fail_on"),
+            ["format", "lint", "dry", "security", "compile", "version"],
+        ),
         ai_review=str(quality.get("ai_review", "pr-only")),
         auto_install=bool(auto_install),
+        ci_mode=ci_mode,
+        ci_github_gates=_as_list(ci.get("github_gates"), ["version", "review"]),
+        require_changelog=changelog,
+        compile_require_security=bool(compile_cfg.get("require_security", True)),
         detect_exclude=_as_list(detect.get("exclude"), DEFAULT_EXCLUDE),
         prefer_project_tools=bool(fmt.get("prefer_project_tools", True)),
         dry_min_lines=int(dry.get("min_lines", 6)),

@@ -1,12 +1,19 @@
 name: Quality gates (CLI)
 
-# Drop-in workflow for a consuming application repo. Replace YOUR_ORG.
+# Drop-in workflow. Replace YOUR_ORG.
+# With quality.toml ci.mode=local (the default), this job only runs version +
+# PR review. Heavy format/lint/DRY/security/compile stay on developer machines.
 
 on:
   pull_request:
   push:
     branches: [main, master]
   workflow_dispatch:
+    inputs:
+      full_suite:
+        description: Run heavy gates on GitHub
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -24,13 +31,10 @@ jobs:
           python-version: "3.12"
       - name: Install quality-gates
         run: pip install "git+https://github.com/YOUR_ORG/quality-gates.git@v1"
-      - name: Toolchains
-        env:
-          QUALITY_GATES_AUTO_INSTALL: "1"
-        run: quality doctor --install
-      - name: Run format, lint, DRY, security, review
+      - name: Run gates (cheap unless full_suite / ci.mode=github|both)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: quality run
+          QUALITY_CI_FULL: ${{ github.event.inputs.full_suite == 'true' && '1' || '' }}
+        run: quality run --base "origin/${{ github.base_ref || github.event.repository.default_branch }}"

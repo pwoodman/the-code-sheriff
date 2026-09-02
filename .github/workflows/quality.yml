@@ -1,17 +1,16 @@
-# Multi-step quality gates. Copy this file (and .github/actions/) into a
-# consuming repo, or call it from a clone of this toolkit:
-#
-#   jobs:
-#     quality:
-#       uses: YOUR_ORG/quality-gates/.github/workflows/quality.yml@v1
-#
-# Reusable-workflow callers must vendor .github/actions/ from this repo
-# (or use examples/consumer-cli.yml, which only needs pip).
+# Multi-step quality gates. Default ci.mode=local keeps GitHub Actions cheap:
+# version + PR review only. Set [quality.ci] mode = "github" or "both", or
+# dispatch this workflow with full_suite=true, to run format/lint/DRY/security/compile here.
 
 name: Quality gates
 
 on:
   workflow_call:
+    inputs:
+      full_suite:
+        description: Run heavy gates on Actions even when ci.mode=local
+        type: boolean
+        default: false
     secrets:
       OPENAI_API_KEY:
         required: false
@@ -21,6 +20,11 @@ on:
   push:
     branches: [main, master]
   workflow_dispatch:
+    inputs:
+      full_suite:
+        description: Run the heavy suite on GitHub (ignores ci.mode=local)
+        type: boolean
+        default: false
 
 concurrency:
   group: quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
@@ -31,8 +35,64 @@ permissions:
   pull-requests: write
 
 jobs:
+  plan:
+    name: 0 · Plan
+    runs-on: ubuntu-latest
+    outputs:
+      full: ${{ steps.plan.outputs.full }}
+      mode: ${{ steps.plan.outputs.mode }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bootstrap
+        with:
+          install-binaries: "false"
+      - name: Decide local vs full
+        id: plan
+        env:
+          QUALITY_CI_FULL: ${{ github.event.inputs.full_suite == 'true' && '1' || '' }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          from quality_gates.ci_plan import github_runs_full_suite
+          from quality_gates.config import load_config
+          from quality_gates.paths import project_root
+          config = load_config(project_root())
+          full = github_runs_full_suite(config)
+          Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8").write(
+              f"full={'true' if full else 'false'}\nmode={config.ci_mode}\n"
+          )
+          print(f"ci.mode={config.ci_mode} full_on_github={full}")
+          PY
+
+  local:
+    name: Local-mode cheap gates
+    needs: plan
+    if: needs.plan.outputs.full != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bootstrap
+        with:
+          install-binaries: "false"
+      - name: Version + review (heavy gates run on developer machines)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "ci.mode=${{ needs.plan.outputs.mode }} — format/lint/DRY/security/compile run locally via pre-commit/pre-push."
+          echo "Re-run this workflow with full_suite, or set [quality.ci] mode = \"both\", to run them on GitHub."
+          quality run --base "origin/${{ github.base_ref || github.event.repository.default_branch }}"
+
   detect:
     name: 1 · Detect languages
+    needs: plan
+    if: needs.plan.outputs.full == 'true'
     runs-on: ubuntu-latest
     outputs:
       languages: ${{ steps.detect.outputs.languages }}
@@ -67,8 +127,8 @@ jobs:
 
   format:
     name: 2 · Format (${{ matrix.language }})
-    needs: detect
-    if: needs.detect.outputs.has_languages == 'true'
+    needs: [plan, detect]
+    if: needs.plan.outputs.full == 'true' && needs.detect.outputs.has_languages == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -91,8 +151,8 @@ jobs:
 
   lint:
     name: 3 · Lint (${{ matrix.language }})
-    needs: detect
-    if: needs.detect.outputs.has_languages == 'true'
+    needs: [plan, detect]
+    if: needs.plan.outputs.full == 'true' && needs.detect.outputs.has_languages == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -115,7 +175,8 @@ jobs:
 
   dry:
     name: 4 · DRY (copy-paste)
-    needs: detect
+    needs: [plan, detect]
+    if: needs.plan.outputs.full == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -132,7 +193,8 @@ jobs:
 
   security:
     name: 5 · Security
-    needs: detect
+    needs: [plan, detect]
+    if: needs.plan.outputs.full == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -144,10 +206,61 @@ jobs:
           QUALITY_GATES_AUTO_INSTALL: "1"
         run: quality security
 
+  compile:
+    name: 6 · Compile (after security)
+    needs: [plan, detect, security]
+    if: needs.plan.outputs.full == 'true' && needs.security.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bootstrap
+      - name: Set up detected compiled languages
+        uses: ./.github/actions/setup-language
+        if: contains(needs.detect.outputs.languages, 'go')
+        with:
+          language: go
+      - uses: ./.github/actions/setup-language
+        if: contains(needs.detect.outputs.languages, 'rust')
+        with:
+          language: rust
+      - uses: ./.github/actions/setup-language
+        if: contains(needs.detect.outputs.languages, 'java')
+        with:
+          language: java
+      - uses: ./.github/actions/setup-language
+        if: contains(needs.detect.outputs.languages, 'csharp')
+        with:
+          language: csharp
+      - uses: ./.github/actions/setup-language
+        if: contains(needs.detect.outputs.languages, 'typescript') || contains(needs.detect.outputs.languages, 'javascript')
+        with:
+          language: javascript
+      - name: Compile only if security still clears
+        env:
+          QUALITY_GATES_AUTO_INSTALL: "1"
+        run: quality run --only compile
+
+  version:
+    name: 7 · Version
+    needs: [plan, detect]
+    if: needs.plan.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bootstrap
+        with:
+          install-binaries: "false"
+      - name: Semver bump check
+        run: quality version --base "origin/${{ github.base_ref || github.event.repository.default_branch }}"
+
   review:
-    name: 6 · AI code review
-    needs: [detect, lint, dry, security]
-    if: always() && github.event_name == 'pull_request'
+    name: 8 · AI code review
+    needs: [plan, detect, lint, dry, security]
+    if: always() && needs.plan.outputs.full == 'true' && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -167,27 +280,36 @@ jobs:
 
   summary:
     name: Quality summary
-    needs: [detect, format, lint, dry, security, review]
+    needs: [plan, local, detect, format, lint, dry, security, compile, version, review]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Require format, lint, DRY, and security
+      - name: Require the jobs that ran for this ci.mode
         run: |
           python3 - <<'PY'
           import sys
+          full = "${{ needs.plan.outputs.full }}" == "true"
           results = {
+            "plan": "${{ needs.plan.result }}",
+            "local": "${{ needs.local.result }}",
             "detect": "${{ needs.detect.result }}",
             "format": "${{ needs.format.result }}",
             "lint": "${{ needs.lint.result }}",
             "dry": "${{ needs.dry.result }}",
             "security": "${{ needs.security.result }}",
+            "compile": "${{ needs.compile.result }}",
+            "version": "${{ needs.version.result }}",
             "review": "${{ needs.review.result }}",
           }
+          print("full=", full)
           print("\n".join(f"{k}={v}" for k, v in results.items()))
-          blocking = ["detect", "format", "lint", "dry", "security"]
+          if full:
+              blocking = ["plan", "detect", "format", "lint", "dry", "security", "compile", "version"]
+          else:
+              blocking = ["plan", "local"]
           bad = [name for name in blocking if results[name] not in {"success", "skipped"}]
           if bad:
               print("failed gates:", ", ".join(bad))
               sys.exit(1)
-          print("all required gates passed")
+          print("required gates passed")
           PY

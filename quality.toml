@@ -7,7 +7,7 @@ languages = ["auto"]
 
 # Gates that fail CI when they report errors. review never fails the
 # build unless you add it here — it posts findings as a PR comment.
-fail_on = ["format", "lint", "dry", "security"]
+fail_on = ["format", "lint", "dry", "security", "compile", "version"]
 
 # pr-only | always | never
 ai_review = "pr-only"
@@ -15,6 +15,22 @@ ai_review = "pr-only"
 # When true (the default in GitHub Actions), download pinned security
 # and Java tooling into ~/.cache/quality-gates on first use.
 auto_install = false
+
+# local  = heavy gates (format/lint/DRY/security/compile) run on developer
+#          machines; GitHub Actions only runs cheap jobs (version + PR review).
+# github = full suite on Actions (costs minutes and runners).
+# both   = local hooks AND the full Actions suite.
+[quality.ci]
+mode = "local"
+github_gates = ["version", "review"]
+
+[quality.compile]
+# Never compile if secrets/CVEs/SAST errors are present, or if scanners skipped.
+require_security = true
+
+[quality.version]
+# if-present | always | never
+require_changelog = "if-present"
 
 [quality.detect]
 exclude = [

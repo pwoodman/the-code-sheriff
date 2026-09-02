@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 ALL_LANGUAGES = (
     "csharp",
@@ -16,4 +16,4 @@ ALL_LANGUAGES = (
     "sql",
 )
 
-GATES = ("format", "lint", "dry", "security", "review")
+GATES = ("format", "lint", "dry", "security", "compile", "version", "review")

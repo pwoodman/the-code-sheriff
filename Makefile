@@ -1,4 +1,4 @@
-.PHONY: doctor detect format lint dry security review check test install hooks
+.PHONY: doctor detect format lint dry security compile version review check test install hooks
 
 install:
 	python3 -m pip install -e ".[dev]"
@@ -20,6 +20,12 @@ dry:
 
 security:
 	quality security
+
+compile:
+	quality compile
+
+version:
+	quality version
 
 review:
 	quality review --base origin/main || quality review
