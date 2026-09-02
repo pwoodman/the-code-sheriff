@@ -35,6 +35,7 @@ from quality_gates.installers import (
 )
 from quality_gates.models import GateResult
 from quality_gates.paths import project_root
+from quality_gates.policy import apply_policy, maybe_comment_pr, write_baseline
 from quality_gates.report import emit_annotations, render_console, write_reports
 from quality_gates.tools import tool_version, which
 
@@ -100,6 +101,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--root", type=Path, default=None, help="project root (default: cwd / git root)"
     )
     parser.add_argument("--json", action="store_true", help="machine-readable output")
+    parser.add_argument(
+        "--policy",
+        choices=["observe", "adopt", "enforce"],
+        default=None,
+        help="observe = report only; adopt = ratchet vs baseline; enforce = fail_on (default: quality.toml)",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("detect", help="list languages and toolchains in the project")
@@ -196,14 +203,35 @@ def main(argv: Sequence[str] | None = None) -> int:
     init.add_argument(
         "--org", default="REPLACE_ORG", help="GitHub org/user that hosts quality-gates"
     )
+    init.add_argument(
+        "--policy",
+        dest="init_policy",
+        choices=["observe", "adopt", "enforce"],
+        default="adopt",
+        help="PR-blocking policy for the new repo (default adopt)",
+    )
+
+    baseline_p = sub.add_parser(
+        "baseline",
+        help="write .quality-baseline.json from the last run (grandfather current findings)",
+    )
+    baseline_p.add_argument(
+        "--ratchet",
+        action="store_true",
+        help="merge with the existing baseline; raise coverage floor if it improved",
+    )
 
     args = parser.parse_args(argv)
     root = project_root(args.root)
     os.chdir(root)
     config = load_config(root)
+    if args.policy:
+        config.policy = args.policy
 
     if args.command == "init":
-        return _init(root, args.org)
+        return _init(root, args.org, policy=args.init_policy)
+    if args.command == "baseline":
+        return _baseline(root, config, ratchet=args.ratchet)
     if args.command == "doctor":
         return _doctor(root, config, install=args.install, as_json=args.json)
     if args.command == "detect":
@@ -384,13 +412,18 @@ def _emit(
     as_json: bool,
     fail_on: list[str],
 ) -> int:
+    results, policy = apply_policy(results, root, config)
+    maybe_comment_pr(results, root, config, policy)
     emit_annotations(results)
     write_reports(results, root / ".quality-reports")
-    payload = {"results": [item.to_dict() for item in results]}
+    payload = {
+        "policy": policy,
+        "results": [item.to_dict() for item in results],
+    }
     if as_json:
         print(json.dumps(payload, indent=2))
     else:
-        print("Quality gates")
+        print(f"Quality gates · policy={policy}")
         print(render_console(results))
         print("\nWrote .quality-reports/quality-report.md")
     failed = [
@@ -476,20 +509,11 @@ def _install_all() -> None:
             print(f"warning: {loader.__name__} failed: {exc}", file=sys.stderr)
 
 
-def _init(root: Path, org: str) -> int:
+def _init(root: Path, org: str, *, policy: str = "adopt") -> int:
     config_path = root / "quality.toml"
     if not config_path.exists():
-        config_path.write_text(
-            Path(__file__)
-            .resolve()
-            .parents[2]
-            .joinpath("quality.toml")
-            .read_text(encoding="utf-8")
-            if Path(__file__).resolve().parents[2].joinpath("quality.toml").is_file()
-            else _default_toml(),
-            encoding="utf-8",
-        )
-        print(f"wrote {config_path}")
+        config_path.write_text(_consumer_toml(policy), encoding="utf-8")
+        print(f"wrote {config_path} (policy={policy})")
     else:
         print(f"kept existing {config_path}")
     workflow_dir = root / ".github" / "workflows"
@@ -503,12 +527,35 @@ def _init(root: Path, org: str) -> int:
         local.write_text(INIT_LOCAL.replace("REPLACE_ORG", org), encoding="utf-8")
         print(f"wrote {local} (CLI fallback)")
     print("Edit REPLACE_ORG if you used the default, then commit.")
+    print(
+        "Next: quality run --skip review && quality baseline && git add .quality-baseline.json"
+    )
     return 0
 
 
-def _default_toml() -> str:
-    return """[quality]
+def _baseline(root: Path, config: QualityConfig, *, ratchet: bool) -> int:
+    report = root / ".quality-reports" / "quality-report.json"
+    if not report.is_file():
+        print(
+            "no .quality-reports/quality-report.json — running coverage + audit first"
+        )
+        results = [run_coverage(root, config), run_audit(root, config)]
+        write_reports(results, root / ".quality-reports")
+    path = write_baseline(root, config, ratchet=ratchet)
+    print(f"wrote {path.relative_to(root)}" + (" (ratchet)" if ratchet else ""))
+    print("Commit this file so PRs fail only on new issues, not the existing backlog.")
+    return 0
+
+
+def _consumer_toml(policy: str) -> str:
+    return f"""[quality]
 languages = ["auto"]
+# observe  = never block PRs (still comments + warnings)
+# adopt    = fail only on NEW issues vs .quality-baseline.json (recommended for old repos)
+# enforce  = fail_on list blocks the job
+policy = "{policy}"
+baseline = ".quality-baseline.json"
+comment_on_pr = true
 fail_on = ["format", "lint", "dry", "security", "compile", "impact", "coverage", "audit", "ui", "version"]
 ai_review = "pr-only"
 
@@ -539,6 +586,10 @@ require_downstream = true
 [quality.version]
 require_changelog = "if-present"
 """
+
+
+def _default_toml() -> str:
+    return _consumer_toml("adopt")
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ def test_loads_defaults(tmp_path: Path) -> None:
     assert config.languages == ["auto"]
     assert "lint" in config.fail_on
     assert config.sql_dialect == "ansi"
+    assert config.policy == "adopt"
 
 
 def test_loads_overrides(tmp_path: Path) -> None:

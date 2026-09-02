@@ -12,6 +12,11 @@ fail_on = ["format", "lint", "dry", "security", "compile", "impact", "coverage",
 # pr-only | always | never
 ai_review = "pr-only"
 
+# observe = never block; adopt = new issues only vs baseline; enforce = fail_on
+policy = "enforce"
+baseline = ".quality-baseline.json"
+comment_on_pr = true
+
 # When true (the default in GitHub Actions), download pinned security
 # and Java tooling into ~/.cache/quality-gates on first use.
 auto_install = false

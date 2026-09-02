@@ -46,3 +46,5 @@ on_github = true
 ```
 
 or `QUALITY_UI_ON_GITHUB=1`. See [`UI.md`](UI.md).
+
+How findings block PRs (observe / adopt / enforce) is in [`POLICY.md`](POLICY.md).

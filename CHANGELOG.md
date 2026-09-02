@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.5.0
+
+- Policy layer so old repos are not blocked on first install:
+  `observe` (report only), `adopt` (fail on new fingerprints / coverage drop vs
+  a committed `.quality-baseline.json`), `enforce` (current fail_on behavior).
+- `quality baseline` / `quality baseline --ratchet`, `quality init --policy`,
+  `QUALITY_POLICY` / `--policy`, optional PR digest comment.
+- Consumer `quality init` writes an adopt-mode toml instead of copying this
+  toolkit's strict config.
+
 ## 1.4.1
 
 - Version gate no longer crashes when a binary file (for example `.coverage`)

@@ -86,7 +86,9 @@ def run_review(
     (report_dir / "review.md").write_text(body, encoding="utf-8")
     notes.append("wrote .quality-reports/review.md")
     if post:
-        notes.append(_post_github(body))
+        from quality_gates.github_comment import post_pr_comment
+
+        notes.append(post_pr_comment(body))
 
     findings = list(heuristic)
     # Review comments should not fail the job unless fail_on includes review.
@@ -446,49 +448,3 @@ def _render_review(
             "Heuristic flags still run._"
         )
     return "\n".join(lines).strip() + "\n"
-
-
-def _post_github(body: str) -> str:
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    repo = os.environ.get("GITHUB_REPOSITORY")
-    pr = os.environ.get("QUALITY_PR_NUMBER") or _pr_number()
-    if not token or not repo or not pr:
-        return "skipped GitHub review comment (need GITHUB_TOKEN, GITHUB_REPOSITORY, pull request number)"
-    url = f"https://api.github.com/repos/{repo}/issues/{pr}/comments"
-    payload = json.dumps({"body": body}).encode("utf-8")
-    request = urllib.request.Request(
-        url,
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "Content-Type": "application/json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            if 200 <= response.status < 300:
-                return f"posted review comment on PR #{pr}"
-            return f"GitHub comment returned HTTP {response.status}"
-    except urllib.error.HTTPError as exc:
-        return f"GitHub comment failed: HTTP {exc.code}"
-
-
-def _pr_number() -> str | None:
-    ref = os.environ.get("GITHUB_REF", "")
-    match = re.match(r"refs/pull/(\d+)/", ref)
-    if match:
-        return match.group(1)
-    event_path = os.environ.get("GITHUB_EVENT_PATH")
-    if event_path and Path(event_path).is_file():
-        try:
-            payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return None
-        number = (payload.get("pull_request") or {}).get("number") or payload.get(
-            "number"
-        )
-        return str(number) if number else None
-    return None

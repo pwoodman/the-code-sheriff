@@ -37,7 +37,7 @@ security scan blocks compile** so a tree with known vulns or no scanners is not
 built. UI is skipped when compile failed, and when the diff does not touch a
 spec, its imports, a matching route, or a coverage-map hit.
 
-Standards: [`standards/`](standards/FORMATTING.md) · [`VERSIONING`](standards/VERSIONING.md) · [`COMPILE`](standards/COMPILE.md) · [`IMPACT`](standards/IMPACT.md) · [`COVERAGE`](standards/COVERAGE.md) · [`AUDIT`](standards/AUDIT.md) · [`UI`](standards/UI.md) · [`CI`](standards/CI.md).
+Standards: [`standards/`](standards/FORMATTING.md) · [`VERSIONING`](standards/VERSIONING.md) · [`COMPILE`](standards/COMPILE.md) · [`IMPACT`](standards/IMPACT.md) · [`COVERAGE`](standards/COVERAGE.md) · [`AUDIT`](standards/AUDIT.md) · [`POLICY`](standards/POLICY.md) · [`UI`](standards/UI.md) · [`CI`](standards/CI.md).
 
 ## Quick start
 
@@ -88,6 +88,8 @@ Consumers: [`examples/CONSUMING.md`](examples/CONSUMING.md).
 languages = ["auto"]
 fail_on = ["format", "lint", "dry", "security", "compile", "impact", "coverage", "audit", "ui", "version"]
 ai_review = "pr-only"
+policy = "adopt"                   # observe | adopt | enforce — see standards/POLICY.md
+baseline = ".quality-baseline.json"
 
 [quality.ci]
 mode = "local"
@@ -140,12 +142,14 @@ quality compile [--force]
 quality impact [--base origin/main]
 quality coverage
 quality audit
+quality baseline [--ratchet]
 quality ui [--list] [--all] [--base origin/main]
 quality version [--base origin/main]
 quality bump auto|major|minor|patch
 quality review [--base origin/main] [--post]
 quality run [--only security,compile,impact,coverage,audit,ui] [--skip review] [--full]
-quality init --org YOUR_ORG
+quality init --org YOUR_ORG [--policy adopt]
+quality --policy observe run --skip review
 ```
 
 Exit `1` = a gate in `fail_on` reported errors. Skip ≠ fail.

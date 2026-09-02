@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "quality-gates"
-version = "1.4.1"
+version = "1.5.0"
 description = "Multi-language quality gates: format, lint, DRY, security, compile, coverage, 120-point audit, selective UI tests, and AI review."
 readme = "README.md"
 requires-python = ">=3.11"

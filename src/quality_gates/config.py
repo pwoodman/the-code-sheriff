@@ -92,6 +92,7 @@ DEFAULT_FAIL_ON = [
     "version",
 ]
 DEFAULT_GITHUB_GATES = ["impact", "audit", "version", "review"]
+POLICIES = ("observe", "adopt", "enforce")
 
 
 @dataclass
@@ -143,6 +144,9 @@ class QualityConfig:
     audit_fail_on_priority: list[str] = field(default_factory=lambda: ["P0"])
     audit_min_confidence: str = "HIGH"
     audit_skip_ids: list[int] = field(default_factory=list)
+    policy: str = "adopt"
+    policy_baseline: str = ".quality-baseline.json"
+    policy_comment: bool = True
     raw: dict[str, Any] = field(default_factory=dict)
 
     def language_filter(self) -> list[str] | None:
@@ -225,6 +229,10 @@ def load_config(project: Path) -> QualityConfig:
     if not fail_prios:
         fail_prios = ["P0"]
 
+    policy = str(quality.get("policy", "adopt")).lower()
+    if policy not in POLICIES:
+        policy = "adopt"
+
     return QualityConfig(
         languages=_as_list(quality.get("languages"), ["auto"]),
         fail_on=_as_list(quality.get("fail_on"), DEFAULT_FAIL_ON),
@@ -267,6 +275,9 @@ def load_config(project: Path) -> QualityConfig:
         audit_fail_on_priority=fail_prios,
         audit_min_confidence=audit_conf,
         audit_skip_ids=_as_ints(audit_cfg.get("skip", audit_cfg.get("skip_ids")), []),
+        policy=policy,
+        policy_baseline=str(quality.get("baseline") or ".quality-baseline.json"),
+        policy_comment=_as_bool(quality.get("comment_on_pr"), True),
         raw=data,
     )
 
