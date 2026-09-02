@@ -1,0 +1,32 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  - repo: local
+    hooks:
+      - id: quality-format
+        name: quality format
+        entry: python -m quality_gates format --check
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: quality-lint
+        name: quality lint
+        entry: python -m quality_gates lint
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: quality-security
+        name: quality security
+        entry: python -m quality_gates security
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

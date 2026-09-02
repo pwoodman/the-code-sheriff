@@ -1,0 +1,38 @@
+{
+  "threshold": 0,
+  "minLines": 6,
+  "minTokens": 50,
+  "gitignore": true,
+  "reporters": ["console", "json"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/target/**",
+    "**/vendor/**",
+    "**/.git/**",
+    "**/.quality-gates/**",
+    "**/.quality-reports/**",
+    "**/tests/fixtures/**",
+    "**/src/quality_gates/bundled/**",
+    "**/src/quality_gates/tooling_js/**",
+    "**/tooling/**",
+    "**/configs/**",
+    "**/.github/workflows/**",
+    "**/*.min.js",
+    "**/*.generated.*"
+  ],
+  "formats": [
+    "javascript",
+    "jsx",
+    "tsx",
+    "typescript",
+    "python",
+    "java",
+    "csharp",
+    "go",
+    "rust",
+    "sql",
+    "json"
+  ]
+}

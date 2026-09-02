@@ -1,0 +1,54 @@
+name: Set up language toolchain
+description: Install the compiler/runtime needed to format and lint one language.
+inputs:
+  language:
+    required: true
+    description: csharp | javascript | rust | go | python | java | sql
+runs:
+  using: composite
+  steps:
+    - name: Python extras
+      if: inputs.language == 'python'
+      shell: bash
+      run: pip install "ruff>=0.8"
+
+    - name: SQLFluff
+      if: inputs.language == 'sql'
+      shell: bash
+      run: pip install "sqlfluff>=3.2"
+
+    - name: Node.js
+      if: inputs.language == 'javascript'
+      uses: actions/setup-node@v4
+      with:
+        node-version: "22"
+
+    - name: Go
+      if: inputs.language == 'go'
+      uses: actions/setup-go@v5
+      with:
+        go-version: "1.23"
+
+    - name: Rust
+      if: inputs.language == 'rust'
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt,clippy
+
+    - name: Java
+      if: inputs.language == 'java'
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: "21"
+
+    - name: .NET
+      if: inputs.language == 'csharp'
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: "8.0.x"
+
+    - name: CSharpier
+      if: inputs.language == 'csharp'
+      shell: bash
+      run: dotnet tool install -g csharpier || dotnet tool update -g csharpier

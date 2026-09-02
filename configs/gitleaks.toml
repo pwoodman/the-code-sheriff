@@ -1,0 +1,18 @@
+title = "gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+paths = [
+  '''(^|/)tests/fixtures/''',
+  '''(^|/)package-lock\.json$''',
+  '''(^|/)go\.sum$''',
+  '''(^|/)configs/semgrep\.yml$''',
+]
+stopwords = [
+  "example",
+  "placeholder",
+  "changeme",
+  "your-secret-here",
+]

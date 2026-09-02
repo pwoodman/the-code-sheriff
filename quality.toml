@@ -1,0 +1,77 @@
+# Default quality-gates config for this repository.
+# Copy to a consuming repo and tweak. Every key is optional.
+
+[quality]
+# auto | explicit list: csharp, javascript, typescript, react, rust, go, python, java, sql
+languages = ["auto"]
+
+# Gates that fail CI when they report errors. review never fails the
+# build unless you add it here — it posts findings as a PR comment.
+fail_on = ["format", "lint", "dry", "security"]
+
+# pr-only | always | never
+ai_review = "pr-only"
+
+# When true (the default in GitHub Actions), download pinned security
+# and Java tooling into ~/.cache/quality-gates on first use.
+auto_install = false
+
+[quality.detect]
+exclude = [
+  ".git",
+  ".quality-gates",
+  ".quality-reports",
+  "node_modules",
+  "dist",
+  "build",
+  "target",
+  "vendor",
+  ".venv",
+  "venv",
+  "__pycache__",
+  ".ruff_cache",
+  ".pytest_cache",
+  "tests/fixtures",
+  "tooling",
+  "configs",
+  "src/quality_gates/bundled",
+  "src/quality_gates/tooling_js",
+]
+
+[quality.format]
+# If the project already has prettier/eslint/ruff/etc, prefer those binaries.
+prefer_project_tools = true
+
+[quality.lint]
+prefer_project_tools = true
+
+[quality.dry]
+# jscpd: a clone is reported when both token and line floors are met.
+min_lines = 12
+min_tokens = 50
+# Fail when duplicated tokens exceed this percent of the corpus. 0 = any clone fails.
+threshold = 0
+ignore = [
+  "**/node_modules/**",
+  "**/dist/**",
+  "**/build/**",
+  "**/target/**",
+  "**/vendor/**",
+  "**/.git/**",
+  "**/tests/fixtures/**",
+  "**/src/quality_gates/bundled/**",
+  "**/src/quality_gates/tooling_js/**",
+  "**/tooling/**",
+  "**/configs/**",
+  "**/.github/workflows/**",
+]
+
+[quality.sql]
+# ansi | postgres | mysql | tsql | bigquery | snowflake | sqlite | spark | redshift | duckdb
+dialect = "ansi"
+
+[quality.review]
+# openai | anthropic | github-models | auto | off
+provider = "auto"
+max_diff_bytes = 120000
+model = ""

@@ -1,0 +1,58 @@
+# Quality Gates — shared baseline for every language in this toolkit.
+# Consuming repos should keep this file. Language-specific formatters
+# (Prettier, Ruff, rustfmt, csharpier, google-java-format, gofmt, SQLFluff)
+# win when they disagree with a generic rule below.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+max_line_length = 100
+
+[*.{js,jsx,mjs,cjs,ts,tsx,cts,mts,json,jsonc,yml,yaml,css,scss,html,vue}]
+indent_size = 2
+max_line_length = 100
+
+[*.{md,mdx,markdown}]
+trim_trailing_whitespace = false
+indent_size = 2
+max_line_length = off
+
+[*.{py,pyi}]
+indent_size = 4
+max_line_length = 88
+
+[*.{cs,csx}]
+indent_size = 4
+max_line_length = 120
+csharp_new_line_before_open_brace = all
+csharp_indent_case_contents = true
+csharp_style_namespace_declarations = file_scoped:suggestion
+
+[*.java]
+indent_size = 2
+max_line_length = 100
+
+[*.go]
+indent_style = tab
+indent_size = 8
+max_line_length = 120
+
+[*.rs]
+indent_size = 4
+max_line_length = 100
+
+[*.{sql,ddl,dml}]
+indent_size = 4
+max_line_length = 120
+
+[Makefile]
+indent_style = tab
+
+[*.{bat,cmd}]
+end_of_line = crlf

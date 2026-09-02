@@ -1,0 +1,85 @@
+rules:
+  - id: python.subprocess-shell
+    message: "subprocess with shell=True is a command-injection risk. Pass a list and shell=False."
+    languages: [python]
+    severity: error
+    pattern: subprocess.$ANY(..., shell=True, ...)
+
+  - id: python.pickle-loads
+    message: "pickle.loads on untrusted data is a remote code execution risk."
+    languages: [python]
+    severity: error
+    pattern: pickle.loads(...)
+
+  - id: python.yaml-unsafe-load
+    message: "Use yaml.safe_load for untrusted input. yaml.load without a SafeLoader can execute code."
+    languages: [python]
+    severity: error
+    pattern: yaml.load(...)
+
+  - id: python.eval
+    message: "Avoid eval/exec on untrusted input."
+    languages: [python]
+    severity: error
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: exec(...)
+
+  - id: js.eval
+    message: "Avoid eval and new Function on untrusted input."
+    languages: [javascript, typescript]
+    severity: error
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+
+  - id: js.innerhtml
+    message: "Assigning to innerHTML with untrusted data is an XSS risk. Use textContent or a sanitizer."
+    languages: [javascript, typescript]
+    severity: warning
+    pattern: $EL.innerHTML = $HTML
+
+  - id: js.document-write
+    message: "document.write is an XSS risk and clobbers the document."
+    languages: [javascript, typescript]
+    severity: warning
+    pattern: document.write(...)
+
+  - id: go.sql-concat
+    message: "SQL built with fmt.Sprintf is an injection risk. Use parameterized queries."
+    languages: [go]
+    severity: error
+    pattern: fmt.Sprintf($S, ...)
+    paths:
+      include:
+        - "*.go"
+    metadata:
+      note: "Reviewed only when the format string looks like SQL; still flag Sprintf near Query/Exec in review."
+
+  - id: java.runtime-exec
+    message: "Runtime.exec / ProcessBuilder with concatenated input is a command-injection risk."
+    languages: [java]
+    severity: error
+    pattern-either:
+      - pattern: Runtime.getRuntime().exec(...)
+      - pattern: (new ProcessBuilder(...)).start()
+
+  - id: csharp.process-shell
+    message: "Launching a process with concatenated arguments is a command-injection risk."
+    languages: [csharp]
+    severity: warning
+    pattern: new ProcessStartInfo(...)
+
+  - id: generic.hardcoded-secret
+    message: "Possible hardcoded credential. Use a secret manager or environment variable."
+    languages: [python, javascript, typescript, go, java, csharp]
+    severity: warning
+    pattern-regex: (?i)(api_key|apikey|secret|password|passwd|token)\s*[=:]\s*['\"][^'\"]{8,}['\"]
+
+  - id: rust.unwrap-in-lib
+    message: "unwrap()/expect() on a Result/Option panics. Prefer returning Result in library code."
+    languages: [rust]
+    severity: warning
+    pattern-either:
+      - pattern: $X.unwrap()
+      - pattern: $X.expect($MSG)

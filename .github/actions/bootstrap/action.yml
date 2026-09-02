@@ -1,0 +1,27 @@
+name: Bootstrap quality-gates
+description: Install the quality CLI from this checkout and optional pinned binaries.
+inputs:
+  install-binaries:
+    description: Download gitleaks, osv-scanner, golangci-lint, and Java jars
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install quality-gates CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+
+    - name: Install pinned binaries
+      if: inputs.install-binaries == 'true'
+      shell: bash
+      env:
+        QUALITY_GATES_AUTO_INSTALL: "1"
+      run: quality doctor --install

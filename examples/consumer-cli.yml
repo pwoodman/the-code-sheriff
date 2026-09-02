@@ -1,0 +1,36 @@
+name: Quality gates (CLI)
+
+# Drop-in workflow for a consuming application repo. Replace YOUR_ORG.
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install quality-gates
+        run: pip install "git+https://github.com/YOUR_ORG/quality-gates.git@v1"
+      - name: Toolchains
+        env:
+          QUALITY_GATES_AUTO_INSTALL: "1"
+        run: quality doctor --install
+      - name: Run format, lint, DRY, security, review
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: quality run

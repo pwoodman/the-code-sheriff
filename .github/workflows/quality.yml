@@ -1,0 +1,193 @@
+# Multi-step quality gates. Copy this file (and .github/actions/) into a
+# consuming repo, or call it from a clone of this toolkit:
+#
+#   jobs:
+#     quality:
+#       uses: YOUR_ORG/quality-gates/.github/workflows/quality.yml@v1
+#
+# Reusable-workflow callers must vendor .github/actions/ from this repo
+# (or use examples/consumer-cli.yml, which only needs pip).
+
+name: Quality gates
+
+on:
+  workflow_call:
+    secrets:
+      OPENAI_API_KEY:
+        required: false
+      ANTHROPIC_API_KEY:
+        required: false
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  detect:
+    name: 1 · Detect languages
+    runs-on: ubuntu-latest
+    outputs:
+      languages: ${{ steps.detect.outputs.languages }}
+      gate_languages: ${{ steps.detect.outputs.gate_languages }}
+      has_languages: ${{ steps.detect.outputs.has_languages }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bootstrap
+        with:
+          install-binaries: "false"
+      - name: Detect
+        id: detect
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          from quality_gates.config import load_config
+          from quality_gates.detect import detect_languages
+          from quality_gates.paths import project_root
+          root = project_root()
+          info = detect_languages(root, load_config(root))
+          gate = info.get("gate_languages") or info["languages"]
+          Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8").write(
+              "languages=" + json.dumps(info["languages"]) + "\n"
+              + "gate_languages=" + json.dumps(gate or ["none"]) + "\n"
+              + "has_languages=" + ("true" if info["languages"] else "false") + "\n"
+          )
+          print(json.dumps(info, indent=2))
+          PY
+
+  format:
+    name: 2 · Format (${{ matrix.language }})
+    needs: detect
+    if: needs.detect.outputs.has_languages == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJson(needs.detect.outputs.gate_languages) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bootstrap
+        with:
+          install-binaries: "false"
+      - uses: ./.github/actions/setup-language
+        if: matrix.language != 'none'
+        with:
+          language: ${{ matrix.language }}
+      - name: Check formatting
+        if: matrix.language != 'none'
+        run: quality format --check --language ${{ matrix.language }}
+
+  lint:
+    name: 3 · Lint (${{ matrix.language }})
+    needs: detect
+    if: needs.detect.outputs.has_languages == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJson(needs.detect.outputs.gate_languages) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bootstrap
+        with:
+          install-binaries: "false"
+      - uses: ./.github/actions/setup-language
+        if: matrix.language != 'none'
+        with:
+          language: ${{ matrix.language }}
+      - name: Lint
+        if: matrix.language != 'none'
+        run: quality lint --language ${{ matrix.language }}
+
+  dry:
+    name: 4 · DRY (copy-paste)
+    needs: detect
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bootstrap
+        with:
+          install-binaries: "false"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Duplication scan
+        run: quality dry
+
+  security:
+    name: 5 · Security
+    needs: detect
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bootstrap
+      - name: Security scanners
+        env:
+          QUALITY_GATES_AUTO_INSTALL: "1"
+        run: quality security
+
+  review:
+    name: 6 · AI code review
+    needs: [detect, lint, dry, security]
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bootstrap
+        with:
+          install-binaries: "false"
+      - name: Review pull request
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BASE="origin/${{ github.base_ref }}"
+          quality review --base "$BASE" --post
+
+  summary:
+    name: Quality summary
+    needs: [detect, format, lint, dry, security, review]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require format, lint, DRY, and security
+        run: |
+          python3 - <<'PY'
+          import sys
+          results = {
+            "detect": "${{ needs.detect.result }}",
+            "format": "${{ needs.format.result }}",
+            "lint": "${{ needs.lint.result }}",
+            "dry": "${{ needs.dry.result }}",
+            "security": "${{ needs.security.result }}",
+            "review": "${{ needs.review.result }}",
+          }
+          print("\n".join(f"{k}={v}" for k, v in results.items()))
+          blocking = ["detect", "format", "lint", "dry", "security"]
+          bad = [name for name in blocking if results[name] not in {"success", "skipped"}]
+          if bad:
+              print("failed gates:", ", ".join(bad))
+              sys.exit(1)
+          print("all required gates passed")
+          PY
