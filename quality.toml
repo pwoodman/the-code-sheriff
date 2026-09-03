@@ -135,3 +135,13 @@ dialect = "ansi"
 provider = "auto"
 max_diff_bytes = 120000
 model = ""
+# auto | agentic | ensemble | single | heuristic
+mode = "auto"
+passes = 3
+tool_rounds = 4
+rules_dir = ".quality/rules"
+related_files = 8
+related_bytes = 24000
+validate = true
+inline_comments = true
+check_run = true

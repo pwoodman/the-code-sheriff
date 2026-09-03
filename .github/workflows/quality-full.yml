@@ -271,7 +271,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           BASE="origin/${{ github.base_ref }}"
-          quality review --base "$BASE" --post
+          quality run --only impact,audit,review --base "$BASE" --post-review
 
   summary:
     name: Quality summary

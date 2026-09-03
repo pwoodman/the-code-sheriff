@@ -62,6 +62,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  checks: write
   security-events: write
 
 jobs:
@@ -82,6 +83,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  checks: write
 
 jobs:
   quality:
@@ -167,7 +169,33 @@ def main(argv: Sequence[str] | None = None) -> int:
     review = sub.add_parser("review", help="AI / heuristic code review")
     review.add_argument("--base", default=None, help="git ref to diff against")
     review.add_argument(
-        "--post", action="store_true", help="post the review on the GitHub PR"
+        "--post",
+        action="store_true",
+        help="post inline review comments and a check run",
+    )
+
+    oracle_p = sub.add_parser(
+        "oracle",
+        help="remaining blockers for coding agents (loop until green)",
+    )
+    oracle_p.add_argument(
+        "--run",
+        action="store_true",
+        help="run gates first, then report what is still blocking",
+    )
+    oracle_p.add_argument(
+        "--prompt",
+        action="store_true",
+        help="print a fix-it prompt instead of JSON",
+    )
+    oracle_p.add_argument("--only", default=None, help="comma-separated gates")
+    oracle_p.add_argument("--skip", default=None, help="comma-separated gates")
+    oracle_p.add_argument("--full", action="store_true")
+    oracle_p.add_argument("--base", default=None)
+
+    sub.add_parser(
+        "mcp",
+        help="MCP stdio server: quality_oracle, quality_run, quality_review",
     )
 
     ui_p = sub.add_parser(
@@ -259,6 +287,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "init":
         return _init(root, args.org, policy=args.init_policy)
+    if args.command == "mcp":
+        from quality_gates.mcp_server import serve
+
+        return serve()
+    if args.command == "oracle":
+        return _oracle(root, args)
     if args.command == "baseline":
         return _baseline(root, config, ratchet=args.ratchet)
     if args.command == "report":
@@ -435,6 +469,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _emit(results, root, config, args.json, config.fail_on)
     parser.error("unknown command")
     return 2
+
+
+def _oracle(root: Path, args: argparse.Namespace) -> int:
+    from quality_gates.oracle import remaining_from_reports, render_prompt
+
+    if args.run:
+        argv = ["--root", str(root), "run"]
+        if args.only:
+            argv.extend(["--only", args.only])
+        if args.skip:
+            argv.extend(["--skip", args.skip])
+        if args.full:
+            argv.append("--full")
+        if getattr(args, "base", None):
+            argv.extend(["--base", args.base])
+        main(argv)
+    payload = remaining_from_reports(root)
+    if args.prompt:
+        print(render_prompt(payload))
+    else:
+        print(json.dumps(payload, indent=2))
+    return 0 if payload.get("green") else 1
 
 
 def _csv(value: str | None) -> list[str]:

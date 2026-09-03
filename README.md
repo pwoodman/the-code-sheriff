@@ -32,7 +32,7 @@ GitHub even in `github`/`both` mode unless you turn them on.
 | **Audit** | 120-point static inspection | HIGH-confidence evidence only; fail on P0; N/A when no API/UI |
 | **UI** | Playwright / Cypress | **only specs whose touch set hits the diff** (plus downstream files) |
 | **Version** | semver files + changelog | bump required when source changes |
-| **AI review** | heuristic + optional LLM | PRs; does not fail the build |
+| **AI review** | heuristic + optional LLM (impact/audit context, custom rules) | PRs; inline comments; does not fail the build |
 
 Languages and structured file kinds are auto-detected from a declarative
 capability registry. C#, JavaScript/TypeScript, Java, C/C++, Go, Rust, Python,
@@ -166,8 +166,11 @@ tools; installation is only performed by an explicit `quality doctor --install`.
 
 ### AI review keys
 
-Heuristic review always runs. For a narrative PR comment: `ANTHROPIC_API_KEY`,
-`OPENAI_API_KEY`, or GitHub Models via `GITHUB_TOKEN`.
+Heuristic review always runs. For JSON findings on the PR: `ANTHROPIC_API_KEY`,
+`OPENAI_API_KEY`, or GitHub Models via `GITHUB_TOKEN`. Review packs impact/audit
+context and `.quality/rules/*.md`; it posts inline comments and a check run.
+`quality oracle` / `quality mcp` loop coding agents until gates are green.
+See [`standards/AI_REVIEW.md`](standards/AI_REVIEW.md).
 
 ## CLI
 
@@ -187,6 +190,8 @@ quality ui [--list] [--all] [--base origin/main]
 quality version [--base origin/main]
 quality bump auto|major|minor|patch
 quality review [--base origin/main] [--post]
+quality oracle [--run] [--prompt]
+quality mcp
 quality run [--only security,compile,impact,coverage,audit,ui] [--skip review] [--full]
 quality report [--format console|markdown|html|json|sarif|junit]
 quality cache [status|clean]

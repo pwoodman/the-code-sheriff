@@ -166,6 +166,15 @@ class QualityConfig:
     review_provider: str = "auto"
     review_model: str = ""
     max_diff_bytes: int = 120_000
+    review_mode: str = "auto"
+    review_passes: int = 3
+    review_tool_rounds: int = 4
+    review_rules_dir: str = ".quality/rules"
+    review_related_files: int = 8
+    review_related_bytes: int = 24_000
+    review_validate: bool = True
+    review_inline: bool = True
+    review_check_run: bool = True
     ui_select: str = "changed"
     ui_framework: str = "auto"
     ui_spec_dirs: list[str] = field(default_factory=list)
@@ -328,6 +337,17 @@ def load_config(project: Path) -> QualityConfig:
         review_provider=str(review.get("provider", "auto")),
         review_model=str(review.get("model", "")),
         max_diff_bytes=int(review.get("max_diff_bytes", 120_000)),
+        review_mode=_review_mode(review.get("mode", "auto")),
+        review_passes=max(2, min(8, int(review.get("passes", 3) or 3))),
+        review_tool_rounds=max(0, min(8, int(review.get("tool_rounds", 4) or 4))),
+        review_rules_dir=str(review.get("rules_dir", ".quality/rules")),
+        review_related_files=max(0, min(32, int(review.get("related_files", 8) or 8))),
+        review_related_bytes=max(
+            4000, int(review.get("related_bytes", 24_000) or 24_000)
+        ),
+        review_validate=_as_bool(review.get("validate"), True),
+        review_inline=_as_bool(review.get("inline_comments"), True),
+        review_check_run=_as_bool(review.get("check_run"), True),
         ui_select=ui_select,
         ui_framework=ui_framework,
         ui_spec_dirs=_as_list(ui_cfg.get("spec_dirs"), []),
@@ -371,3 +391,10 @@ def is_pr_event() -> bool:
         return True
     ref = os.environ.get("GITHUB_REF", "")
     return bool(re.match(r"refs/pull/\d+", ref))
+
+
+def _review_mode(value: Any) -> str:
+    mode = str(value or "auto").strip().lower()
+    if mode not in {"auto", "agentic", "ensemble", "single", "heuristic"}:
+        return "auto"
+    return mode

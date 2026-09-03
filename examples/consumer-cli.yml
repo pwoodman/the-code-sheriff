@@ -20,6 +20,7 @@ name: Quality gates (CLI)
 permissions:
   contents: read
   pull-requests: write
+  checks: write
 
 jobs:
   quality:
@@ -32,7 +33,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install quality-gates
-        run: pip install "quality-gates==1.6.0"
+        run: pip install "quality-gates==1.7.0"
       - name: Run gates (cheap unless full_suite / ci.mode=github|both)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

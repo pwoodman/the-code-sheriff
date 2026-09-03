@@ -1,4 +1,4 @@
-"""Post a comment on the current GitHub pull request, if the job has credentials."""
+"""Post GitHub PR issue comments, inline reviews, and check runs."""
 
 from __future__ import annotations
 
@@ -8,6 +8,14 @@ import re
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Any
+
+from quality_gates.gitutil import git_head
+from quality_gates.models import Finding
+
+API_VERSION = "2022-11-28"
+MAX_INLINE = 24
+MAX_ANNOTATIONS = 50
 
 
 def pr_number() -> str | None:
@@ -29,31 +37,232 @@ def pr_number() -> str | None:
 
 
 def post_pr_comment(body: str) -> str:
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    repo = os.environ.get("GITHUB_REPOSITORY")
-    pr = os.environ.get("QUALITY_PR_NUMBER") or pr_number()
-    if not token or not repo or not pr:
+    creds = _creds()
+    if creds is None:
         return (
             "skipped GitHub comment (need GITHUB_TOKEN, GITHUB_REPOSITORY, "
             "pull request number)"
         )
-    url = f"https://api.github.com/repos/{repo}/issues/{pr}/comments"
-    payload = json.dumps({"body": body}).encode("utf-8")
+    token, repo, pr = creds
+    status, _payload = _request(
+        "POST",
+        f"https://api.github.com/repos/{repo}/issues/{pr}/comments",
+        token,
+        {"body": body},
+    )
+    if 200 <= status < 300:
+        return f"posted comment on PR #{pr}"
+    return f"GitHub comment returned HTTP {status}"
+
+
+def post_review(
+    body: str,
+    findings: list[Finding],
+    *,
+    diff_lines: dict[str, set[int]] | None = None,
+    inline: bool = True,
+    check_run: bool = True,
+    fail_on_review: bool = False,
+) -> list[str]:
+    notes: list[str] = []
+    creds = _creds()
+    sha = pr_head_sha()
+    if inline and creds and sha:
+        notes.append(_post_pull_review(creds, body, findings, sha, diff_lines or {}))
+    elif inline:
+        notes.append(post_pr_comment(body))
+    if check_run:
+        notes.append(
+            _post_check_run(
+                body,
+                findings,
+                sha=sha,
+                fail_on_review=fail_on_review,
+            )
+        )
+    return notes
+
+
+def pr_head_sha() -> str | None:
+    explicit = os.environ.get("QUALITY_HEAD_SHA") or os.environ.get("GITHUB_SHA")
+    event_path = os.environ.get("GITHUB_EVENT_PATH")
+    if event_path and Path(event_path).is_file():
+        try:
+            payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            payload = {}
+        head = ((payload.get("pull_request") or {}).get("head") or {}).get("sha")
+        if head:
+            return str(head)
+    if explicit:
+        return explicit
+    root = Path(os.environ.get("GITHUB_WORKSPACE") or ".")
+    return git_head(root)
+
+
+def _post_pull_review(
+    creds: tuple[str, str, str],
+    body: str,
+    findings: list[Finding],
+    sha: str,
+    diff_lines: dict[str, set[int]],
+) -> str:
+    token, repo, pr = creds
+    comments = []
+    for item in findings:
+        if item.severity == "info" or not item.path or not item.line:
+            continue
+        path = item.path.replace("\\", "/")
+        allowed = diff_lines.get(path) or diff_lines.get(path.lstrip("./"))
+        if allowed is not None and item.line not in allowed:
+            continue
+        comments.append(
+            {
+                "path": path,
+                "line": item.line,
+                "side": "RIGHT",
+                "body": _inline_body(item),
+            }
+        )
+        if len(comments) >= MAX_INLINE:
+            break
+    payload: dict[str, Any] = {
+        "commit_id": sha,
+        "event": "COMMENT",
+        "body": body,
+    }
+    if comments:
+        payload["comments"] = comments
+    status, data = _request(
+        "POST",
+        f"https://api.github.com/repos/{repo}/pulls/{pr}/reviews",
+        token,
+        payload,
+    )
+    if 200 <= status < 300:
+        return f"posted PR review on #{pr} ({len(comments)} inline)"
+    fallback = post_pr_comment(body)
+    detail = ""
+    if isinstance(data, dict) and data.get("message"):
+        detail = f" ({data.get('message')})"
+    return f"PR review HTTP {status}{detail}; {fallback}"
+
+
+def _post_check_run(
+    body: str,
+    findings: list[Finding],
+    *,
+    sha: str | None,
+    fail_on_review: bool,
+) -> str:
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    if not token or not repo or not sha:
+        return "skipped GitHub check run (need GITHUB_TOKEN, GITHUB_REPOSITORY, SHA)"
+    errors = [item for item in findings if item.severity == "error"]
+    if fail_on_review and errors:
+        conclusion = "failure"
+    elif findings:
+        conclusion = "neutral"
+    else:
+        conclusion = "success"
+    annotations = []
+    for item in findings:
+        if not item.path or not item.line:
+            continue
+        level = {
+            "error": "failure",
+            "warning": "warning",
+            "info": "notice",
+        }.get(item.severity, "warning")
+        annotations.append(
+            {
+                "path": item.path.replace("\\", "/"),
+                "start_line": item.line,
+                "end_line": item.line,
+                "annotation_level": level,
+                "message": item.message[:65535],
+                "title": item.rule or "review",
+            }
+        )
+        if len(annotations) >= MAX_ANNOTATIONS:
+            break
+    title = (
+        f"{len(errors)} blocking, {len(findings) - len(errors)} other"
+        if findings
+        else "No review findings"
+    )
+    payload = {
+        "name": "quality-review",
+        "head_sha": sha,
+        "status": "completed",
+        "conclusion": conclusion,
+        "output": {
+            "title": title,
+            "summary": body[:65535],
+            "annotations": annotations,
+        },
+    }
+    status, data = _request(
+        "POST",
+        f"https://api.github.com/repos/{repo}/check-runs",
+        token,
+        payload,
+    )
+    if 200 <= status < 300:
+        return f"posted check run quality-review ({conclusion})"
+    message = ""
+    if isinstance(data, dict) and data.get("message"):
+        message = f" ({data.get('message')})"
+    return f"GitHub check run HTTP {status}{message}"
+
+
+def _inline_body(item: Finding) -> str:
+    suggestion = f"\n\nSuggested fix: {item.suggestion}" if item.suggestion else ""
+    return (
+        f"**{item.rule or 'review'}** ({item.severity})\n\n{item.message}{suggestion}"
+    )
+
+
+def _creds() -> tuple[str, str, str] | None:
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    pr = os.environ.get("QUALITY_PR_NUMBER") or pr_number()
+    if not token or not repo or not pr:
+        return None
+    return token, repo, pr
+
+
+def _request(
+    method: str, url: str, token: str, payload: dict[str, Any]
+) -> tuple[int, Any]:
+    body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         url,
-        data=payload,
+        data=body,
+        method=method,
         headers={
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github+json",
             "Content-Type": "application/json",
-            "X-GitHub-Api-Version": "2022-11-28",
+            "X-GitHub-Api-Version": API_VERSION,
         },
-        method="POST",
     )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
-            if 200 <= response.status < 300:
-                return f"posted comment on PR #{pr}"
-            return f"GitHub comment returned HTTP {response.status}"
+            raw = response.read().decode("utf-8")
+            data: Any
+            try:
+                data = json.loads(raw) if raw else {}
+            except json.JSONDecodeError:
+                data = {}
+            return response.status, data
     except urllib.error.HTTPError as exc:
-        return f"GitHub comment failed: HTTP {exc.code}"
+        raw = exc.read().decode("utf-8", errors="replace")
+        try:
+            data = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            data = {"message": raw[:300]}
+        return exc.code, data
+    except urllib.error.URLError as exc:
+        return 0, {"message": str(exc)}

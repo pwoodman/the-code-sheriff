@@ -1,0 +1,5 @@
+{
+  "id": "eval_injection",
+  "expected_rules": ["unsafe-api", "missing-tests"],
+  "languages": ["python"]
+}
