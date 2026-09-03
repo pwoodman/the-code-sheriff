@@ -2,19 +2,9 @@
 
 from __future__ import annotations
 
-__version__ = "1.5.1"
+from quality_gates.registry import ALL_LANGUAGES as ALL_LANGUAGES
 
-ALL_LANGUAGES = (
-    "csharp",
-    "javascript",
-    "typescript",
-    "react",
-    "rust",
-    "go",
-    "python",
-    "java",
-    "sql",
-)
+__version__ = "1.5.1"
 
 GATES = (
     "format",

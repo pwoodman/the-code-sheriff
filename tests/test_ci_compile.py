@@ -9,8 +9,16 @@ from quality_gates.ci_plan import (
     unknown_gates,
 )
 from quality_gates.config import QualityConfig
-from quality_gates.gates.compile import security_cleared
-from quality_gates.models import Finding, GateResult
+from quality_gates.gates.compile import run_compile, security_cleared
+from quality_gates.models import Finding, GateResult, RunResult
+
+
+def _recording_runner(calls: list[list[str]]):
+    def run(argv, **_kwargs):
+        calls.append(list(argv))
+        return RunResult(argv=list(argv), returncode=0)
+
+    return run
 
 
 def test_local_mode_on_github_is_cheap(monkeypatch) -> None:
@@ -78,3 +86,68 @@ def test_ui_stays_in_full_local_plan(monkeypatch) -> None:
         < gates.index("audit")
         < gates.index("ui")
     )
+
+
+@pytest.mark.parametrize(
+    ("language", "filename", "expected"),
+    [
+        ("swift", "demo.swift", "-parse"),
+        ("scala", "demo.scala", "-Ystop-after:parser"),
+        ("shell", "demo.sh", "-n"),
+        ("r", "demo.r", "parse(file=commandArgs(trailingOnly=TRUE)[1]"),
+    ],
+)
+def test_untrusted_syntax_checks_never_execute_project_code(
+    tmp_path, monkeypatch, language: str, filename: str, expected: str
+) -> None:
+    (tmp_path / filename).write_text("placeholder\n", encoding="utf-8")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        "quality_gates.gates.compile.which",
+        lambda name, **_kwargs: f"/tools/{name}",
+    )
+
+    monkeypatch.setattr("quality_gates.gates.compile.run", _recording_runner(calls))
+    result = run_compile(
+        tmp_path,
+        QualityConfig(trust="untrusted"),
+        [language],
+        security=GateResult(name="security", status="skip"),
+    )
+    assert result.status == "pass"
+    assert len(calls) == 1
+    assert any(expected in argument for argument in calls[0])
+
+
+def test_kotlin_compiles_only_to_temporary_output_when_trusted(
+    tmp_path, monkeypatch
+) -> None:
+    source = tmp_path / "demo.kt"
+    source.write_text("fun answer() = 42\n", encoding="utf-8")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        "quality_gates.gates.compile.which",
+        lambda name, **_kwargs: f"/tools/{name}",
+    )
+
+    monkeypatch.setattr("quality_gates.gates.compile.run", _recording_runner(calls))
+    trusted = run_compile(
+        tmp_path,
+        QualityConfig(trust="trusted"),
+        ["kotlin"],
+        security=GateResult(name="security", status="pass"),
+    )
+    assert trusted.status == "pass"
+    assert calls[0][0] == "/tools/kotlinc"
+    assert "-d" in calls[0]
+    assert str(source) in calls[0]
+
+    calls.clear()
+    untrusted = run_compile(
+        tmp_path,
+        QualityConfig(trust="untrusted"),
+        ["kotlin"],
+        security=GateResult(name="security", status="skip"),
+    )
+    assert untrusted.status == "skip"
+    assert not calls

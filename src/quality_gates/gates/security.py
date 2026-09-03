@@ -4,12 +4,16 @@ import json
 import re
 from pathlib import Path
 
+from quality_gates import installers
 from quality_gates.config import QualityConfig
 from quality_gates.gates.common import fail_or_pass
-from quality_gates.installers import ensure_gitleaks, ensure_osv_scanner
 from quality_gates.models import Finding, GateResult
 from quality_gates.paths import bundled_file
 from quality_gates.tools import run, which
+
+# Compatibility names remain patchable, but gate execution never invokes installers.
+ensure_gitleaks = installers.ensure_gitleaks
+ensure_osv_scanner = installers.ensure_osv_scanner
 
 SECRET_LINE = re.compile(
     r"""(?i)(api[_-]?key|apikey|secret|password|passwd|token)\s*[=:]\s*['\"][^'\"]{10,}['\"]"""
@@ -23,7 +27,9 @@ def run_security(root: Path, config: QualityConfig, languages: list[str]) -> Gat
 
     findings.extend(_gitleaks(root, skipped))
     findings.extend(_osv(root, skipped, notes))
-    findings.extend(_semgrep(root, skipped, notes))
+    findings.extend(_semgrep(root, languages, skipped, notes))
+    findings.extend(_workflow_pins(root, config))
+    findings.extend(_zizmor(root, skipped, notes))
     findings.extend(_heuristic_secrets(root, config))
 
     if languages:
@@ -46,18 +52,10 @@ def run_security(root: Path, config: QualityConfig, languages: list[str]) -> Gat
 
 
 def _gitleaks(root: Path, skipped: list[str]) -> list[Finding]:
-    try:
-        binary = ensure_gitleaks()
-    except OSError:
-        binary = which("gitleaks")
-        if not binary:
-            skipped.append("gitleaks")
-            return []
-    else:
-        binary = str(binary) if binary else which("gitleaks")
-        if not binary:
-            skipped.append("gitleaks")
-            return []
+    binary = which("gitleaks")
+    if not binary:
+        skipped.append("gitleaks")
+        return []
     cfg = bundled_file("gitleaks.toml")
     report = root / ".quality-reports" / "gitleaks.json"
     report.parent.mkdir(parents=True, exist_ok=True)
@@ -98,18 +96,10 @@ def _gitleaks(root: Path, skipped: list[str]) -> list[Finding]:
 
 
 def _osv(root: Path, skipped: list[str], notes: list[str]) -> list[Finding]:
-    try:
-        binary = ensure_osv_scanner()
-    except OSError:
-        binary = which("osv-scanner")
-        if not binary:
-            skipped.append("osv-scanner")
-            return []
-    else:
-        binary = str(binary) if binary else which("osv-scanner")
-        if not binary:
-            skipped.append("osv-scanner")
-            return []
+    binary = which("osv-scanner")
+    if not binary:
+        skipped.append("osv-scanner")
+        return []
     result = run(
         [binary, "scan", "--format", "json", "-r", str(root)],
         cwd=root,
@@ -146,7 +136,39 @@ def _osv(root: Path, skipped: list[str], notes: list[str]) -> list[Finding]:
     return findings
 
 
-def _semgrep(root: Path, skipped: list[str], notes: list[str]) -> list[Finding]:
+def _semgrep(
+    root: Path, languages: list[str], skipped: list[str], notes: list[str]
+) -> list[Finding]:
+    generally_available = {
+        "c",
+        "cpp",
+        "csharp",
+        "go",
+        "java",
+        "javascript",
+        "typescript",
+        "react",
+        "kotlin",
+        "php",
+        "python",
+        "ruby",
+        "rust",
+        "scala",
+        "swift",
+    }
+    experimental = {"dart", "lua", "r", "shell"}
+    ga = sorted(set(languages) & generally_available)
+    preview = sorted(set(languages) & experimental)
+    unsupported = sorted(set(languages) - generally_available - experimental)
+    if ga:
+        notes.append("semgrep GA language capability: " + ", ".join(ga))
+    if preview:
+        notes.append(
+            "semgrep experimental language parsing (coverage depends on rules): "
+            + ", ".join(preview)
+        )
+    if unsupported:
+        notes.append("semgrep coverage not claimed for: " + ", ".join(unsupported))
     binary = which("semgrep")
     if not binary:
         skipped.append("semgrep")
@@ -192,6 +214,82 @@ def _semgrep(root: Path, skipped: list[str], notes: list[str]) -> list[Finding]:
     return findings
 
 
+_FULL_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
+_USES = re.compile(r"^\s*uses\s*:\s*['\"]?([^'\"\s#]+)", re.IGNORECASE)
+
+
+def _workflow_pins(root: Path, config: QualityConfig) -> list[Finding]:
+    """Statically require immutable SHAs in workflows and composite actions."""
+    from quality_gates.detect import iter_project_files
+
+    findings: list[Finding] = []
+    for path in iter_project_files(root, config):
+        relative = path.relative_to(root).as_posix()
+        if not (
+            relative.startswith(".github/workflows/")
+            or path.name.lower() in {"action.yml", "action.yaml"}
+        ):
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8-sig", errors="strict").splitlines()
+        except (OSError, UnicodeError):
+            continue
+        for line_no, line in enumerate(lines, 1):
+            match = _USES.match(line)
+            if not match:
+                continue
+            target = match.group(1)
+            if target.startswith(("./", "docker://")):
+                continue
+            if "@" not in target or not _FULL_SHA.fullmatch(target.rsplit("@", 1)[1]):
+                findings.append(
+                    Finding(
+                        gate="security",
+                        rule="github-action-unpinned",
+                        path=relative,
+                        line=line_no,
+                        message="third-party action must be pinned to a full 40-character commit SHA",
+                        severity="error",
+                        safety="non-executing",
+                    )
+                )
+    return findings
+
+
+def _zizmor(root: Path, skipped: list[str], notes: list[str]) -> list[Finding]:
+    binary = which("zizmor", project=root, prefer_project=True)
+    if not binary:
+        skipped.append("zizmor")
+        return []
+    result = run(
+        [binary, "--offline", "--format", "json", str(root)],
+        cwd=root,
+        timeout=180,
+    )
+    try:
+        payload = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        if result.returncode:
+            notes.append("zizmor did not return JSON")
+        return []
+    items = payload if isinstance(payload, list) else payload.get("findings", [])
+    return [
+        Finding(
+            gate="security",
+            rule=item.get("ident") or item.get("rule") or "zizmor",
+            path=item.get("path"),
+            line=(item.get("location") or {}).get("line"),
+            message=item.get("desc")
+            or item.get("message")
+            or "GitHub Actions security finding",
+            severity="error",
+            tool="zizmor",
+        )
+        for item in items
+        if isinstance(item, dict)
+    ]
+
+
 def _heuristic_secrets(root: Path, config: QualityConfig) -> list[Finding]:
     findings: list[Finding] = []
     from quality_gates.detect import iter_project_files
@@ -213,9 +311,51 @@ def _heuristic_secrets(root: Path, config: QualityConfig) -> list[Finding]:
             ".yaml",
             ".json",
             ".toml",
+            ".c",
+            ".h",
+            ".cc",
+            ".cpp",
+            ".cxx",
+            ".hpp",
+            ".php",
+            ".phtml",
+            ".rb",
+            ".swift",
+            ".kt",
+            ".kts",
+            ".dart",
+            ".scala",
+            ".lua",
+            ".r",
+            ".rmd",
+            ".m",
+            ".sh",
+            ".bash",
+            ".zsh",
+            ".fish",
+            ".ps1",
+            ".psm1",
+            ".xml",
+            ".tf",
+            ".hcl",
         }:
             continue
-        if path.name in {"package-lock.json", "go.sum", "Cargo.lock"}:
+        if path.name in {
+            "package-lock.json",
+            "npm-shrinkwrap.json",
+            "yarn.lock",
+            "pnpm-lock.yaml",
+            "go.sum",
+            "Cargo.lock",
+            "Gemfile.lock",
+            "composer.lock",
+            "Podfile.lock",
+            "Package.resolved",
+            "packages.lock.json",
+            "gradle.lockfile",
+            "pubspec.lock",
+            "renv.lock",
+        }:
             continue
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")

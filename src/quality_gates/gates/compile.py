@@ -1,14 +1,21 @@
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 from quality_gates.config import QualityConfig
 from quality_gates.detect import iter_project_files
 from quality_gates.gates.common import fail_or_pass, findings_from_text, skip_result
 from quality_gates.models import Finding, GateResult
+from quality_gates.registry import LANGUAGE_PROFILES
 from quality_gates.tools import run, which
 
-COMPILED_LANGUAGES = ("csharp", "rust", "go", "java", "typescript")
+COMPILED_LANGUAGES = tuple(
+    profile.id
+    for profile in LANGUAGE_PROFILES
+    if {"compile", "validate"} & set(profile.capabilities) and profile.id != "python"
+)
+BUILD_LANGUAGES = {"csharp", "rust", "go", "java", "typescript"}
 
 
 def security_cleared(result: GateResult | None) -> tuple[bool, str]:
@@ -45,41 +52,64 @@ def run_compile(
     if not compiled:
         return skip_result(
             "compile",
-            "no compiled languages detected (C#, Rust, Go, Java, TypeScript). "
-            "JavaScript/Python/SQL are not compiled.",
-        )
-
-    allowed, reason = security_cleared(security)
-    if not allowed:
-        status = "fail" if compiled else "skip"
-        return GateResult(
-            name="compile",
-            status=status,
-            findings=[
-                Finding(
-                    gate="compile",
-                    rule="security-gate",
-                    message=reason,
-                    severity="error" if status == "fail" else "info",
-                )
-            ],
-            notes=[reason],
+            "no compiled or syntax-checkable languages detected. "
+            "JavaScript/Python/SQL are not treated as compiled languages.",
         )
 
     parts: list[GateResult] = []
-    if "go" in compiled:
-        parts.append(_go(root, config))
-    if "rust" in compiled:
-        parts.append(_rust(root))
-    if "csharp" in compiled:
-        parts.append(_csharp(root))
-    if "java" in compiled:
-        parts.append(_java(root, config))
-    if "typescript" in compiled:
-        parts.append(_typescript(root))
+    for language in compiled:
+        if language in {"c", "cpp"}:
+            parts.append(_c_family(root, config, language))
+        elif language in {"php", "ruby", "dart", "lua", "powershell", "shell", "r"}:
+            parts.append(_syntax_check(root, config, language))
+        elif language == "swift":
+            parts.append(_swift(root, config))
+        elif language == "kotlin":
+            parts.append(_kotlin(root, config))
+        elif language == "scala":
+            parts.append(_scala(root, config))
+
+    builds = [language for language in compiled if language in BUILD_LANGUAGES]
+    allowed, reason = security_cleared(security)
+    if builds and (config.trust != "trusted" or not allowed):
+        blocked = (
+            "project builds require quality.trust = 'trusted'"
+            if config.trust != "trusted"
+            else reason
+        )
+        parts.append(
+            GateResult(
+                name="compile",
+                status="fail" if not allowed else "skip",
+                findings=(
+                    [
+                        Finding(
+                            gate="compile",
+                            rule="security-gate",
+                            message=blocked,
+                            severity="error",
+                        )
+                    ]
+                    if not allowed
+                    else []
+                ),
+                notes=[blocked],
+            )
+        )
+    elif builds:
+        if "go" in builds:
+            parts.append(_go(root, config))
+        if "rust" in builds:
+            parts.append(_rust(root))
+        if "csharp" in builds:
+            parts.append(_csharp(root))
+        if "java" in builds:
+            parts.append(_java(root, config))
+        if "typescript" in builds:
+            parts.append(_typescript(root))
 
     findings: list[Finding] = []
-    notes = [reason]
+    notes = [reason] if builds else ["non-executing syntax checks"]
     skipped: list[str] = []
     failed = False
     any_pass = False
@@ -103,6 +133,214 @@ def run_compile(
         findings=findings,
         notes=notes,
         skipped_tools=skipped,
+    )
+
+
+def _c_family(root: Path, config: QualityConfig, language: str) -> GateResult:
+    command = "cc" if language == "c" else "c++"
+    compiler = which(command, project=root, prefer_project=config.prefer_project_tools)
+    if not compiler:
+        return skip_result("compile", f"{command} is not installed", tool=command)
+    suffixes = (
+        {".c", ".h"}
+        if language == "c"
+        else {".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"}
+    )
+    files = [
+        path
+        for path in iter_project_files(root, config)
+        if path.suffix.lower() in suffixes
+    ]
+    if not files:
+        return skip_result(
+            "compile", f"no unambiguous {language} files for syntax checking"
+        )
+    result = run([compiler, "-fsyntax-only", *map(str, files)], cwd=root, timeout=300)
+    return fail_or_pass(
+        "compile",
+        findings_from_text("compile", result, language=language),
+        [f"{command} -fsyntax-only ({len(files)} file(s))"],
+    )
+
+
+def _syntax_check(root: Path, config: QualityConfig, language: str) -> GateResult:
+    settings = {
+        "php": ("php", ["-l"], {".php", ".phtml"}),
+        "ruby": ("ruby", ["-c"], {".rb", ".rake", ".gemspec"}),
+        "dart": ("dart", ["analyze"], {".dart"}),
+        "lua": ("luac", ["-p"], {".lua"}),
+        "powershell": (
+            "pwsh",
+            [
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "$e=$null;[System.Management.Automation.Language.Parser]::"
+                "ParseFile($args[0],[ref]$null,[ref]$e)>$null;"
+                "if($e){$e|% ToString;exit 1}",
+            ],
+            {".ps1", ".psm1", ".psd1"},
+        ),
+        "r": (
+            "Rscript",
+            [
+                "--vanilla",
+                "-e",
+                "parse(file=commandArgs(trailingOnly=TRUE)[1], keep.source=TRUE)",
+                "--args",
+            ],
+            {".r"},
+        ),
+    }
+    if language == "shell":
+        return _shell_syntax(root, config)
+    tool, args, suffixes = settings[language]
+    files = [
+        path
+        for path in iter_project_files(root, config)
+        if path.suffix.lower() in suffixes
+    ]
+    if not files:
+        reason = (
+            "R Markdown parsing is unsupported without extracting code chunks"
+            if language == "r"
+            else f"no {language} files for syntax checking"
+        )
+        return skip_result("compile", reason)
+    executable = which(tool, project=root, prefer_project=config.prefer_project_tools)
+    if not executable and language == "powershell":
+        executable = which("powershell", project=root)
+    if not executable:
+        return skip_result("compile", f"{tool} is not installed", tool=tool)
+    findings: list[Finding] = []
+    if language == "dart":
+        result = run([executable, *args, *map(str, files)], cwd=root, timeout=300)
+        findings.extend(findings_from_text("compile", result, language=language))
+    else:
+        for path in files:
+            result = run([executable, *args, str(path)], cwd=root, timeout=120)
+            if result.returncode != 0:
+                findings.extend(
+                    findings_from_text("compile", result, language=language)
+                )
+    return fail_or_pass(
+        "compile", findings, [f"{tool} syntax check ({len(files)} file(s))"]
+    )
+
+
+def _shell_syntax(root: Path, config: QualityConfig) -> GateResult:
+    files = [
+        path
+        for path in iter_project_files(root, config)
+        if path.suffix.lower() in {".sh", ".bash"}
+    ]
+    if not files:
+        return skip_result("compile", "no shell files for syntax checking")
+    findings: list[Finding] = []
+    skipped: set[str] = set()
+    checked = 0
+    for path in files:
+        tool = "bash" if path.suffix.lower() == ".bash" else "sh"
+        executable = which(
+            tool, project=root, prefer_project=config.prefer_project_tools
+        )
+        if not executable:
+            skipped.add(tool)
+            continue
+        checked += 1
+        result = run([executable, "-n", str(path)], cwd=root, timeout=120)
+        if result.returncode != 0:
+            findings.extend(findings_from_text("compile", result, language="shell"))
+    if not checked:
+        return skip_result(
+            "compile", "sh/bash is not installed", tool="/".join(sorted(skipped))
+        )
+    result = fail_or_pass(
+        "compile", findings, [f"shell -n syntax check ({checked} file(s))"]
+    )
+    result.skipped_tools = sorted(skipped)
+    return result
+
+
+def _swift(root: Path, config: QualityConfig) -> GateResult:
+    compiler = which("swiftc", project=root, prefer_project=config.prefer_project_tools)
+    if not compiler:
+        return skip_result("compile", "swiftc is not installed", tool="swiftc")
+    files = [
+        path
+        for path in iter_project_files(root, config)
+        if path.suffix.lower() == ".swift"
+    ]
+    if not files:
+        return skip_result("compile", "no Swift files for syntax checking")
+    mode = "-typecheck" if config.trust == "trusted" else "-parse"
+    result = run([compiler, mode, *map(str, files)], cwd=root, timeout=300)
+    return fail_or_pass(
+        "compile",
+        findings_from_text("compile", result, language="swift"),
+        [f"swiftc {mode} ({len(files)} file(s))"],
+    )
+
+
+def _kotlin(root: Path, config: QualityConfig) -> GateResult:
+    if config.trust != "trusted":
+        return skip_result(
+            "compile",
+            "kotlinc direct compilation requires trusted mode; use ktlint/detekt otherwise",
+            tool="kotlinc",
+        )
+    compiler = which(
+        "kotlinc", project=root, prefer_project=config.prefer_project_tools
+    )
+    if not compiler:
+        return skip_result("compile", "kotlinc is not installed", tool="kotlinc")
+    files = [
+        path
+        for path in iter_project_files(root, config)
+        if path.suffix.lower() in {".kt", ".kts"}
+    ]
+    if not files:
+        return skip_result("compile", "no Kotlin files for syntax checking")
+    with tempfile.TemporaryDirectory(prefix="quality-kotlin-") as output:
+        result = run(
+            [compiler, *map(str, files), "-d", str(Path(output) / "classes.jar")],
+            cwd=root,
+            timeout=300,
+        )
+    return fail_or_pass(
+        "compile",
+        findings_from_text("compile", result, language="kotlin"),
+        [f"kotlinc temporary output ({len(files)} file(s))"],
+    )
+
+
+def _scala(root: Path, config: QualityConfig) -> GateResult:
+    compiler = which("scalac", project=root, prefer_project=config.prefer_project_tools)
+    if not compiler:
+        return skip_result("compile", "scalac is not installed", tool="scalac")
+    files = [
+        path
+        for path in iter_project_files(root, config)
+        if path.suffix.lower() in {".scala", ".sc"}
+    ]
+    if not files:
+        return skip_result("compile", "no Scala files for syntax checking")
+    if config.trust != "trusted":
+        argv = [compiler, "-Ystop-after:parser", *map(str, files)]
+        note = f"scalac parser check ({len(files)} file(s))"
+        result = run(argv, cwd=root, timeout=300)
+    else:
+        with tempfile.TemporaryDirectory(prefix="quality-scala-") as output:
+            result = run(
+                [compiler, "-d", output, *map(str, files)],
+                cwd=root,
+                timeout=300,
+            )
+        note = f"scalac temporary output ({len(files)} file(s))"
+    return fail_or_pass(
+        "compile",
+        findings_from_text("compile", result, language="scala"),
+        [note],
     )
 
 

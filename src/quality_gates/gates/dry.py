@@ -5,7 +5,6 @@ from pathlib import Path
 
 from quality_gates.config import QualityConfig
 from quality_gates.gates.common import fail_or_pass, skip_result, tool_or_skip
-from quality_gates.installers import ensure_node_tooling
 from quality_gates.models import Finding, GateResult
 from quality_gates.paths import cache_dir
 from quality_gates.tools import run
@@ -14,7 +13,6 @@ from quality_gates.tools import run
 def run_dry(root: Path, config: QualityConfig, languages: list[str]) -> GateResult:
     if not languages:
         return skip_result("dry", "no supported languages detected")
-    ensure_node_tooling()
     jscpd = tool_or_skip("jscpd", root, config.prefer_project_tools, "dry", "multi")
     if isinstance(jscpd, GateResult):
         return jscpd

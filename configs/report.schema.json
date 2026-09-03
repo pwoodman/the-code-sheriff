@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/pwoodman/poly-check/schemas/report-v1.json",
+  "title": "quality-gates report",
+  "type": "object",
+  "required": ["schema_version", "policy", "verdict", "results", "support"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "policy": {"enum": ["observe", "adopt", "enforce"]},
+    "verdict": {"enum": ["pass", "fail"]},
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "findings"],
+        "properties": {
+          "name": {"type": "string"},
+          "status": {
+            "enum": ["pass", "fail", "warning", "skip", "not-applicable", "unsupported", "tool-error"]
+          },
+          "findings": {"type": "array"}
+        }
+      }
+    },
+    "support": {"type": "object"}
+  }
+}

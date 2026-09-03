@@ -79,6 +79,7 @@ def write_baseline(
         elif coverage is None and isinstance(old_cov, (int, float)):
             coverage = float(old_cov)
     payload = {
+        "schema_version": "1.0.0",
         "version": 1,
         "policy": "adopt",
         "coverage_line": coverage,

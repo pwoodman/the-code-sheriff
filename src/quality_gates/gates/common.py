@@ -10,23 +10,12 @@ from quality_gates.detect import (
 )
 from quality_gates.models import Finding, GateResult, RunResult
 from quality_gates.paths import bundled_file
+from quality_gates.registry import gate_language, source_suffixes
 from quality_gates.tools import which
-
-_SUFFIXES = {
-    "csharp": {".cs"},
-    "javascript": {".js", ".mjs", ".cjs"},
-    "typescript": {".ts", ".cts", ".mts"},
-    "react": {".jsx", ".tsx"},
-    "rust": {".rs"},
-    "go": {".go"},
-    "python": {".py", ".pyi"},
-    "java": {".java"},
-    "sql": {".sql"},
-}
 
 
 def files_for_language(root: Path, config: QualityConfig, language: str) -> list[Path]:
-    wanted = _SUFFIXES.get(language, set())
+    wanted = source_suffixes(language)
     return [
         path
         for path in iter_project_files(root, config)
@@ -37,7 +26,7 @@ def files_for_language(root: Path, config: QualityConfig, language: str) -> list
 def normalize_gate_languages(languages: list[str]) -> list[str]:
     unique: list[str] = []
     for language in languages:
-        mapped = "javascript" if language in {"typescript", "react"} else language
+        mapped = gate_language(language)
         if mapped not in unique:
             unique.append(mapped)
     return unique
@@ -96,9 +85,18 @@ def merge_results(name: str, parts: Iterable[GateResult]) -> GateResult:
     return GateResult(
         name=name,
         status=status,
-        findings=findings,
-        notes=notes,
-        skipped_tools=skipped,
+        findings=sorted(
+            findings,
+            key=lambda item: (
+                item.path or "",
+                item.line or 0,
+                item.column or 0,
+                item.rule or "",
+                item.message,
+            ),
+        ),
+        notes=sorted(dict.fromkeys(notes)),
+        skipped_tools=sorted(dict.fromkeys(skipped)),
     )
 
 

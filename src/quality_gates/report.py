@@ -4,6 +4,7 @@ import html
 import json
 import os
 import re
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,16 @@ from typing import Any
 from quality_gates.models import Finding, GateResult
 
 INDUSTRY_COVERAGE = 80.0
+REPORT_SCHEMA_VERSION = "1.0.0"
+SUPPORTED_STATUSES = (
+    "pass",
+    "fail",
+    "warning",
+    "skip",
+    "not-applicable",
+    "unsupported",
+    "tool-error",
+)
 
 
 @dataclass
@@ -76,7 +87,9 @@ class QualityDigest:
 
     @property
     def failed(self) -> list[str]:
-        return [item.name for item in self.results if item.status == "fail"]
+        return [
+            item.name for item in self.results if item.status in {"fail", "tool-error"}
+        ]
 
     @property
     def verdict(self) -> str:
@@ -89,6 +102,7 @@ class QualityDigest:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "schema_version": REPORT_SCHEMA_VERSION,
             "policy": self.policy,
             "verdict": self.verdict,
             "failed": self.failed,
@@ -97,6 +111,12 @@ class QualityDigest:
             "performance": self.performance.to_dict(),
             "recommendations": [item.to_dict() for item in self.recommendations],
             "results": [item.to_dict() for item in self.results],
+            "support": {
+                "statuses": list(SUPPORTED_STATUSES),
+                "capability_coverage": {
+                    item.name: item.status for item in self.results
+                },
+            },
         }
 
 
@@ -173,7 +193,106 @@ def write_reports(
     (directory / "quality-report.html").write_text(
         render_html(digest), encoding="utf-8"
     )
+    (directory / "quality-report.sarif").write_text(
+        json.dumps(render_sarif(digest), indent=2) + "\n", encoding="utf-8"
+    )
+    (directory / "quality-report.junit.xml").write_text(
+        render_junit(digest), encoding="utf-8"
+    )
     return path
+
+
+def render_sarif(results: list[GateResult] | QualityDigest) -> dict[str, Any]:
+    digest = _as_digest(results)
+    rules: dict[str, dict[str, Any]] = {}
+    sarif_results: list[dict[str, Any]] = []
+    for finding in digest.issues():
+        rule_id = finding.rule or f"quality/{finding.gate}"
+        rules.setdefault(
+            rule_id,
+            {
+                "id": rule_id,
+                "shortDescription": {"text": f"{finding.gate} finding"},
+            },
+        )
+        entry: dict[str, Any] = {
+            "ruleId": rule_id,
+            "level": "error"
+            if finding.severity == "error"
+            else "warning"
+            if finding.severity == "warning"
+            else "note",
+            "message": {"text": finding.message},
+        }
+        if finding.path:
+            region: dict[str, int] = {}
+            if finding.line:
+                region["startLine"] = finding.line
+            if finding.column:
+                region["startColumn"] = finding.column
+            location: dict[str, Any] = {
+                "physicalLocation": {
+                    "artifactLocation": {"uri": finding.path.replace("\\", "/")}
+                }
+            }
+            if region:
+                location["physicalLocation"]["region"] = region
+            entry["locations"] = [location]
+        sarif_results.append(entry)
+    return {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "quality-gates",
+                        "informationUri": "https://github.com/pwoodman/poly-check",
+                        "rules": [rules[key] for key in sorted(rules)],
+                    }
+                },
+                "results": sarif_results,
+            }
+        ],
+    }
+
+
+def render_junit(results: list[GateResult] | QualityDigest) -> str:
+    digest = _as_digest(results)
+    suite = ET.Element(
+        "testsuite",
+        {
+            "name": "quality-gates",
+            "tests": str(len(digest.results)),
+            "failures": str(sum(item.status == "fail" for item in digest.results)),
+            "errors": str(sum(item.status == "tool-error" for item in digest.results)),
+            "skipped": str(
+                sum(
+                    item.status in {"skip", "not-applicable", "unsupported"}
+                    for item in digest.results
+                )
+            ),
+        },
+    )
+    for result in digest.results:
+        case = ET.SubElement(
+            suite,
+            "testcase",
+            {"classname": "quality-gates", "name": result.name},
+        )
+        text = "\n".join([*result.notes, *(item.message for item in result.findings)])
+        if result.status == "fail":
+            ET.SubElement(
+                case, "failure", {"message": "quality gate failed"}
+            ).text = text
+        elif result.status == "tool-error":
+            ET.SubElement(case, "error", {"message": "quality tool error"}).text = text
+        elif result.status in {"skip", "not-applicable", "unsupported"}:
+            ET.SubElement(case, "skipped", {"message": result.status}).text = text
+        elif text:
+            ET.SubElement(case, "system-out").text = text
+    ET.indent(suite)
+    return ET.tostring(suite, encoding="unicode", xml_declaration=True) + "\n"
 
 
 def load_results(report_dir: Path) -> tuple[list[GateResult], str]:
@@ -930,15 +1049,17 @@ def _recommendations(
         add(
             "P1",
             "Install security scanners",
-            "Compile stays blocked until gitleaks, osv-scanner, and/or semgrep can run.",
-            "quality doctor --install",
+            "No security scanner ran. Use doctor to see verified installation options.",
+            "quality doctor",
         )
     elif security and security.skipped_tools:
         add(
             "P2",
-            "Fill in skipped security tools",
-            "Skipped: " + ", ".join(security.skipped_tools) + ".",
-            "quality doctor --install",
+            "Review optional security tools",
+            "Skipped: "
+            + ", ".join(security.skipped_tools)
+            + ". Doctor reports whether verified auto-install is available.",
+            "quality doctor",
         )
 
     if (

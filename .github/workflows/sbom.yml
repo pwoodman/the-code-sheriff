@@ -1,0 +1,30 @@
+name: SBOM
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: poly-check.spdx.json
+      - name: Generate tool license inventory
+        run: |
+          python -c "import json,pathlib; d=json.load(open('configs/tool-manifest.json')); rows=['# Tool license inventory',''] + [f'- {x[\"id\"]}: {x[\"license\"]}' for x in sorted(d['tools'],key=lambda x:x['id'])]; pathlib.Path('tool-licenses.md').write_text('\n'.join(rows)+'\n')"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom-and-licenses
+          path: |
+            poly-check.spdx.json
+            tool-licenses.md

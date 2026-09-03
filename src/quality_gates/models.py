@@ -14,6 +14,10 @@ class Finding:
     column: int | None = None
     rule: str | None = None
     language: str | None = None
+    tool: str | None = None
+    tool_version: str | None = None
+    raw_artifact: str | None = None
+    safety: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in asdict(self).items() if v is not None}
@@ -27,6 +31,12 @@ class GateResult:
     notes: list[str] = field(default_factory=list)
     skipped_tools: list[str] = field(default_factory=list)
     duration_ms: int | None = None
+    tool: str | None = None
+    tool_version: str | None = None
+    raw_artifacts: list[str] = field(default_factory=list)
+    safety: str | None = None
+    exit_state: str | None = None
+    tool_errors: list[str] = field(default_factory=list)
 
     def error_count(self) -> int:
         return sum(1 for item in self.findings if item.severity == "error")
@@ -46,6 +56,14 @@ class GateResult:
         }
         if self.duration_ms is not None:
             payload["duration_ms"] = self.duration_ms
+        for key in ("tool", "tool_version", "safety", "exit_state"):
+            value = getattr(self, key)
+            if value is not None:
+                payload[key] = value
+        if self.raw_artifacts:
+            payload["raw_artifacts"] = self.raw_artifacts
+        if self.tool_errors:
+            payload["tool_errors"] = self.tool_errors
         return payload
 
 
@@ -57,6 +75,12 @@ class RunResult:
     stderr: str = ""
     skipped: bool = False
     skip_reason: str = ""
+    tool: str | None = None
+    tool_version: str | None = None
+    raw_artifact: str | None = None
+    safety: str | None = None
+    exit_state: str | None = None
+    tool_error: str | None = None
 
     @property
     def combined(self) -> str:
