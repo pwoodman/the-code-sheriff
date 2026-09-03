@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
 from quality_gates.config import QualityConfig
+from quality_gates.diagnostics import enrich_findings
+from quality_gates.gates.common import execution_details, findings_from_text
 from quality_gates.models import Finding, GateResult
 from quality_gates.registry import PROFILES, CapabilityProfile
 from quality_gates.result_cache import cached_result
@@ -238,7 +240,7 @@ def _run_builtin_profile(
         )
     builtin_result: GateResult | None = None
     if capability in {"lint", "validate"}:
-        builtin_result = _run_builtin_validator(profile, files)
+        builtin_result = _run_builtin_validator(profile, files, root)
         template = LINT_COMMANDS.get(profile_id)
     else:
         template = FORMAT_COMMANDS.get(profile_id)
@@ -270,24 +272,16 @@ def _run_builtin_profile(
         )
     result = run(argv, cwd=root)
     findings = list(builtin_result.findings) if builtin_result else []
-    if result.returncode != 0:
-        lines = result.combined.splitlines() or [
-            f"{template.tool} exited {result.returncode}"
-        ]
-        findings.extend(
-            [
-                Finding(
-                    gate=capability,
-                    language=profile_id if profile.kind == "language" else None,
-                    path=_path_from_line(line, root),
-                    message=line.strip()[:500],
-                    rule=template.tool,
-                    tool=template.tool,
-                )
-                for line in lines
-                if line.strip()
-            ]
+    findings.extend(
+        findings_from_text(
+            capability,
+            result,
+            language=profile_id if profile.kind == "language" else None,
+            default_message=f"{template.tool} exited {result.returncode}",
+            root=root,
         )
+    )
+    findings = enrich_findings(findings, root, result)
     return GateResult(
         name=capability,
         status=(
@@ -298,13 +292,12 @@ def _run_builtin_profile(
             *(builtin_result.notes if builtin_result else []),
             f"{template.tool} checked {len(files)} file(s)",
         ],
-        tool=template.tool,
-        exit_state=result.exit_state,
+        **execution_details(result),
     )
 
 
 def _run_builtin_validator(
-    profile: CapabilityProfile, files: tuple[Path, ...]
+    profile: CapabilityProfile, files: tuple[Path, ...], root: Path | None = None
 ) -> GateResult | None:
     validators = [item.name for item in profile.tools.get("validate", ())]
     builtin = next((name for name in validators if name.startswith("builtin-")), None)
@@ -318,7 +311,7 @@ def _run_builtin_validator(
         status=(
             "fail" if any(item.severity == "error" for item in findings) else "pass"
         ),
-        findings=findings,
+        findings=enrich_findings(findings, root),
         notes=[f"{builtin} checked {len(files)} file(s)"],
         tool=builtin,
         safety="non-executing",

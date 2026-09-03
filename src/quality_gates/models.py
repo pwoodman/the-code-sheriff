@@ -18,6 +18,10 @@ class Finding:
     tool_version: str | None = None
     raw_artifact: str | None = None
     safety: str | None = None
+    reason: str | None = None
+    suggestion: str | None = None
+    documentation_url: str | None = None
+    snippet: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in asdict(self).items() if v is not None}
@@ -37,6 +41,10 @@ class GateResult:
     safety: str | None = None
     exit_state: str | None = None
     tool_errors: list[str] = field(default_factory=list)
+    command: list[str] = field(default_factory=list)
+    working_directory: str | None = None
+    return_code: int | None = None
+    output_excerpt: str | None = None
 
     def error_count(self) -> int:
         return sum(1 for item in self.findings if item.severity == "error")
@@ -56,10 +64,20 @@ class GateResult:
         }
         if self.duration_ms is not None:
             payload["duration_ms"] = self.duration_ms
-        for key in ("tool", "tool_version", "safety", "exit_state"):
+        for key in (
+            "tool",
+            "tool_version",
+            "safety",
+            "exit_state",
+            "working_directory",
+            "return_code",
+            "output_excerpt",
+        ):
             value = getattr(self, key)
             if value is not None:
                 payload[key] = value
+        if self.command:
+            payload["command"] = self.command
         if self.raw_artifacts:
             payload["raw_artifacts"] = self.raw_artifacts
         if self.tool_errors:
@@ -81,6 +99,7 @@ class RunResult:
     safety: str | None = None
     exit_state: str | None = None
     tool_error: str | None = None
+    cwd: str | None = None
 
     @property
     def combined(self) -> str:

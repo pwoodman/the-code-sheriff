@@ -89,6 +89,7 @@ def run_version(
             Finding(
                 gate="version",
                 path=hit.relative,
+                line=_hit_line(hit),
                 rule="semver",
                 message=f"{hit.value!r} is not semver (expected MAJOR.MINOR.PATCH)",
             )
@@ -98,9 +99,12 @@ def run_version(
     unique_values = {str(sem) for _, sem in valid}
     if len(unique_values) > 1:
         listed = ", ".join(f"{hit.relative}={hit.value}" for hit, _ in valid)
+        primary = _primary_hit([hit for hit, _ in valid])
         findings.append(
             Finding(
                 gate="version",
+                path=primary.relative if primary else None,
+                line=_hit_line(primary) if primary else None,
                 rule="consistent",
                 message=f"version files disagree: {listed}",
             )
@@ -113,7 +117,7 @@ def run_version(
     else:
         notes.append("not a git checkout; skipped bump-vs-base check")
 
-    return fail_or_pass("version", findings, notes)
+    return fail_or_pass("version", findings, notes, root=root)
 
 
 def discover_versions(root: Path, config: QualityConfig) -> list[VersionHit]:
@@ -290,9 +294,12 @@ def _bump_required(
     subjects = git_commit_subjects(root, resolved)
     suggested = suggest_bump(subjects) if subjects else "patch"
     if source_changed and not version_changed:
+        primary = _primary_hit(hits)
         findings.append(
             Finding(
                 gate="version",
+                path=primary.relative if primary else None,
+                line=_hit_line(primary) if primary else None,
                 rule="bump-required",
                 message=(
                     "source changed without a version bump. "
@@ -317,9 +324,12 @@ def _bump_required(
         if old_values:
             old = max(old_values)
             if current <= old:
+                primary = _primary_hit([hit for hit, _ in valid])
                 findings.append(
                     Finding(
                         gate="version",
+                        path=primary.relative if primary else None,
+                        line=_hit_line(primary) if primary else None,
                         rule="must-increase",
                         message=f"version {current} is not greater than {old} on {resolved}",
                     )
@@ -336,11 +346,51 @@ def _bump_required(
                     Finding(
                         gate="version",
                         path="CHANGELOG.md",
+                        line=1,
                         rule="changelog",
                         message=f"CHANGELOG.md does not mention {current}",
                     )
                 )
     return findings
+
+
+def _primary_hit(hits: list[VersionHit]) -> VersionHit | None:
+    order = (
+        "pyproject",
+        "package.json",
+        "cargo",
+        "dunder",
+        "csproj",
+        "pom",
+        "version-file",
+    )
+    ranked = {kind: index for index, kind in enumerate(order)}
+    return min(hits, key=lambda hit: ranked.get(hit.kind, 99)) if hits else None
+
+
+def _hit_line(hit: VersionHit | None) -> int | None:
+    if hit is None:
+        return None
+    patterns = {
+        "pyproject": re.compile(r"^version\s*="),
+        "dunder": re.compile(r"^__version__\s*="),
+        "cargo": re.compile(r"^version\s*="),
+        "csproj": re.compile(r"<Version>"),
+        "pom": re.compile(r"<version>", re.I),
+        "package.json": re.compile(r'"version"\s*:'),
+        "version-file": re.compile(r"\S"),
+    }
+    pattern = patterns.get(hit.kind)
+    if pattern is None:
+        return None
+    try:
+        lines = hit.path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return None
+    for index, line in enumerate(lines, 1):
+        if pattern.search(line):
+            return index
+    return None
 
 
 def _extract_from_text(text: str, hit: VersionHit) -> str | None:

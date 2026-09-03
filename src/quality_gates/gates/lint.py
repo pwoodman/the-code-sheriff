@@ -93,11 +93,12 @@ def _python(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
                     rule=item.get("code"),
                     message=item.get("message", "ruff finding"),
                     severity="error",
+                    tool="ruff",
                 )
             )
     except json.JSONDecodeError:
-        findings = findings_from_text("lint", result, language="python")
-    return fail_or_pass("lint", findings)
+        findings = findings_from_text("lint", result, language="python", root=root)
+    return fail_or_pass("lint", findings, root=root, run=result)
 
 
 def _node(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
@@ -139,11 +140,12 @@ def _node(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
                         rule=msg.get("ruleId"),
                         message=msg.get("message", "eslint finding"),
                         severity=severity,
+                        tool="eslint",
                     )
                 )
     except json.JSONDecodeError:
-        findings = findings_from_text("lint", result, language="javascript")
-    return fail_or_pass("lint", findings)
+        findings = findings_from_text("lint", result, language="javascript", root=root)
+    return fail_or_pass("lint", findings, root=root, run=result)
 
 
 def _go(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
@@ -157,7 +159,12 @@ def _go(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
                 "lint", "go / golangci-lint is not installed", tool="golangci-lint"
             )
         result = run([vet, "vet", "./..."], cwd=root)
-        return fail_or_pass("lint", findings_from_text("lint", result, language="go"))
+        return fail_or_pass(
+            "lint",
+            findings_from_text("lint", result, language="go", root=root),
+            root=root,
+            run=result,
+        )
     cfg = bundled_file("golangci.yml")
     project_cfg = root / ".golangci.yml"
     argv = [lint, "run", "--out-format", "json", "./..."]
@@ -178,11 +185,12 @@ def _go(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
                     column=pos.get("Column"),
                     rule=item.get("FromLinter"),
                     message=item.get("Text", "golangci-lint finding"),
+                    tool="golangci-lint",
                 )
             )
     except json.JSONDecodeError:
-        findings = findings_from_text("lint", result, language="go")
-    return fail_or_pass("lint", findings)
+        findings = findings_from_text("lint", result, language="go", root=root)
+    return fail_or_pass("lint", findings, root=root, run=result)
 
 
 def _rust(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
@@ -225,9 +233,10 @@ def _rust(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
                     rule=(message.get("code") or {}).get("code"),
                     message=message.get("message", "clippy finding"),
                     severity="error" if level == "error" else "warning",
+                    tool="clippy",
                 )
             )
-        return fail_or_pass("lint", findings)
+        return fail_or_pass("lint", findings, root=root, run=result)
     return skip_result(
         "lint",
         "clippy needs a Cargo.toml in the project root; rustc-only files are format-checked only",
@@ -270,11 +279,12 @@ def _java(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
                 message=match.group("msg"),
                 rule="checkstyle",
                 severity=severity,
+                tool="checkstyle",
             )
         )
     if result.returncode != 0 and not findings:
-        findings = findings_from_text("lint", result, language="java")
-    return fail_or_pass("lint", findings)
+        findings = findings_from_text("lint", result, language="java", root=root)
+    return fail_or_pass("lint", findings, root=root, run=result)
 
 
 def _csharp(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
@@ -313,7 +323,10 @@ def _csharp(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
             result,
             language="csharp",
             default_message="dotnet format analyzers reported style or analyzer issues",
+            root=root,
         ),
+        root=root,
+        run=result,
     )
 
 
@@ -352,8 +365,9 @@ def _sql(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
                         or violation.get("line_pos"),
                         rule=violation.get("code"),
                         message=violation.get("description", "sqlfluff finding"),
+                        tool="sqlfluff",
                     )
                 )
     except json.JSONDecodeError:
-        findings = findings_from_text("lint", result, language="sql")
-    return fail_or_pass("lint", findings)
+        findings = findings_from_text("lint", result, language="sql", root=root)
+    return fail_or_pass("lint", findings, root=root, run=result)

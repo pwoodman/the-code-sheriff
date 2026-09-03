@@ -475,7 +475,9 @@ def _emit(
     results, policy = apply_policy(results, root, config)
     maybe_comment_pr(results, root, config, policy)
     emit_annotations(results)
-    digest = build_digest(results, policy=policy, report_dir=root / ".quality-reports")
+    digest = build_digest(
+        results, policy=policy, report_dir=root / ".quality-reports", root=root
+    )
     write_reports(digest, root / ".quality-reports", policy=policy)
     if as_json:
         print(json.dumps(digest.to_dict(), indent=2))

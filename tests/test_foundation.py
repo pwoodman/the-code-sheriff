@@ -158,6 +158,8 @@ def test_manifest_loader_has_explicit_install_and_checksum_metadata() -> None:
 def test_doctor_json_reports_negotiation(tmp_path: Path, capsys, monkeypatch) -> None:
     (tmp_path / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("GITHUB_EVENT_NAME", raising=False)
+    monkeypatch.delenv("GITHUB_REF", raising=False)
     monkeypatch.setattr("quality_gates.cli.which", lambda *_a, **_kw: None)
     code = main(["--json", "doctor"])
     payload = json.loads(capsys.readouterr().out)

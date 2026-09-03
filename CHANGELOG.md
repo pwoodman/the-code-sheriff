@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 1.6.0
+
+- Failure reports now include what failed, where (path:line:column plus a source
+  snippet), why, and a concrete fix, plus redacted command / working-directory /
+  exit-code context across console, JSON, HTML, Markdown, SARIF, JUnit, and
+  annotations. Common yamllint, ruff, and version rules get targeted help.
 
 - Deterministic, atomic result cache for parse/format/lint profile adapters,
   bounded parallel profile execution, stable result ordering, and cache

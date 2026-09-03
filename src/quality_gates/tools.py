@@ -68,6 +68,7 @@ def run(
             tool=Path(argv_list[0]).name,
             exit_state="missing",
             tool_error=f"{argv_list[0]} is not installed",
+            cwd=str(cwd),
         )
     except subprocess.TimeoutExpired as exc:
         return RunResult(
@@ -78,6 +79,7 @@ def run(
             tool=Path(argv_list[0]).name,
             exit_state="timeout",
             tool_error=f"timed out after {timeout}s",
+            cwd=str(cwd),
         )
     return RunResult(
         argv=argv_list,
@@ -86,6 +88,7 @@ def run(
         stderr=_decode(proc.stderr),
         tool=Path(argv_list[0]).name,
         exit_state="success" if proc.returncode == 0 else "failed",
+        cwd=str(cwd),
     )
 
 

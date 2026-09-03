@@ -205,6 +205,12 @@ writes JSON, Markdown, HTML, SARIF 2.1.0, and JUnit XML. JSON report, audit,
 coverage, and baseline documents carry `schema_version`; bundled schemas live
 in `configs/`.
 
+Failures include the tool and rule, normalized `path:line:column`, why the
+command failed, and a copyable local reproduction command when available.
+Structured reports also retain a redacted command, working directory, return
+code, and bounded output excerpt; likely secret values are replaced with
+`<redacted>`.
+
 The deterministic cache is limited to parse/format/lint profile adapters and is
 keyed by file content, effective configuration, profile/capability, and tool
 version. Builds, tests, AI review, and security/network scans are never cached.

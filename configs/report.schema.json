@@ -18,7 +18,33 @@
           "status": {
             "enum": ["pass", "fail", "warning", "skip", "not-applicable", "unsupported", "tool-error"]
           },
-          "findings": {"type": "array"}
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["gate", "message", "severity"],
+              "properties": {
+                "gate": {"type": "string"},
+                "message": {"type": "string"},
+                "severity": {"enum": ["error", "warning", "info"]},
+                "path": {"type": "string"},
+                "line": {"type": "integer", "minimum": 1},
+                "column": {"type": "integer", "minimum": 1},
+                "rule": {"type": "string"},
+                "language": {"type": "string"},
+                "tool": {"type": "string"},
+                "reason": {"type": "string"},
+                "suggestion": {"type": "string"},
+                "documentation_url": {"type": "string", "format": "uri"},
+                "snippet": {"type": "string"}
+              }
+            }
+          },
+          "command": {"type": "array", "items": {"type": "string"}},
+          "working_directory": {"type": "string"},
+          "return_code": {"type": "integer"},
+          "output_excerpt": {"type": "string"},
+          "tool_errors": {"type": "array", "items": {"type": "string"}}
         }
       }
     },

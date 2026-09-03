@@ -132,4 +132,8 @@ def _decode(payload: dict[str, Any]) -> GateResult:
         safety=payload.get("safety"),
         exit_state=payload.get("exit_state"),
         tool_errors=list(payload.get("tool_errors", [])),
+        command=list(payload.get("command", [])),
+        working_directory=payload.get("working_directory"),
+        return_code=payload.get("return_code"),
+        output_excerpt=payload.get("output_excerpt"),
     )
