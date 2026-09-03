@@ -42,4 +42,5 @@ jobs:
             ${{ github.event.inputs.full_suite == 'true' && '1' || '' }}
         run: >-
           quality run --base
-          "origin/${{ github.base_ref || github.event.repository.default_branch }}"
+          "origin/${{ github.base_ref
+          || github.event.repository.default_branch }}"
