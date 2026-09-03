@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from quality_gates.ci_plan import select_gates, unknown_gates
+from quality_gates.ci_plan import (
+    CHEAP_GITHUB_GATES,
+    HEAVY_GATES,
+    select_gates,
+    unknown_gates,
+)
 from quality_gates.config import QualityConfig
 from quality_gates.gates.compile import security_cleared
 from quality_gates.models import Finding, GateResult
@@ -13,7 +18,11 @@ def test_local_mode_on_github_is_cheap(monkeypatch) -> None:
     monkeypatch.delenv("QUALITY_CI_FULL", raising=False)
     config = QualityConfig()
     assert config.ci_mode == "local"
-    assert select_gates(config) == ["impact", "audit", "version", "review"]
+    assert select_gates(config) == list(CHEAP_GITHUB_GATES)
+    assert "format" in CHEAP_GITHUB_GATES
+    assert "lint" in CHEAP_GITHUB_GATES
+    assert "format" not in HEAVY_GATES
+    assert "lint" not in HEAVY_GATES
 
 
 def test_both_or_full_flag_runs_heavy_gates(monkeypatch) -> None:

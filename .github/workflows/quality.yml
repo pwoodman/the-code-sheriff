@@ -1,8 +1,8 @@
-# Multi-step quality gates. Default ci.mode=local keeps GitHub Actions cheap:
-# impact + audit + version + PR review. Set [quality.ci] mode = "github" or "both",
-# or dispatch this workflow with full_suite=true, to run the heavy suite here.
-# Playwright/Cypress stay off Actions unless [quality.ui] on_github = true.
-# Coverage stays off Actions in local mode (it runs the test suite). Audit is cheap static.
+# This repo uses [quality.ci] mode = "both", so PRs run quality-full.yml
+# (detect, format, lint, DRY, security, compile, impact, coverage, UI, version).
+# Consumers that keep mode = "local" only run github_gates here (now includes
+# format + lint). Dispatch Quality gates (full suite) or set mode github/both
+# for the heavy matrix. Compile/UI still self-skip when they do not apply.
 
 name: Quality gates
 
@@ -35,6 +35,7 @@ concurrency:
 permissions:
   contents: read
   pull-requests: write
+  checks: write
 
 jobs:
   plan:
@@ -72,7 +73,7 @@ jobs:
           PY
 
   local:
-    name: Local-mode cheap gates
+    name: Cheap GitHub gates
     needs: plan
     if: needs.plan.outputs.full != 'true'
     runs-on: ubuntu-latest
@@ -83,243 +84,40 @@ jobs:
       - uses: ./.github/actions/bootstrap
         with:
           install-binaries: "false"
-      - name: Version + review (heavy gates run on developer machines)
+      - name: Format, lint, impact, audit, version, review
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "ci.mode=${{ needs.plan.outputs.mode }} — format/lint/DRY/security/compile/coverage/ui run locally via pre-commit/pre-push. impact + audit run here (cheap)."
-          echo "Re-run this workflow with full_suite, or set [quality.ci] mode = \"both\", to run them on GitHub."
+          echo "ci.mode=${{ needs.plan.outputs.mode }} — github_gates (format, lint, impact, audit, version, review)."
+          echo "Detect/format/lint are cheap and belong on PRs. DRY/security/compile/coverage/UI stay local unless mode is github/both."
           quality run --base "origin/${{ github.base_ref || github.event.repository.default_branch }}"
+      - name: Upload quality report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: quality-report
+          if-no-files-found: ignore
+          path: |
+            .quality-reports/quality-report.html
+            .quality-reports/quality-report.md
+            .quality-reports/quality-report.json
 
-  detect:
-    name: 1 · Detect languages
+  full:
+    name: Full suite
     needs: plan
     if: needs.plan.outputs.full == 'true'
-    runs-on: ubuntu-latest
-    outputs:
-      languages: ${{ steps.detect.outputs.languages }}
-      gate_languages: ${{ steps.detect.outputs.gate_languages }}
-      has_languages: ${{ steps.detect.outputs.has_languages }}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/bootstrap
-        with:
-          install-binaries: "false"
-      - name: Detect
-        id: detect
-        run: |
-          python3 - <<'PY'
-          import json, os
-          from pathlib import Path
-          from quality_gates.config import load_config
-          from quality_gates.detect import detect_languages
-          from quality_gates.paths import project_root
-          root = project_root()
-          info = detect_languages(root, load_config(root))
-          gate = info.get("gate_languages") or info["languages"]
-          Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8").write(
-              "languages=" + json.dumps(info["languages"]) + "\n"
-              + "gate_languages=" + json.dumps(gate or ["none"]) + "\n"
-              + "has_languages=" + ("true" if info["languages"] else "false") + "\n"
-          )
-          print(json.dumps(info, indent=2))
-          PY
-
-  format:
-    name: 2 · Format (${{ matrix.language }})
-    needs: [plan, detect]
-    if: needs.plan.outputs.full == 'true' && needs.detect.outputs.has_languages == 'true'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        language: ${{ fromJson(needs.detect.outputs.gate_languages) }}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/bootstrap
-        with:
-          install-binaries: "false"
-      - uses: ./.github/actions/setup-language
-        if: matrix.language != 'none'
-        with:
-          language: ${{ matrix.language }}
-      - name: Check formatting
-        if: matrix.language != 'none'
-        run: quality format --check --language ${{ matrix.language }}
-
-  lint:
-    name: 3 · Lint (${{ matrix.language }})
-    needs: [plan, detect]
-    if: needs.plan.outputs.full == 'true' && needs.detect.outputs.has_languages == 'true'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        language: ${{ fromJson(needs.detect.outputs.gate_languages) }}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/bootstrap
-        with:
-          install-binaries: "false"
-      - uses: ./.github/actions/setup-language
-        if: matrix.language != 'none'
-        with:
-          language: ${{ matrix.language }}
-      - name: Lint
-        if: matrix.language != 'none'
-        run: quality lint --language ${{ matrix.language }}
-
-  dry:
-    name: 4 · DRY (copy-paste)
-    needs: [plan, detect]
-    if: needs.plan.outputs.full == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/bootstrap
-        with:
-          install-binaries: "false"
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: "22"
-      - name: Duplication scan
-        run: quality dry
-
-  security:
-    name: 5 · Security
-    needs: [plan, detect]
-    if: needs.plan.outputs.full == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/bootstrap
-      - name: Security scanners
-        env:
-          QUALITY_GATES_AUTO_INSTALL: "1"
-        run: quality security
-
-  compile:
-    name: 6 · Compile (after security)
-    needs: [plan, detect, security]
-    if: needs.plan.outputs.full == 'true' && needs.security.result == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/bootstrap
-      - name: Set up detected compiled languages
-        uses: ./.github/actions/setup-language
-        if: contains(needs.detect.outputs.languages, 'go')
-        with:
-          language: go
-      - uses: ./.github/actions/setup-language
-        if: contains(needs.detect.outputs.languages, 'rust')
-        with:
-          language: rust
-      - uses: ./.github/actions/setup-language
-        if: contains(needs.detect.outputs.languages, 'java')
-        with:
-          language: java
-      - uses: ./.github/actions/setup-language
-        if: contains(needs.detect.outputs.languages, 'csharp')
-        with:
-          language: csharp
-      - uses: ./.github/actions/setup-language
-        if: contains(needs.detect.outputs.languages, 'typescript') || contains(needs.detect.outputs.languages, 'javascript')
-        with:
-          language: javascript
-      - name: Compile only if security still clears
-        env:
-          QUALITY_GATES_AUTO_INSTALL: "1"
-        run: quality run --only compile
-
-  impact:
-    name: 6a · Impact (upstream / downstream)
-    needs: [plan, detect]
-    if: needs.plan.outputs.full == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/bootstrap
-        with:
-          install-binaries: "false"
-      - name: Impact analysis
-        run: quality impact --base "origin/${{ github.base_ref || github.event.repository.default_branch }}"
-
-  ui:
-    name: 6b · UI tests (opt-in Playwright/Cypress)
-    needs: [plan, detect, compile]
-    if: needs.plan.outputs.full == 'true' && needs.plan.outputs.ui == 'true' && needs.compile.result == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/bootstrap
-        with:
-          install-binaries: "false"
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: "22"
-      - name: Selective UI tests
-        env:
-          QUALITY_UI_ON_GITHUB: "1"
-        run: quality ui --base "origin/${{ github.base_ref || github.event.repository.default_branch }}"
-
-  version:
-    name: 7 · Version
-    needs: [plan, detect]
-    if: needs.plan.outputs.full == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/bootstrap
-        with:
-          install-binaries: "false"
-      - name: Semver bump check
-        run: quality version --base "origin/${{ github.base_ref || github.event.repository.default_branch }}"
-
-  review:
-    name: 8 · AI code review
-    needs: [plan, detect, lint, dry, security]
-    if: always() && needs.plan.outputs.full == 'true' && github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/bootstrap
-        with:
-          install-binaries: "false"
-      - name: Review pull request
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          BASE="origin/${{ github.base_ref }}"
-          quality review --base "$BASE" --post
+    uses: ./.github/workflows/quality-full.yml
+    secrets: inherit
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
 
   summary:
     name: Quality summary
-    needs: [plan, local, detect, format, lint, dry, security, compile, impact, ui, version, review]
+    needs: [plan, local, full]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -328,29 +126,14 @@ jobs:
           python3 - <<'PY'
           import sys
           full = "${{ needs.plan.outputs.full }}" == "true"
-          ui_wanted = "${{ needs.plan.outputs.ui }}" == "true"
           results = {
             "plan": "${{ needs.plan.result }}",
             "local": "${{ needs.local.result }}",
-            "detect": "${{ needs.detect.result }}",
-            "format": "${{ needs.format.result }}",
-            "lint": "${{ needs.lint.result }}",
-            "dry": "${{ needs.dry.result }}",
-            "security": "${{ needs.security.result }}",
-            "compile": "${{ needs.compile.result }}",
-            "impact": "${{ needs.impact.result }}",
-            "ui": "${{ needs.ui.result }}",
-            "version": "${{ needs.version.result }}",
-            "review": "${{ needs.review.result }}",
+            "full": "${{ needs.full.result }}",
           }
-          print("full=", full, "ui_wanted=", ui_wanted)
+          print("full=", full)
           print("\n".join(f"{k}={v}" for k, v in results.items()))
-          if full:
-              blocking = ["plan", "detect", "format", "lint", "dry", "security", "compile", "impact", "version"]
-              if ui_wanted:
-                  blocking.append("ui")
-          else:
-              blocking = ["plan", "local"]
+          blocking = ["plan", "full"] if full else ["plan", "local"]
           bad = [name for name in blocking if results[name] not in {"success", "skipped"}]
           if bad:
               print("failed gates:", ", ".join(bad))

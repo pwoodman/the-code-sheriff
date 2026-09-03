@@ -254,9 +254,20 @@ def render_markdown(results: list[GateResult] | QualityDigest) -> str:
             cmd = f" `{item.command}`" if item.command else ""
             lines.append(f"- **{item.priority} — {item.title}.** {item.detail}{cmd}")
     lines.append("")
+    lines.append("## Gates")
+    lines.append("")
     for result in digest.results:
-        lines.append(f"## {result.name}")
+        timing = _fmt_ms(result.duration_ms) if result.duration_ms is not None else ""
+        extra = f" · {timing}" if timing else ""
+        lines.append(f"<details{' open' if result.status == 'fail' else ''}>")
+        lines.append(
+            f"<summary><strong>{result.name}</strong> — {result.status.upper()} "
+            f"({result.error_count()} errors, {result.warning_count()} warnings{extra})</summary>"
+        )
         lines.append("")
+        if result.status == "skip" and result.notes:
+            lines.append(f"> Skip reason: {result.notes[0]}")
+            lines.append("")
         for note in result.notes:
             lines.append(f"- {note}")
         for skipped in result.skipped_tools:
@@ -271,15 +282,21 @@ def render_markdown(results: list[GateResult] | QualityDigest) -> str:
         elif not result.notes and not result.skipped_tools:
             lines.append("No findings.")
         lines.append("")
+        lines.append("</details>")
+        lines.append("")
     return "\n".join(lines) + "\n"
 
 
 def render_console(results: list[GateResult] | QualityDigest) -> str:
     digest = _as_digest(results)
     width = max((len(item.name) for item in digest.results), default=8)
+    passed = sum(1 for item in digest.results if item.status == "pass")
+    skipped = sum(1 for item in digest.results if item.status == "skip")
+    failed = len(digest.failed)
     rows = [
         f"Quality report · policy={digest.policy} · {digest.verdict.upper()}"
         f" ({digest.errors} error(s), {digest.warnings} warning(s))",
+        f"  {passed} passed · {failed} failed · {skipped} skipped (skip ≠ fail)",
         "",
         "Scorecard",
     ]
@@ -288,10 +305,9 @@ def render_console(results: list[GateResult] | QualityDigest) -> str:
         if result.duration_ms is not None:
             suffix = f"  {_fmt_ms(result.duration_ms)}"
         if result.status == "skip":
-            extra = result.notes[0] if result.notes else "skipped"
-            rows.append(
-                f"  {result.name:<{width}}  {result.status.upper():<6}{suffix}  {extra}"
-            )
+            rows.append(f"  {result.name:<{width}}  SKIP  {suffix}".rstrip())
+            reason = result.notes[0] if result.notes else "skipped"
+            rows.append(f"  {'':<{width}}    reason: {reason}")
         elif result.findings:
             rows.append(
                 f"  {result.name:<{width}}  {result.status.upper():<6}{suffix}  "
@@ -303,15 +319,26 @@ def render_console(results: list[GateResult] | QualityDigest) -> str:
     for bullet in performance_bullets(digest.performance, digest.results):
         rows.append("  " + bullet.lstrip("- ").replace("**", ""))
     rows += ["", "Issues"]
-    issues = digest.issues()
-    if not issues:
+    grouped = _issues_by_gate(digest)
+    if not grouped:
         rows.append("  none")
     else:
-        for finding in issues[:20]:
-            rows.append(f"  {_issue_line(finding)}")
-        leftover = len(issues) - 20
-        if leftover > 0:
-            rows.append(f"  … {leftover} more (see quality-report.md)")
+        shown = 0
+        for gate, findings in grouped.items():
+            rows.append(f"  {gate} ({len(findings)})")
+            for finding in findings:
+                if shown >= 24:
+                    break
+                loc = finding.path or finding.rule or gate
+                if finding.line:
+                    loc = f"{loc}:{finding.line}"
+                rows.append(f"    {finding.severity}: {loc}: {finding.message}")
+                shown += 1
+            if shown >= 24:
+                leftover = sum(len(items) for items in grouped.values()) - shown
+                if leftover > 0:
+                    rows.append(f"    … {leftover} more (see quality-report.html)")
+                break
     rows += ["", "Recommendations"]
     if not digest.recommendations:
         rows.append("  none — keep hooks installed so this stays green")
@@ -332,98 +359,330 @@ def render_console(results: list[GateResult] | QualityDigest) -> str:
 
 def render_html(results: list[GateResult] | QualityDigest) -> str:
     digest = _as_digest(results)
-    perf_items = "".join(
-        f"<li>{html.escape(bullet.lstrip('- ').replace('**', ''))}</li>"
-        for bullet in performance_bullets(digest.performance, digest.results)
+    verdict = digest.verdict.upper()
+    passed = sum(1 for item in digest.results if item.status == "pass")
+    skipped = sum(1 for item in digest.results if item.status == "skip")
+    failed = len(digest.failed)
+    return (
+        "<!DOCTYPE html>\n<html lang='en'><head><meta charset='utf-8'/>"
+        f"<meta name='viewport' content='width=device-width, initial-scale=1'/>"
+        f"<title>Quality report — {html.escape(verdict)}</title>"
+        f"<style>{_HTML_CSS}</style></head><body>"
+        f"<header class='hero {html.escape(digest.verdict)}'>"
+        f"<p class='kicker'>Quality gates</p>"
+        f"<h1>{html.escape(verdict)}</h1>"
+        f"<p class='meta'>policy <code>{html.escape(digest.policy)}</code>"
+        f" · {digest.errors} errors · {digest.warnings} warnings"
+        f" · {passed} passed · {failed} failed · {skipped} skipped"
+        f"<span class='hint'> (skip means not applicable, not a failure)</span></p>"
+        f"</header>"
+        f"<main>"
+        f"{_html_scorecard(digest)}"
+        f"{_html_performance(digest)}"
+        f"{_html_issues(digest)}"
+        f"{_html_recommendations(digest)}"
+        f"{_html_gates(digest)}"
+        f"</main></body></html>\n"
     )
-    issue_items = (
-        "".join(
-            f"<li class='{html.escape(finding.severity)}'>{html.escape(_issue_line(finding))}</li>"
-            for finding in digest.issues()[:80]
-        )
-        or "<li>No findings.</li>"
-    )
-    rec_items = ""
-    if digest.recommendations:
-        for item in digest.recommendations:
-            cmd = f"<code>{html.escape(item.command)}</code>" if item.command else ""
-            rec_items += (
-                f"<li><strong>{html.escape(item.priority)} — {html.escape(item.title)}.</strong> "
-                f"{html.escape(item.detail)} {cmd}</li>"
-            )
-    else:
-        rec_items = (
-            "<li>No further action. Keep hooks installed so this stays green.</li>"
-        )
-    score_rows = ""
+
+
+def _html_scorecard(digest: QualityDigest) -> str:
+    max_ms = max((item.duration_ms or 0) for item in digest.results) or 1
+    rows = []
     for result in digest.results:
         timing = _fmt_ms(result.duration_ms) if result.duration_ms is not None else "—"
-        score_rows += (
-            f"<tr class='{html.escape(result.status)}'><td>{html.escape(result.name)}</td>"
-            f"<td>{html.escape(result.status.upper())}</td>"
+        pct = 100.0 * (result.duration_ms or 0) / max_ms
+        why = ""
+        if result.status == "skip" and result.notes:
+            why = f"<p class='why'>{html.escape(result.notes[0])}</p>"
+        rows.append(
+            "<tr class='"
+            + html.escape(result.status)
+            + "'><td><strong>"
+            + html.escape(result.name)
+            + "</strong>"
+            + why
+            + "</td><td><span class='pill "
+            + html.escape(result.status)
+            + "'>"
+            + html.escape(result.status.upper())
+            + "</span></td>"
             f"<td>{result.error_count()}</td><td>{result.warning_count()}</td>"
-            f"<td>{html.escape(timing)}</td></tr>"
+            "<td><div class='time'><span>"
+            + html.escape(timing)
+            + f"</span><span class='mini'><span style='width:{pct:.1f}%'></span>"
+            "</span></div></td></tr>"
         )
-    gate_sections = []
+    return (
+        "<section class='card'><h2>Scorecard</h2>"
+        "<table class='score'><thead><tr>"
+        "<th>Gate</th><th>Status</th><th>Errors</th><th>Warnings</th><th>Time</th>"
+        "</tr></thead><tbody>" + "".join(rows) + "</tbody></table></section>"
+    )
+
+
+def _html_performance(digest: QualityDigest) -> str:
+    perf = digest.performance
+    blocks = [_coverage_meter(perf)]
+    if perf.duplication_percent is not None:
+        blocks.append(
+            "<div class='stat'><span>Duplication</span>"
+            f"<strong>{html.escape(str(perf.duplication_percent))}%</strong>"
+            "<p>of tokens (jscpd)</p></div>"
+        )
+    if perf.impact_upstream is not None or perf.impact_downstream is not None:
+        blocks.append(
+            "<div class='stat'><span>Impact</span>"
+            f"<strong>{perf.impact_upstream or 0} up / {perf.impact_downstream or 0} down</strong>"
+            "<p>import graph around this diff</p></div>"
+        )
+    if perf.audit_confirmed is not None or perf.audit_surfaces:
+        surfaces = ", ".join(perf.audit_surfaces) or "none"
+        confirmed = perf.audit_confirmed if perf.audit_confirmed is not None else 0
+        blocks.append(
+            "<div class='stat'><span>Audit</span>"
+            f"<strong>{confirmed} finding(s)</strong>"
+            f"<p>surfaces: {html.escape(surfaces)}</p></div>"
+        )
+    if perf.gate_ms:
+        total = sum(perf.gate_ms.values())
+        slowest = max(perf.gate_ms, key=perf.gate_ms.get)  # type: ignore[arg-type]
+        blocks.append(
+            "<div class='stat'><span>Run time</span>"
+            f"<strong>{html.escape(_fmt_ms(total))}</strong>"
+            f"<p>slowest {html.escape(slowest)} "
+            f"({html.escape(_fmt_ms(perf.gate_ms[slowest]))})</p></div>"
+        )
+    extra = "".join(
+        f"<li>{html.escape(bullet.lstrip('- ').replace('**', ''))}</li>"
+        for bullet in performance_bullets(perf, digest.results)
+    )
+    return (
+        "<section class='card'><h2>Performance</h2>"
+        f"<div class='stats'>{''.join(blocks)}</div>"
+        f"<ul class='quiet'>{extra}</ul></section>"
+    )
+
+
+def _coverage_meter(perf: PerformanceSnapshot) -> str:
+    if perf.coverage_line is None:
+        return (
+            "<div class='stat'><span>Line coverage</span>"
+            "<strong>n/a</strong><p>not measured in this run</p></div>"
+        )
+    pct = max(0.0, min(100.0, perf.coverage_line))
+    floor = (
+        perf.coverage_floor if perf.coverage_floor is not None else INDUSTRY_COVERAGE
+    )
+    branch = (
+        f" · branch {perf.coverage_branch:.1f}%"
+        if perf.coverage_branch is not None
+        else ""
+    )
+    return (
+        "<div class='metric'><div class='metric-head'><span>Line coverage</span>"
+        f"<strong>{pct:.1f}%</strong></div>"
+        f"<div class='bar' role='img' aria-label='line coverage {pct:.1f} percent'>"
+        f"<span class='fill' style='width:{pct:.1f}%'></span>"
+        f"<span class='tick' style='left:{max(0.0, min(100.0, floor)):.1f}%' "
+        "title='repo floor'></span>"
+        f"<span class='tick industry' style='left:{INDUSTRY_COVERAGE:.1f}%' "
+        "title='industry 80%'></span></div>"
+        f"<p class='hint'>repo floor {floor:.0f}% · industry {INDUSTRY_COVERAGE:.0f}%"
+        f"{html.escape(branch)}</p></div>"
+    )
+
+
+def _html_issues(digest: QualityDigest) -> str:
+    grouped = _issues_by_gate(digest)
+    if not grouped:
+        return (
+            "<section class='card'><h2>Issues</h2>"
+            "<p class='empty'>No findings.</p></section>"
+        )
+    parts = ["<section class='card'><h2>Issues</h2>"]
+    for gate, findings in grouped.items():
+        open_attr = (
+            " open" if any(item.severity == "error" for item in findings) else ""
+        )
+        items = "".join(
+            "<li class='"
+            + html.escape(item.severity)
+            + "'>"
+            + html.escape(_issue_line(item))
+            + "</li>"
+            for item in findings[:40]
+        )
+        parts.append(
+            f"<details class='nest'{open_attr}><summary><strong>"
+            f"{html.escape(gate)}</strong> · {len(findings)}</summary>"
+            f"<ul class='issues'>{items}</ul></details>"
+        )
+    parts.append("</section>")
+    return "".join(parts)
+
+
+def _html_recommendations(digest: QualityDigest) -> str:
+    if not digest.recommendations:
+        return (
+            "<section class='card'><h2>Recommendations</h2>"
+            "<p class='empty'>No further action. Keep hooks installed so this stays green.</p>"
+            "</section>"
+        )
+    cards = []
+    for item in digest.recommendations:
+        cmd = (
+            f"<pre><code>{html.escape(item.command)}</code></pre>"
+            if item.command
+            else ""
+        )
+        cards.append(
+            "<article class='rec "
+            + html.escape(item.priority.lower())
+            + "'><span class='pill'>"
+            + html.escape(item.priority)
+            + "</span><h3>"
+            + html.escape(item.title)
+            + "</h3><p>"
+            + html.escape(item.detail)
+            + f"</p>{cmd}</article>"
+        )
+    return (
+        "<section class='card'><h2>Recommendations</h2>"
+        f"<div class='recs'>{''.join(cards)}</div></section>"
+    )
+
+
+def _html_gates(digest: QualityDigest) -> str:
+    parts = ["<section class='card'><h2>Gate details</h2>"]
     for result in digest.results:
+        open_attr = " open" if result.status == "fail" else ""
+        timing = _fmt_ms(result.duration_ms) if result.duration_ms is not None else ""
+        skip = ""
+        if result.status == "skip" and result.notes:
+            skip = (
+                "<p class='why'><strong>Why skipped.</strong> "
+                + html.escape(result.notes[0])
+                + " Skip is not a failure.</p>"
+            )
         notes = "".join(f"<li>{html.escape(note)}</li>" for note in result.notes)
         notes += "".join(
-            f"<li>skipped <code>{html.escape(name)}</code></li>"
+            f"<li>skipped tool <code>{html.escape(name)}</code></li>"
             for name in result.skipped_tools
         )
         findings = "".join(
-            f"<li>{html.escape(_issue_line(item))}</li>"
+            "<li class='"
+            + html.escape(item.severity)
+            + "'>"
+            + html.escape(_issue_line(item))
+            + "</li>"
             for item in result.findings[:50]
         )
-        body = notes + findings or "<li>No findings.</li>"
-        gate_sections.append(
-            f"<section><h2>{html.escape(result.name)}</h2><ul>{body}</ul></section>"
+        body = notes + findings
+        if not body:
+            body = "<li>No findings.</li>"
+        parts.append(
+            f"<details class='nest {html.escape(result.status)}'{open_attr}>"
+            f"<summary><span class='pill {html.escape(result.status)}'>"
+            f"{html.escape(result.status.upper())}</span> "
+            f"<strong>{html.escape(result.name)}</strong>"
+            f"<span class='dim'> {html.escape(timing)} · "
+            f"{result.error_count()} errors · {result.warning_count()} warnings"
+            f"</span></summary>{skip}<ul>{body}</ul></details>"
         )
-    verdict = digest.verdict.upper()
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8"/>
-<title>Quality report — {html.escape(verdict)}</title>
-<style>
-  :root {{ color-scheme: light dark; }}
-  body {{ font: 15px/1.45 system-ui, sans-serif; margin: 2rem auto; max-width: 880px;
-         padding: 0 1.25rem; color: CanvasText; background: Canvas; }}
-  h1 {{ font-size: 1.6rem; margin-bottom: 0.25rem; }}
-  .meta {{ color: gray; margin-bottom: 1.5rem; }}
-  table {{ border-collapse: collapse; width: 100%; margin: 0.75rem 0 1.5rem; }}
-  th, td {{ border-bottom: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
-            padding: 0.4rem 0.5rem; text-align: left; }}
-  td:nth-child(3), td:nth-child(4), td:nth-child(5), th:nth-child(3), th:nth-child(4), th:nth-child(5)
-    {{ text-align: right; }}
-  tr.fail td:nth-child(2) {{ font-weight: 700; }}
-  ul {{ padding-left: 1.2rem; }}
-  li.error {{ font-weight: 600; }}
-  code {{ font-size: 0.92em; }}
-  @media print {{
-    body {{ margin: 0; max-width: none; }}
-    a {{ color: inherit; text-decoration: none; }}
-  }}
-</style>
-</head>
-<body>
-<h1>Quality report</h1>
-<p class="meta">Verdict: <strong>{html.escape(verdict)}</strong> · policy {html.escape(digest.policy)}
- · {digest.errors} error(s) · {digest.warnings} warning(s)</p>
-<h2>Scorecard</h2>
-<table>
-<thead><tr><th>Gate</th><th>Status</th><th>Errors</th><th>Warnings</th><th>Time</th></tr></thead>
-<tbody>{score_rows}</tbody>
-</table>
-<h2>Performance</h2>
-<ul>{perf_items}</ul>
-<h2>Issues</h2>
-<ul>{issue_items}</ul>
-<h2>Recommendations</h2>
-<ul>{rec_items}</ul>
-{"".join(gate_sections)}
-</body>
-</html>
+    parts.append("</section>")
+    return "".join(parts)
+
+
+def _issues_by_gate(digest: QualityDigest) -> dict[str, list[Finding]]:
+    grouped: dict[str, list[Finding]] = {}
+    for finding in digest.issues():
+        grouped.setdefault(finding.gate, []).append(finding)
+    return grouped
+
+
+_HTML_CSS = """
+:root {
+  --bg: #f4f1ea; --card: #fffaf3; --ink: #1c1916; --muted: #6b645c;
+  --line: #e6ddd0; --pass: #1f7a4d; --fail: #b42318; --skip: #8a5a12;
+  --p0: #b42318; --p1: #b54708; --p2: #175cd3; --fill: #1f7a4d;
+  --hero-fail: #fbeaea; --hero-pass: #eaf6ef;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161411; --card: #1f1b17; --ink: #f4efe7; --muted: #b0a79c;
+    --line: #3a342c; --pass: #6dcc97; --fail: #ff8d80; --skip: #e2b340;
+    --fill: #3d9a68; --hero-fail: #2a1614; --hero-pass: #14241b;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.5 "Segoe UI", system-ui, sans-serif;
+}
+.hero { padding: 2.2rem 1.5rem 1.6rem; border-bottom: 1px solid var(--line); }
+.hero.pass { background: var(--hero-pass); }
+.hero.fail { background: var(--hero-fail); }
+.kicker { text-transform: uppercase; letter-spacing: .12em; font-size: .72rem;
+  color: var(--muted); margin: 0 0 .35rem; }
+h1 { font-size: 2.1rem; margin: 0 0 .35rem; letter-spacing: -.03em; }
+.meta { margin: 0; color: var(--muted); }
+.hint { color: var(--muted); }
+main { max-width: 920px; margin: 0 auto; padding: 1.25rem 1rem 3rem; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+  padding: 1.1rem 1.2rem 1.2rem; margin: 1rem 0; box-shadow: 0 1px 0 rgba(0,0,0,.03); }
+h2 { font-size: 1.05rem; margin: 0 0 .85rem; }
+table.score { width: 100%; border-collapse: collapse; }
+.score th, .score td { text-align: left; padding: .55rem .4rem; border-bottom: 1px solid var(--line);
+  vertical-align: top; }
+.score th:nth-child(n+3), .score td:nth-child(n+3) { text-align: right; }
+.pill { display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .04em;
+  padding: .15rem .5rem; border-radius: 999px; background: var(--line); }
+.pill.pass { color: var(--pass); background: color-mix(in srgb, var(--pass) 16%, transparent); }
+.pill.fail { color: var(--fail); background: color-mix(in srgb, var(--fail) 16%, transparent); }
+.pill.skip { color: var(--skip); background: color-mix(in srgb, var(--skip) 16%, transparent); }
+.why { margin: .25rem 0 0; color: var(--muted); font-size: .88rem; }
+.time { display: flex; flex-direction: column; align-items: flex-end; gap: .25rem; }
+.mini { display: block; width: 88px; height: 5px; background: var(--line); border-radius: 99px; overflow: hidden; }
+.mini > span { display: block; height: 100%; background: var(--fill); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .75rem; }
+.stat, .metric { background: color-mix(in srgb, var(--bg) 70%, var(--card));
+  border: 1px solid var(--line); border-radius: 12px; padding: .8rem .9rem; }
+.stat span, .metric-head span { color: var(--muted); font-size: .78rem; text-transform: uppercase;
+  letter-spacing: .06em; }
+.stat strong, .metric-head strong { display: block; font-size: 1.25rem; margin: .15rem 0; }
+.stat p, .hint, .empty { margin: .15rem 0 0; color: var(--muted); font-size: .88rem; }
+.metric-head { display: flex; justify-content: space-between; align-items: baseline; }
+.bar { position: relative; height: 10px; background: var(--line); border-radius: 99px;
+  margin: .55rem 0 .35rem; overflow: hidden; }
+.bar .fill { display: block; height: 100%; background: var(--fill); }
+.bar .tick { position: absolute; top: -3px; width: 2px; height: 16px; background: var(--ink); opacity: .45; }
+.bar .tick.industry { background: var(--fail); opacity: .7; }
+ul.quiet { margin: .8rem 0 0; padding-left: 1.1rem; color: var(--muted); }
+.recs { display: grid; gap: .7rem; }
+.rec { border: 1px solid var(--line); border-radius: 12px; padding: .85rem 1rem; }
+.rec h3 { margin: .35rem 0 .25rem; font-size: 1rem; }
+.rec p { margin: 0; color: var(--muted); }
+.rec pre { margin: .6rem 0 0; padding: .55rem .7rem; background: var(--bg); border-radius: 8px;
+  overflow: auto; }
+.rec.p0 { border-color: color-mix(in srgb, var(--p0) 45%, var(--line)); }
+.rec.p1 { border-color: color-mix(in srgb, var(--p1) 45%, var(--line)); }
+.rec.p2 { border-color: color-mix(in srgb, var(--p2) 45%, var(--line)); }
+details.nest { border: 1px solid var(--line); border-radius: 10px; padding: .2rem .8rem .4rem;
+  margin: .45rem 0; }
+details.nest summary { cursor: pointer; padding: .55rem 0; display: flex; gap: .55rem; align-items: baseline; flex-wrap: wrap; }
+.dim { color: var(--muted); font-size: .88rem; }
+ul.issues, details.nest ul { margin: 0 0 .5rem; padding-left: 1.15rem; }
+li.error { color: var(--fail); font-weight: 650; }
+li.warning { color: var(--skip); }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .9em; }
+@media print {
+  body { background: #fff; color: #111; }
+  .hero, .card { box-shadow: none; break-inside: avoid; }
+  details.nest { border: 0; padding: 0; }
+  details.nest summary { display: block; }
+  details.nest > *:not(summary) { display: block !important; }
+}
 """
 
 

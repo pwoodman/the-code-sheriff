@@ -76,6 +76,8 @@ def test_digest_includes_performance_issues_and_recs() -> None:
     assert "Issues" in text
     assert "Recommendations" in text
     assert "unused import" in text
+    assert "skip ≠ fail" in text or "skipped" in text
+    assert "reason:" in text
 
     md = render_markdown(digest)
     assert "## Performance" in md
@@ -86,6 +88,15 @@ def test_digest_includes_performance_issues_and_recs() -> None:
     assert "<!DOCTYPE html>" in page
     assert "Quality report" in page
     assert "unused import" in page
+    assert "<details" in page
+    assert "pill fail" in page
+    assert "skip means not applicable" in page
+    assert "aria-label='line coverage" in page or "line coverage" in page
+    assert "class='bar'" in page or 'class="bar"' in page
+
+    md = render_markdown(digest)
+    assert "<details" in md
+    assert "Skip reason" in md or "security" in md
 
 
 def test_write_reports_emits_html_and_json(tmp_path: Path) -> None:

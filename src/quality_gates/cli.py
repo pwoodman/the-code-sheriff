@@ -620,7 +620,7 @@ ai_review = "pr-only"
 
 [quality.ci]
 mode = "local"
-github_gates = ["impact", "audit", "version", "review"]
+github_gates = ["format", "lint", "impact", "audit", "version", "review"]
 
 [quality.compile]
 require_security = true

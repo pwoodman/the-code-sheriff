@@ -8,7 +8,7 @@ you opt in.
 | --- | --- | --- |
 | `git commit` | format, lint, version | laptop |
 | `git push` | DRY, security, compile, impact, coverage, audit, selective UI | laptop |
-| Push / PR on GitHub | impact + audit + version + PR review | Actions (seconds) |
+| Push / PR on GitHub | format, lint, impact, audit, version, PR review | Actions (seconds) |
 | Optional | full suite on Actions | `ci.mode = "both"` / `"github"`, or workflow **full_suite** |
 | Optional | Playwright/Cypress on Actions | `[quality.ui] on_github = true` |
 
@@ -65,17 +65,24 @@ quality report                     # scorecard, performance, issues, recommendat
 mode = "local"                     # default: cheap Actions
 # mode = "github"                  # full suite on runners
 # mode = "both"                    # hooks + full Actions
-github_gates = ["impact", "audit", "version", "review"]
+github_gates = ["format", "lint", "impact", "audit", "version", "review"]
 
 [quality.ui]
 select = "changed"                 # only specs that touch added/changed files
 on_github = false                  # keep browsers off Actions
 ```
 
-`quality run` on Actions with `mode = "local"` only runs `github_gates`. Force
-the heavy suite with `quality run --full`, `QUALITY_CI_FULL=1`, or Actions →
-Run workflow → **full_suite**. Playwright/Cypress still skip on GitHub unless
-`on_github = true` or `QUALITY_UI_ON_GITHUB=1`.
+`quality run` on Actions with `mode = "local"` only runs `github_gates`
+(format, lint, impact, audit, version, review). Format and lint are cheap and
+always belong on PRs. Force the rest with `quality run --full`,
+`QUALITY_CI_FULL=1`, `[quality.ci] mode = "both"`, or Actions → **Quality gates
+(full suite)**. Playwright/Cypress still skip on GitHub unless `on_github = true`
+or `QUALITY_UI_ON_GITHUB=1`.
+
+This toolkit’s own `quality.toml` uses `mode = "both"` so detect / format / lint /
+DRY / security / compile / coverage actually run on GitHub instead of looking
+skipped. Compile still reports skip on a Python-only tree (there is nothing to
+build). UI still reports skip when there is no Playwright/Cypress project.
 
 Unit tests for this toolkit still run in [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 (pytest + ruff, no language matrix).

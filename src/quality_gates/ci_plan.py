@@ -5,17 +5,15 @@ import os
 from quality_gates import GATES
 from quality_gates.config import QualityConfig
 
+# Format and lint are cheap; they belong on GitHub even in local mode.
 HEAVY_GATES = (
-    "format",
-    "lint",
     "dry",
     "security",
     "compile",
-    "impact",
     "coverage",
     "ui",
 )
-CHEAP_GITHUB_GATES = ("impact", "audit", "version", "review")
+CHEAP_GITHUB_GATES = ("format", "lint", "impact", "audit", "version", "review")
 
 
 def on_github_actions() -> bool:

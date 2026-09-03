@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from quality_gates.config import load_config
+from quality_gates.ci_plan import github_runs_full_suite
+from quality_gates.config import DEFAULT_GITHUB_GATES, load_config
 from quality_gates.detect import detect_languages
+from quality_gates.paths import repo_root
 
 
 def test_detects_listed_languages(tmp_path: Path) -> None:
@@ -74,3 +76,16 @@ def test_language_filter_from_toml(tmp_path: Path) -> None:
     (tmp_path / "a.rs").write_text("fn main() {}\n", encoding="utf-8")
     info = detect_languages(tmp_path, load_config(tmp_path))
     assert info["languages"] == ["go", "python"]
+
+
+def test_this_repo_detects_python_and_dogfoods_full_github_suite() -> None:
+    root = repo_root()
+    assert root is not None
+    config = load_config(root)
+    info = detect_languages(root, config)
+    assert "python" in info["languages"]
+    assert "python" in info["gate_languages"]
+    assert config.ci_mode == "both"
+    assert github_runs_full_suite(config)
+    assert config.ci_github_gates[:2] == ["format", "lint"]
+    assert DEFAULT_GITHUB_GATES[:2] == ["format", "lint"]

@@ -91,7 +91,7 @@ DEFAULT_FAIL_ON = [
     "ui",
     "version",
 ]
-DEFAULT_GITHUB_GATES = ["impact", "audit", "version", "review"]
+DEFAULT_GITHUB_GATES = ["format", "lint", "impact", "audit", "version", "review"]
 POLICIES = ("observe", "adopt", "enforce")
 
 

@@ -21,14 +21,14 @@ comment_on_pr = true
 # and Java tooling into ~/.cache/quality-gates on first use.
 auto_install = false
 
-# local  = heavy gates (format/lint/DRY/security/compile/coverage/ui) run on developer
-#          machines; GitHub Actions runs cheap jobs (impact + audit + version + PR review).
-# github = full suite on Actions (costs minutes and runners). UI still off
-#          unless [quality.ui] on_github = true.
+# This toolkit dogfoods the full suite on GitHub. Consumers still default to
+# local-first via `quality init` (format/lint also run on PRs — they are cheap).
+# local  = heavy gates on developer machines; Actions runs github_gates only.
+# github = full suite on Actions. UI still off unless [quality.ui] on_github.
 # both   = local hooks AND the full Actions suite.
 [quality.ci]
-mode = "local"
-github_gates = ["impact", "audit", "version", "review"]
+mode = "both"
+github_gates = ["format", "lint", "impact", "audit", "version", "review"]
 
 [quality.compile]
 # Never compile if secrets/CVEs/SAST errors are present, or if scanners skipped.

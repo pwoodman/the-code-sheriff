@@ -16,6 +16,14 @@
 - Scorecard report after every run: performance (coverage, duplication, impact,
   audit, gate timings), issues, and recommended next commands. Writes
   `.quality-reports/quality-report.md` + `.html`. Reprint with `quality report`.
+- HTML/markdown reports nest skip reasons, issues-by-gate, and recommendations;
+  coverage gets a meter vs the 80% industry floor.
+- Local-mode GitHub Actions no longer lists the ten heavy jobs as skipped —
+  they live in `quality-full.yml` and only run when opted in.
+- Default `github_gates` now include **format** and **lint** (cheap, should
+  always run on PRs). This toolkit’s `quality.toml` uses `ci.mode = "both"` so
+  detect / DRY / security / compile / coverage run on GitHub too. Compile and
+  UI still self-skip when they do not apply (Python-only / no Playwright).
 
 ## 1.5.0
 
