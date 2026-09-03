@@ -1,14 +1,14 @@
 name: Quality gates (CLI)
 
 # Drop-in workflow. Replace YOUR_ORG.
-# With quality.toml ci.mode=local (the default), this job runs impact + version +
-# PR review. Heavy format/lint/DRY/security/compile/ui stay on developer machines.
-# Playwright/Cypress stay off Actions unless QUALITY_UI_ON_GITHUB=1.
+# With quality.toml ci.mode=local (the default), this job runs format, lint,
+# impact, audit, version, and PR review. DRY/security/compile/coverage/UI stay
+# on developer machines. Playwright/Cypress stay off Actions unless on_github.
 
 on:
   pull_request:
   push:
-    branches: [main, master]
+    branches: [main]
   workflow_dispatch:
     inputs:
       full_suite:

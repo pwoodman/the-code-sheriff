@@ -26,6 +26,7 @@ class GateResult:
     findings: list[Finding] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     skipped_tools: list[str] = field(default_factory=list)
+    duration_ms: int | None = None
 
     def error_count(self) -> int:
         return sum(1 for item in self.findings if item.severity == "error")
@@ -34,7 +35,7 @@ class GateResult:
         return sum(1 for item in self.findings if item.severity == "warning")
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "name": self.name,
             "status": self.status,
             "findings": [item.to_dict() for item in self.findings],
@@ -43,6 +44,9 @@ class GateResult:
             "error_count": self.error_count(),
             "warning_count": self.warning_count(),
         }
+        if self.duration_ms is not None:
+            payload["duration_ms"] = self.duration_ms
+        return payload
 
 
 @dataclass

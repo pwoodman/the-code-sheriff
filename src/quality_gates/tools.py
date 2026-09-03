@@ -56,7 +56,6 @@ def run(
             argv_list,
             cwd=cwd,
             capture_output=True,
-            text=True,
             timeout=timeout,
             env=env,
             check=False,
@@ -67,18 +66,27 @@ def run(
             skipped=True,
             skip_reason=f"{argv_list[0]} is not installed",
         )
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         return RunResult(
             argv=argv_list,
             returncode=124,
-            stderr=f"timed out after {timeout}s",
+            stdout=_decode(exc.stdout),
+            stderr=_decode(exc.stderr) or f"timed out after {timeout}s",
         )
     return RunResult(
         argv=argv_list,
         returncode=proc.returncode,
-        stdout=proc.stdout or "",
-        stderr=proc.stderr or "",
+        stdout=_decode(proc.stdout),
+        stderr=_decode(proc.stderr),
     )
+
+
+def _decode(data: bytes | str | None) -> str:
+    if data is None:
+        return ""
+    if isinstance(data, str):
+        return data
+    return data.decode("utf-8", errors="replace")
 
 
 def tool_version(command: str, args: Sequence[str] = ("--version",)) -> str | None:

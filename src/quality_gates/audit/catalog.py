@@ -227,7 +227,7 @@ CHECKS: tuple[Check, ...] = (
         "External Network Calls Inside Transactions",
         "HIGH",
         CAT_DB,
-        "pattern",
+        "runtime",
         "db,http",
     ),
     _c(69, "Race Conditions / Check-Then-Write", "HIGH", CAT_DB, "runtime", "db"),

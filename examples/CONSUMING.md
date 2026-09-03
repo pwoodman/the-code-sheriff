@@ -2,8 +2,9 @@
 
 After this repo lives on GitHub as `YOUR_ORG/quality-gates`, pick one path.
 
-Heavy gates default to **developer machines**. GitHub Actions runs impact +
-audit + version + PR review unless you set `ci.mode` to `github` or `both`.
+Heavy gates (DRY, security, compile, coverage, UI) default to **developer
+machines**. GitHub Actions always runs format, lint, impact, audit, version,
+and PR review. Set `ci.mode` to `github` or `both` for the rest.
 
 ## Path A — CLI (recommended)
 
@@ -35,8 +36,10 @@ or re-run the workflow with **full_suite**, or `QUALITY_CI_FULL=1 quality run --
 
 ## Path B — multi-job reusable workflow
 
-Vendor `.github/workflows/quality.yml` and `.github/actions/` if you want the
-Detect → Format → … UI. With `ci.mode = "local"` those heavy jobs stay skipped.
+Vendor `.github/workflows/quality.yml`, `.github/workflows/quality-full.yml`,
+and `.github/actions/` if you want the Detect → Format → … UI matrix.
+With `ci.mode = "local"` that matrix is not scheduled, so PRs do not show
+ten skipped heavy jobs.
 
 ## Path C — hooks only
 

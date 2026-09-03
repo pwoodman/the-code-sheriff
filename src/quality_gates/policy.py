@@ -14,6 +14,7 @@ from typing import Any
 from quality_gates.config import POLICIES, QualityConfig, is_pr_event
 from quality_gates.github_comment import post_pr_comment
 from quality_gates.models import Finding, GateResult
+from quality_gates.report import build_digest, performance_bullets
 
 DEFAULT_BASELINE = ".quality-baseline.json"
 COVERAGE_SLACK = 1.0
@@ -166,50 +167,37 @@ def render_digest(
     root: Path,
     config: QualityConfig,
 ) -> str:
-    failed = [item.name for item in results if item.status == "fail"]
-    warnings = sum(item.warning_count() for item in results)
-    errors = sum(item.error_count() for item in results)
-    cov = _coverage_percent(root)
+    digest = build_digest(results, policy=policy, report_dir=root / ".quality-reports")
     lines = [
-        "## Quality gates",
+        "## Quality report",
         "",
         f"Policy: `{policy}` · this job **"
-        + ("fails the PR" if failed else "does not block merge")
-        + "**.",
+        + ("fails the PR" if digest.failed else "does not block merge")
+        + f"**. Errors: **{digest.errors}**. Warnings: **{digest.warnings}**.",
         "",
-        f"Errors (blocking under this policy): **{errors}**. "
-        f"Warnings / grandfathered: **{warnings}**.",
-        "",
+        "| Gate | Status | Errors | Warnings |",
+        "| --- | --- | ---: | ---: |",
     ]
-    if cov is not None:
-        lines.append(
-            f"Line coverage: **{cov:.1f}%** (industry floor 80%; repo may ratchet)."
-        )
-        lines.append("")
-    lines.append(f"Baseline: `{config.policy_baseline}`")
-    lines.append("")
-    lines.append("| Gate | Status | Errors | Warnings |")
-    lines.append("| --- | --- | ---: | ---: |")
-    for item in results:
+    for item in digest.results:
         lines.append(
             f"| {item.name} | {item.status} | {item.error_count()} | {item.warning_count()} |"
         )
-    lines.append("")
-    new_errors = [
-        finding
-        for item in results
-        for finding in item.findings
-        if finding.severity == "error"
-    ]
-    if new_errors:
-        lines.append("### Blocking")
-        lines.append("")
-        for finding in new_errors[:30]:
+    lines += ["", "### Performance", ""]
+    lines.extend(performance_bullets(digest.performance, digest.results))
+    issues = [finding for finding in digest.issues() if finding.severity == "error"]
+    if issues:
+        lines += ["", "### Blocking", ""]
+        for finding in issues[:30]:
             loc = finding.path or finding.gate
             if finding.line:
                 loc = f"{loc}:{finding.line}"
             lines.append(f"- `{loc}` — {finding.message}")
-        lines.append("")
+    if digest.recommendations:
+        lines += ["", "### Recommendations", ""]
+        for item in digest.recommendations[:8]:
+            cmd = f" `{item.command}`" if item.command else ""
+            lines.append(f"- **{item.priority} — {item.title}.** {item.detail}{cmd}")
+    lines.append("")
     if policy == "adopt":
         lines.append(
             "Grandfathered findings stay warnings until you fix them and run "
@@ -221,7 +209,12 @@ def render_digest(
             "`.quality-baseline.json` when you are ready to ratchet."
         )
     lines.append("")
-    lines.append("_Posted by quality-gates. Reports: `.quality-reports/`._")
+    lines.append(
+        f"Baseline: `{config.policy_baseline}`. "
+        "Full printout: `.quality-reports/quality-report.md` / `quality-report.html`."
+    )
+    lines.append("")
+    lines.append("_Posted by quality-gates._")
     return "\n".join(lines) + "\n"
 
 
