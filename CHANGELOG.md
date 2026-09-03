@@ -12,7 +12,7 @@
 - Surface needles no longer treat `select =`, `password`, `zipfile`, or scanner
   source as an auth/SQL/upload app. Self-scan on this toolkit stays `ci`/`deps`.
 - Pin GitHub Actions to commit SHAs; drop unused `master` workflow triggers;
-  unit-test CI now fails under 50% line coverage.
+  unit-test CI fails under 50% combined coverage; this repo’s line floor is 55.
 
 ## 1.5.0
 

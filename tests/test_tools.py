@@ -17,9 +17,7 @@ def test_run_does_not_crash_on_non_utf8(tmp_path: Path, monkeypatch) -> None:
         stdout = b"hello \xff world"
         stderr = b""
 
-    monkeypatch.setattr(
-        "quality_gates.tools.subprocess.run", lambda *_a, **_k: Fake()
-    )
+    monkeypatch.setattr("quality_gates.tools.subprocess.run", lambda *_a, **_k: Fake())
     result = run(["echo"], cwd=tmp_path)
     assert result.returncode == 0
     assert "hello" in result.stdout

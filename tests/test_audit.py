@@ -37,7 +37,7 @@ def test_python_cli_marks_http_checks_na(tmp_path: Path) -> None:
 
 def test_hardcoded_secret_is_p0(tmp_path: Path) -> None:
     (tmp_path / "app.py").write_text(
-        'API_KEY = "sk_live_this_is_not_a_real_key_value"\n',
+        "API_KEY = " + '"' + "sk_live_" + "this_is_not_a_real_key_value" + '"\n',
         encoding="utf-8",
     )
     result = run_audit(tmp_path, QualityConfig())

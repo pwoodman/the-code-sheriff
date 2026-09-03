@@ -56,10 +56,10 @@ require_downstream = true
 require_own_tests = false
 
 # 80% is the package default (industry / ISTQB-style). This toolkit's own
-# suite currently measures ~52% — keep a floor so coverage cannot regress,
-# without pretending a CLI helper is an 80% product.
+# suite currently measures ~55% line coverage — keep a floor so coverage
+# cannot regress, without pretending a CLI helper is an 80% product.
 [quality.coverage]
-line = 50
+line = 55
 branch = 0
 tool = "auto"                      # auto | pytest | jest | vitest | go | existing
 
