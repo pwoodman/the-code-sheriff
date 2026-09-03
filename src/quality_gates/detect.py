@@ -5,52 +5,27 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from quality_gates.config import QualityConfig
+from quality_gates.registry import (
+    LANGUAGE_PROFILES,
+    PROFILES,
+    gate_language,
+    profiles_for_path,
+    profiles_for_shebang,
+)
 
 LANGUAGE_BY_SUFFIX = {
-    ".cs": "csharp",
-    ".csproj": "csharp",
-    ".sln": "csharp",
-    ".js": "javascript",
-    ".mjs": "javascript",
-    ".cjs": "javascript",
-    ".jsx": "react",
-    ".ts": "typescript",
-    ".cts": "typescript",
-    ".mts": "typescript",
-    ".tsx": "react",
-    ".rs": "rust",
-    ".go": "go",
-    ".py": "python",
-    ".pyi": "python",
-    ".java": "java",
-    ".sql": "sql",
+    suffix: profile.id
+    for profile in LANGUAGE_PROFILES
+    for suffix in profile.detect_suffixes
 }
-
 SPECIAL_FILES = {
-    "cargo.toml": "rust",
-    "go.mod": "go",
-    "package.json": "javascript",
-    "tsconfig.json": "typescript",
-    "pyproject.toml": "python",
-    "requirements.txt": "python",
-    "pom.xml": "java",
-    "build.gradle": "java",
-    "build.gradle.kts": "java",
+    name.lower(): profile.id
+    for profile in LANGUAGE_PROFILES
+    for name in profile.exact_names
 }
-
 TOOLCHAIN_BY_LANGUAGE = {
-    "csharp": "csharp",
-    "javascript": "node",
-    "typescript": "node",
-    "react": "node",
-    "rust": "rust",
-    "go": "go",
-    "python": "python",
-    "java": "java",
-    "sql": "sql",
+    profile.id: profile.toolchain or profile.id for profile in LANGUAGE_PROFILES
 }
-
-REACT_SUFFIXES = {".jsx", ".tsx"}
 
 
 def _is_excluded(path: Path, root: Path, exclude: Iterable[str]) -> bool:
@@ -113,23 +88,39 @@ def detect_languages(
 ) -> dict[str, list[str]]:
     selected = files if files is not None else iter_project_files(root, config)
     languages: set[str] = set()
+    file_kinds: set[str] = set()
+    ambiguities: list[str] = []
     for path in selected:
-        suffix = path.suffix.lower()
-        name = path.name.lower()
-        if name in SPECIAL_FILES:
-            languages.add(SPECIAL_FILES[name])
-        if suffix in LANGUAGE_BY_SUFFIX:
-            languages.add(LANGUAGE_BY_SUFFIX[suffix])
-        if suffix in REACT_SUFFIXES:
-            languages.add("javascript")
-            if suffix == ".tsx":
-                languages.add("typescript")
+        matched = profiles_for_path(path, root)
+        try:
+            with path.open(encoding="utf-8", errors="ignore") as handle:
+                first_line = handle.readline(512)
+        except OSError:
+            first_line = ""
+        # A shebang is authoritative, even when a misleading suffix is present.
+        shebang = profiles_for_shebang(first_line)
+        if shebang:
+            matched = shebang
+        elif path.suffix.lower() in {".h", ".m"}:
+            try:
+                ambiguous_path = path.relative_to(root).as_posix()
+            except ValueError:
+                ambiguous_path = str(path)
+            choices = (
+                "c or cpp" if path.suffix.lower() == ".h" else "matlab or objective-c"
+            )
+            ambiguities.append(f"{ambiguous_path}: {choices}")
+        for profile in matched:
+            if profile.kind == "language":
+                languages.add(profile.id)
+            else:
+                file_kinds.add(profile.id)
 
     allowed = config.language_filter()
     if allowed is not None:
         languages = {item for item in languages if item in allowed}
 
-    ordered = [item for item in TOOLCHAIN_BY_LANGUAGE if item in languages]
+    ordered = [profile.id for profile in LANGUAGE_PROFILES if profile.id in languages]
     toolchains = []
     for language in ordered:
         toolchain = TOOLCHAIN_BY_LANGUAGE[language]
@@ -137,11 +128,24 @@ def detect_languages(
             toolchains.append(toolchain)
     gate_languages: list[str] = []
     for language in ordered:
-        mapped = "javascript" if language in {"typescript", "react"} else language
+        mapped = gate_language(language)
         if mapped not in gate_languages:
             gate_languages.append(mapped)
+    ordered_kinds = [
+        profile.id
+        for profile in PROFILES.values()
+        if profile.kind == "file" and profile.id in file_kinds
+    ]
+    capabilities: list[str] = []
+    for profile_id in [*ordered, *ordered_kinds]:
+        for capability in PROFILES[profile_id].capabilities:
+            if capability not in capabilities:
+                capabilities.append(capability)
     return {
         "languages": ordered,
         "toolchains": toolchains,
         "gate_languages": gate_languages,
+        "file_kinds": ordered_kinds,
+        "capabilities": capabilities,
+        "ambiguities": sorted(ambiguities),
     }

@@ -17,9 +17,13 @@ policy = "enforce"
 baseline = ".quality-baseline.json"
 comment_on_pr = true
 
-# When true (the default in GitHub Actions), download pinned security
-# and Java tooling into ~/.cache/quality-gates on first use.
+# Tool installation is never performed by normal gates. `quality doctor --install`
+# may install only manifest artifacts with a verified SHA-256.
 auto_install = false
+
+# Local runs default to trusted; pull-request runs default to untrusted unless
+# explicitly overridden. Project builds and tests require trusted mode.
+trust = "trusted"
 
 # This toolkit dogfoods the full suite on GitHub. Consumers still default to
 # local-first via `quality init` (format/lint also run on PRs — they are cheap).

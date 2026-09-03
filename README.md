@@ -1,5 +1,7 @@
 # Quality gates
 
+Project home: https://github.com/pwoodman/poly-check
+
 A reusable **format → lint → DRY → security → compile → impact → coverage → audit → UI → version → AI review**
 pipeline. Heavy work defaults to **your PC**. GitHub Actions stays cheap unless
 you opt in.
@@ -24,7 +26,7 @@ GitHub even in `github`/`both` mode unless you turn them on.
 | **Lint** | Roslyn, ESLint + react-hooks + jsx-a11y, clippy, golangci-lint, ruff, Checkstyle, SQLFluff | same |
 | **DRY** | jscpd | copy-paste |
 | **Security** | gitleaks, osv-scanner, optional semgrep | secrets + CVEs + SAST |
-| **Compile** | `dotnet build`, `cargo build`, `go build`, `mvn`/`javac`, `tsc --noEmit` | **only after security passes**; never executes the program |
+| **Compile** | `dotnet build`, `cargo build`, `go build`, `mvn`/`javac`, `tsc --noEmit` | **only after security passes**; build plugins and package scripts may execute |
 | **Impact** | import graph | upstream deps + downstream consumers; fail if callers weren’t updated or tested |
 | **Coverage** | pytest-cov / Jest / Go cover / LCOV | default **80% line** floor (industry baseline); skip if no tests |
 | **Audit** | 120-point static inspection | HIGH-confidence evidence only; fail on P0; N/A when no API/UI |
@@ -32,12 +34,30 @@ GitHub even in `github`/`both` mode unless you turn them on.
 | **Version** | semver files + changelog | bump required when source changes |
 | **AI review** | heuristic + optional LLM | PRs; does not fail the build |
 
-Languages are auto-detected. Missing compilers skip compile; a **failed or skipped
+Languages and structured file kinds are auto-detected from a declarative
+capability registry. C#, JavaScript/TypeScript, Java, C/C++, Go, Rust, Python,
+PHP, Ruby, Swift, Kotlin, Dart, Scala, Lua, R, MATLAB, Shell, PowerShell, and SQL
+have registry-driven tool adapters. The original Python, JS/TS, Go, Rust, Java,
+C#, and SQL handlers remain the mature, fully tested tier. Other language
+adapters are **experimental/best-effort**: they use established project or PATH
+tools, pass argument arrays without a shell, and report missing tools as skip.
+
+JSON, TOML, XML, INI, dotenv, properties, and batch files have non-executing
+built-in validation. YAML, Markdown, CSS, Dockerfiles, Makefiles, GitHub
+workflows/composite actions, and git configuration use specialized external
+validators when installed. XML declarations/entities are rejected by the
+built-in parser, `xmllint` uses `--nonet`, and workflow paths take precedence
+over generic YAML. XML, INI, properties, dotenv, Makefile, and batch support is
+validation-only. Zsh formatting is preserve/opt-in.
+
+Missing compilers skip compile; a **failed or skipped
 security scan blocks compile** so a tree with known vulns or no scanners is not
-built. UI is skipped when compile failed, and when the diff does not touch a
+built. Non-executing C/C++, PHP, Ruby, Dart, Lua, and PowerShell syntax checks
+remain available without running project code; project builds require trusted
+mode. UI is skipped when compile failed, and when the diff does not touch a
 spec, its imports, a matching route, or a coverage-map hit.
 
-Standards: [`standards/`](standards/FORMATTING.md) · [`VERSIONING`](standards/VERSIONING.md) · [`COMPILE`](standards/COMPILE.md) · [`IMPACT`](standards/IMPACT.md) · [`COVERAGE`](standards/COVERAGE.md) · [`AUDIT`](standards/AUDIT.md) · [`POLICY`](standards/POLICY.md) · [`UI`](standards/UI.md) · [`CI`](standards/CI.md).
+Standards: [`standards/`](standards/FORMATTING.md) · [`VERSIONING`](standards/VERSIONING.md) · [`COMPILE`](standards/COMPILE.md) · [`IMPACT`](standards/IMPACT.md) · [`COVERAGE`](standards/COVERAGE.md) · [`AUDIT`](standards/AUDIT.md) · [`POLICY`](standards/POLICY.md) · [`UI`](standards/UI.md) · [`CI`](standards/CI.md) · [`SUPPORT`](standards/SUPPORT.md) · [`PLUGINS`](standards/PLUGINS.md) · [`TROUBLESHOOTING`](standards/TROUBLESHOOTING.md).
 
 ## Quick start
 
@@ -84,8 +104,9 @@ DRY / security / compile / coverage actually run on GitHub instead of looking
 skipped. Compile still reports skip on a Python-only tree (there is nothing to
 build). UI still reports skip when there is no Playwright/Cypress project.
 
-Unit tests for this toolkit still run in [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
-(pytest + ruff, no language matrix).
+Unit tests run on Linux, macOS, and Windows across Python 3.11–3.14 in
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml). Scheduled toolchain
+fixtures cover representative ecosystem setup without adding that cost to PRs.
 
 Consumers: [`examples/CONSUMING.md`](examples/CONSUMING.md).
 
@@ -93,11 +114,19 @@ Consumers: [`examples/CONSUMING.md`](examples/CONSUMING.md).
 
 ```toml
 [quality]
+config_version = 1
 languages = ["auto"]
 fail_on = ["format", "lint", "dry", "security", "compile", "impact", "coverage", "audit", "ui", "version"]
 ai_review = "pr-only"
 policy = "adopt"                   # observe | adopt | enforce — see standards/POLICY.md
 baseline = ".quality-baseline.json"
+trust = "trusted"                  # trusted | prompt | untrusted
+offline = false
+jobs = 4                             # bounded parallel profile adapters
+required_tools = []                # doctor fails when a listed tool is missing
+
+[quality.cache]
+enabled = true                      # deterministic format/lint adapters only
 
 [quality.ci]
 mode = "local"
@@ -131,6 +160,9 @@ dialect = "postgres"
 ```
 
 Project Prettier/ESLint/Ruff configs win over bundled files in `configs/`.
+`configs/quality.schema.json` describes the configuration representation.
+Unknown keys directly under `[quality]` are rejected. Gates never install
+tools; installation is only performed by an explicit `quality doctor --install`.
 
 ### AI review keys
 
@@ -156,7 +188,8 @@ quality version [--base origin/main]
 quality bump auto|major|minor|patch
 quality review [--base origin/main] [--post]
 quality run [--only security,compile,impact,coverage,audit,ui] [--skip review] [--full]
-quality report [--format console|markdown|html|json]
+quality report [--format console|markdown|html|json|sarif|junit]
+quality cache [status|clean]
 quality init --org YOUR_ORG [--policy adopt]
 quality --policy observe run --skip review
 ```
@@ -167,7 +200,22 @@ After `quality run`, `.quality-reports/` holds a scorecard you can print or shar
 - `quality-report.html` — same report, print-friendly in a browser
 - `quality-report.json` — machine-readable digest
 
-`quality report` reprints the last run without re-executing gates.
+`quality report` reprints the last run without re-executing gates. Every run
+writes JSON, Markdown, HTML, SARIF 2.1.0, and JUnit XML. JSON report, audit,
+coverage, and baseline documents carry `schema_version`; bundled schemas live
+in `configs/`.
+
+Failures include the tool and rule, normalized `path:line:column`, why the
+command failed, and a copyable local reproduction command when available.
+Structured reports also retain a redacted command, working directory, return
+code, and bounded output excerpt; likely secret values are replaced with
+`<redacted>`.
+
+The deterministic cache is limited to parse/format/lint profile adapters and is
+keyed by file content, effective configuration, profile/capability, and tool
+version. Builds, tests, AI review, and security/network scans are never cached.
+Use `quality cache status`, `quality cache clean`, or set
+`QUALITY_GATES_CACHE_ENABLED=0`.
 
 Exit `1` = a gate in `fail_on` reported errors. Skip ≠ fail.
 

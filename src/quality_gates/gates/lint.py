@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-import contextlib
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from quality_gates.adapters import run_builtin_profile
 from quality_gates.config import QualityConfig
+from quality_gates.detect import iter_project_files
 from quality_gates.gates.common import (
     eslint_config,
     fail_or_pass,
@@ -19,19 +21,34 @@ from quality_gates.gates.common import (
     sqlfluff_config,
     tool_or_skip,
 )
-from quality_gates.installers import (
-    ensure_checkstyle,
-    ensure_golangci_lint,
-    ensure_node_tooling,
-)
+from quality_gates.installers import CHECKSTYLE_VERSION
 from quality_gates.models import Finding, GateResult
-from quality_gates.paths import bundled_file, tooling_js_dir
+from quality_gates.paths import bundled_file, cache_dir, tooling_js_dir
+from quality_gates.registry import FILE_PROFILES, profiles_for_path
 from quality_gates.tools import prepend_path, run, which
 
 
 def run_lint(root: Path, config: QualityConfig, languages: list[str]) -> GateResult:
     unique = normalize_gate_languages(languages)
     parts = [_lint_language(root, config, language) for language in unique]
+    project_files = iter_project_files(root, config)
+    jobs: list[tuple[str, tuple[Path, ...]]] = []
+    for profile in FILE_PROFILES:
+        files = tuple(
+            path for path in project_files if profile in profiles_for_path(path, root)
+        )
+        if files and ({"lint", "validate"} & set(profile.capabilities)):
+            jobs.append((profile.id, files))
+    if jobs:
+        with ThreadPoolExecutor(max_workers=min(config.jobs, len(jobs))) as executor:
+            parts.extend(
+                executor.map(
+                    lambda job: run_builtin_profile(
+                        root, config, job[0], "lint", job[1]
+                    ),
+                    jobs,
+                )
+            )
     if not parts:
         return skip_result("lint", "no supported languages detected")
     return merge_results("lint", parts)
@@ -52,7 +69,7 @@ def _lint_language(root: Path, config: QualityConfig, language: str) -> GateResu
     }
     handler = dispatch.get(language)
     if handler is None:
-        return skip_result("lint", f"no linter mapped for {language}")
+        return run_builtin_profile(root, config, language, "lint", tuple(files))
     return handler(root, config, files)
 
 
@@ -76,15 +93,15 @@ def _python(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
                     rule=item.get("code"),
                     message=item.get("message", "ruff finding"),
                     severity="error",
+                    tool="ruff",
                 )
             )
     except json.JSONDecodeError:
-        findings = findings_from_text("lint", result, language="python")
-    return fail_or_pass("lint", findings)
+        findings = findings_from_text("lint", result, language="python", root=root)
+    return fail_or_pass("lint", findings, root=root, run=result)
 
 
 def _node(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
-    ensure_node_tooling()
     eslint = tool_or_skip(
         "eslint", root, config.prefer_project_tools, "lint", "javascript"
     )
@@ -123,16 +140,15 @@ def _node(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
                         rule=msg.get("ruleId"),
                         message=msg.get("message", "eslint finding"),
                         severity=severity,
+                        tool="eslint",
                     )
                 )
     except json.JSONDecodeError:
-        findings = findings_from_text("lint", result, language="javascript")
-    return fail_or_pass("lint", findings)
+        findings = findings_from_text("lint", result, language="javascript", root=root)
+    return fail_or_pass("lint", findings, root=root, run=result)
 
 
 def _go(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
-    with contextlib.suppress(OSError):
-        ensure_golangci_lint()
     lint = which(
         "golangci-lint", project=root, prefer_project=config.prefer_project_tools
     )
@@ -143,7 +159,12 @@ def _go(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
                 "lint", "go / golangci-lint is not installed", tool="golangci-lint"
             )
         result = run([vet, "vet", "./..."], cwd=root)
-        return fail_or_pass("lint", findings_from_text("lint", result, language="go"))
+        return fail_or_pass(
+            "lint",
+            findings_from_text("lint", result, language="go", root=root),
+            root=root,
+            run=result,
+        )
     cfg = bundled_file("golangci.yml")
     project_cfg = root / ".golangci.yml"
     argv = [lint, "run", "--out-format", "json", "./..."]
@@ -164,11 +185,12 @@ def _go(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
                     column=pos.get("Column"),
                     rule=item.get("FromLinter"),
                     message=item.get("Text", "golangci-lint finding"),
+                    tool="golangci-lint",
                 )
             )
     except json.JSONDecodeError:
-        findings = findings_from_text("lint", result, language="go")
-    return fail_or_pass("lint", findings)
+        findings = findings_from_text("lint", result, language="go", root=root)
+    return fail_or_pass("lint", findings, root=root, run=result)
 
 
 def _rust(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
@@ -211,9 +233,10 @@ def _rust(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
                     rule=(message.get("code") or {}).get("code"),
                     message=message.get("message", "clippy finding"),
                     severity="error" if level == "error" else "warning",
+                    tool="clippy",
                 )
             )
-        return fail_or_pass("lint", findings)
+        return fail_or_pass("lint", findings, root=root, run=result)
     return skip_result(
         "lint",
         "clippy needs a Cargo.toml in the project root; rustc-only files are format-checked only",
@@ -225,11 +248,12 @@ def _java(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
     java = tool_or_skip("java", root, True, "lint", "java")
     if isinstance(java, GateResult):
         return java
-    try:
-        jar = ensure_checkstyle()
-    except OSError as exc:
+    jar = cache_dir() / "jars" / f"checkstyle-{CHECKSTYLE_VERSION}-all.jar"
+    if not jar.is_file():
         return skip_result(
-            "lint", f"could not download checkstyle: {exc}", tool="checkstyle"
+            "lint",
+            "checkstyle is not installed — run `quality doctor --install`",
+            tool="checkstyle",
         )
     cfg = bundled_file("checkstyle.xml")
     argv = [java, "-jar", str(jar), "-c", str(cfg), *[str(path) for path in files]]
@@ -255,11 +279,12 @@ def _java(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
                 message=match.group("msg"),
                 rule="checkstyle",
                 severity=severity,
+                tool="checkstyle",
             )
         )
     if result.returncode != 0 and not findings:
-        findings = findings_from_text("lint", result, language="java")
-    return fail_or_pass("lint", findings)
+        findings = findings_from_text("lint", result, language="java", root=root)
+    return fail_or_pass("lint", findings, root=root, run=result)
 
 
 def _csharp(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
@@ -298,7 +323,10 @@ def _csharp(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
             result,
             language="csharp",
             default_message="dotnet format analyzers reported style or analyzer issues",
+            root=root,
         ),
+        root=root,
+        run=result,
     )
 
 
@@ -337,8 +365,9 @@ def _sql(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
                         or violation.get("line_pos"),
                         rule=violation.get("code"),
                         message=violation.get("description", "sqlfluff finding"),
+                        tool="sqlfluff",
                     )
                 )
     except json.JSONDecodeError:
-        findings = findings_from_text("lint", result, language="sql")
-    return fail_or_pass("lint", findings)
+        findings = findings_from_text("lint", result, language="sql", root=root)
+    return fail_or_pass("lint", findings, root=root, run=result)

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from quality_gates.adapters import run_builtin_profile
 from quality_gates.config import QualityConfig
+from quality_gates.detect import iter_project_files
 from quality_gates.gates.common import (
     fail_or_pass,
     findings_from_text,
@@ -16,9 +19,10 @@ from quality_gates.gates.common import (
     sqlfluff_config,
     tool_or_skip,
 )
-from quality_gates.installers import ensure_google_java_format, ensure_node_tooling
+from quality_gates.installers import GOOGLE_JAVA_FORMAT
 from quality_gates.models import Finding, GateResult
-from quality_gates.paths import bundled_file
+from quality_gates.paths import bundled_file, cache_dir
+from quality_gates.registry import FILE_PROFILES, profiles_for_path
 from quality_gates.tools import run, which
 
 
@@ -33,6 +37,24 @@ def run_format(
     parts = [
         _format_language(root, config, language, check=check) for language in unique
     ]
+    project_files = iter_project_files(root, config)
+    jobs: list[tuple[str, tuple[Path, ...]]] = []
+    for profile in FILE_PROFILES:
+        files = tuple(
+            path for path in project_files if profile in profiles_for_path(path, root)
+        )
+        if files and "format" in profile.capabilities:
+            jobs.append((profile.id, files))
+    if jobs:
+        with ThreadPoolExecutor(max_workers=min(config.jobs, len(jobs))) as executor:
+            parts.extend(
+                executor.map(
+                    lambda job: run_builtin_profile(
+                        root, config, job[0], "format", job[1], check=check
+                    ),
+                    jobs,
+                )
+            )
     if not parts:
         return skip_result("format", "no supported languages detected")
     return merge_results("format", parts)
@@ -54,7 +76,9 @@ def _format_language(
         "sql": _sql,
     }.get(language)
     if handler is None:
-        return skip_result("format", f"no formatter mapped for {language}")
+        return run_builtin_profile(
+            root, config, language, "format", tuple(files), check=check
+        )
     return handler(root, config, files, check=check)
 
 
@@ -92,7 +116,6 @@ def _node(
 ) -> GateResult:
     if not files:
         return skip_result("format", "no javascript/typescript/react files")
-    ensure_node_tooling()
     prettier = tool_or_skip(
         "prettier", root, config.prefer_project_tools, "format", "javascript"
     )
@@ -207,12 +230,11 @@ def _java(
     java = tool_or_skip("java", root, True, "format", "java")
     if isinstance(java, GateResult):
         return java
-    try:
-        jar = ensure_google_java_format()
-    except OSError as exc:
+    jar = cache_dir() / "jars" / f"google-java-format-{GOOGLE_JAVA_FORMAT}-all-deps.jar"
+    if not jar.is_file():
         return skip_result(
             "format",
-            f"could not download google-java-format: {exc}",
+            "google-java-format is not installed — run `quality doctor --install`",
             tool="google-java-format",
         )
     argv = [java, "-jar", str(jar)]
@@ -244,11 +266,6 @@ def _csharp(
     csharpier = which(
         "csharpier", project=root, prefer_project=config.prefer_project_tools
     )
-    if not csharpier:
-        dotnet = which("dotnet", project=root)
-        if dotnet:
-            run([dotnet, "tool", "update", "-g", "csharpier"], cwd=root, timeout=180)
-            csharpier = which("csharpier", project=root)
     if not csharpier:
         return skip_result(
             "format",

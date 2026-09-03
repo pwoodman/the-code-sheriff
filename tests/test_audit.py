@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from quality_gates.audit.catalog import CHECK_BY_ID, CHECK_COUNT, CHECKS
+from quality_gates.audit.code_quality import CODE_QUALITY_CAPABILITIES
 from quality_gates.audit.engine import run_audit_engine
 from quality_gates.audit.patterns import _JWT_NONE, _SYNC_LONG, scan_patterns
 from quality_gates.audit.walk import load_context
@@ -140,14 +143,152 @@ def test_check_68_is_runtime_not_false_pass(tmp_path: Path) -> None:
     assert by_id[68].status == "not_statically_provable"
 
 
+def test_stub_and_unused_import_are_reported_as_warnings(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text(
+        "import json\n\ndef unfinished():\n    pass\n",
+        encoding="utf-8",
+    )
+
+    result = run_audit(tmp_path, QualityConfig())
+
+    assert result.status == "pass"
+    by_rule = {item.rule: item for item in result.findings}
+    assert by_rule["audit-51"].severity == "warning"
+    assert by_rule["audit-57"].severity == "warning"
+    assert "empty implementation body" in by_rule["audit-51"].message
+    assert "never used" in by_rule["audit-57"].message
+
+
+def test_unreachable_python_code_is_reported_as_a_warning(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text(
+        "def answer():\n    return 42\n    print('unreachable')\n",
+        encoding="utf-8",
+    )
+
+    result = run_audit(tmp_path, QualityConfig())
+
+    dead_code = [item for item in result.findings if item.rule == "audit-57"]
+    assert len(dead_code) == 1
+    assert dead_code[0].severity == "warning"
+    assert dead_code[0].line == 3
+    assert "unreachable" in dead_code[0].message
+
+
+def test_intentional_python_interfaces_are_not_reported_as_stubs(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "interfaces.py").write_text(
+        "from abc import ABC, abstractmethod\n"
+        "from typing import Protocol, overload\n\n"
+        "class Service(ABC):\n"
+        "    @abstractmethod\n"
+        "    def run(self):\n"
+        "        pass\n\n"
+        "class Handler(Protocol):\n"
+        "    def handle(self): ...\n\n"
+        "@overload\n"
+        "def parse(value: str) -> str: ...\n",
+        encoding="utf-8",
+    )
+
+    result = run_audit(tmp_path, QualityConfig())
+
+    assert "audit-51" not in {item.rule for item in result.findings}
+
+
 def test_self_audit_on_repo_root_does_not_raise() -> None:
     root = Path(__file__).resolve().parents[1]
     config = load_config(root)
     result = run_audit(root, config)
     assert result.status in {"pass", "fail", "skip"}
+    assert result.error_count() == 0
     ctx = load_context(root, config)
     assert "auth" not in ctx.surfaces
     assert "sql" not in ctx.surfaces
     assert "db" not in ctx.surfaces
     assert "upload" not in ctx.surfaces
     assert "http" not in ctx.surfaces
+    assert not {item.rule for item in result.findings}.intersection(
+        {"audit-51", "audit-57"}
+    )
+    outcomes, _ctx = run_audit_engine(root, config)
+    assert {item.check_id: item.status for item in outcomes}[57] == "pass"
+
+
+@pytest.mark.parametrize(
+    ("filename", "source"),
+    [
+        ("app.js", "function unfinished() {}\n"),
+        ("app.ts", "const unfinished = () => {};\n"),
+        ("App.java", "class App {\n  void unfinished() {}\n}\n"),
+        ("App.cs", "class App {\n  void unfinished() {}\n}\n"),
+        ("app.c", "void unfinished(void) {}\n"),
+        ("app.cpp", "void unfinished() {}\n"),
+        ("app.go", "func unfinished() {}\n"),
+        ("app.rs", "fn unfinished() {}\n"),
+        ("app.php", "<?php\nfunction unfinished() {}\n"),
+        ("app.rb", "def unfinished\nend\n"),
+        ("app.swift", "func unfinished() {}\n"),
+        ("app.kt", "fun unfinished() {}\n"),
+        ("app.dart", "void unfinished() {}\n"),
+        ("app.scala", "def unfinished = {}\n"),
+        ("app.lua", "function unfinished()\nend\n"),
+        ("app.r", "unfinished <- function() {}\n"),
+        ("app.m", "function unfinished()\nend\n"),
+        ("app.sh", "unfinished() { :; }\n"),
+        ("app.ps1", "function Invoke-Unfinished {}\n"),
+    ],
+)
+def test_narrow_multilanguage_empty_body_detectors(
+    tmp_path: Path, filename: str, source: str
+) -> None:
+    (tmp_path / filename).write_text(source, encoding="utf-8")
+    result = run_audit(tmp_path, QualityConfig())
+    stubs = [item for item in result.findings if item.rule == "audit-51"]
+    assert len(stubs) == 1
+    assert "empty implementation body" in stubs[0].message
+
+
+@pytest.mark.parametrize(
+    ("filename", "source"),
+    [
+        ("app.js", "function f() {\n  return;\n  work();\n}\n"),
+        ("app.java", "void f() {\n  return;\n  work();\n}\n"),
+        ("app.go", "func f() {\n  return\n  work()\n}\n"),
+        ("app.rs", "fn f() {\n  return;\n  work();\n}\n"),
+    ],
+)
+def test_narrow_same_block_unreachable_detectors(
+    tmp_path: Path, filename: str, source: str
+) -> None:
+    (tmp_path / filename).write_text(source, encoding="utf-8")
+    result = run_audit(tmp_path, QualityConfig())
+    dead = [item for item in result.findings if item.rule == "audit-57"]
+    assert len(dead) == 1
+    assert dead[0].line == 3
+
+
+def test_code_quality_capabilities_are_explicit() -> None:
+    expected = {
+        "javascript",
+        "typescript",
+        "java",
+        "csharp",
+        "c",
+        "cpp",
+        "go",
+        "rust",
+        "php",
+        "ruby",
+        "swift",
+        "kotlin",
+        "dart",
+        "scala",
+        "lua",
+        "r",
+        "matlab",
+        "shell",
+        "powershell",
+    }
+    assert expected <= CODE_QUALITY_CAPABILITIES.keys()
+    assert CODE_QUALITY_CAPABILITIES["ruby"]["unreachable"] == "unsupported"

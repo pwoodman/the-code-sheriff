@@ -9,6 +9,7 @@ from pathlib import Path
 from quality_gates.config import QualityConfig
 from quality_gates.coverage_parse import (
     CoverageSummary,
+    aggregate_summaries,
     find_existing_reports,
     parse_coverage_file,
 )
@@ -45,6 +46,7 @@ def run_coverage(root: Path, config: QualityConfig) -> GateResult:
         )
 
     payload = {
+        "schema_version": "1.0.0",
         "line_percent": summary.line_percent,
         "branch_percent": summary.branch_percent,
         "lines_covered": summary.lines_covered,
@@ -95,9 +97,19 @@ def _collect(
             notes.append(f"using existing report {existing.source}")
             if tool == "existing":
                 return existing, notes
-            # auto: prefer a freshly collected report when a tool is available
             collected = _run_tool(root, config, report_dir, notes)
-            return (collected or existing), notes
+            refreshed = _best_existing(root)
+            combined = refreshed or collected or existing
+            if (
+                combined
+                and " + " in combined.source
+                and not any("partial polyglot coverage" in note for note in notes)
+            ):
+                notes.append(
+                    "partial polyglot coverage: aggregated available existing and "
+                    "fresh reports; ecosystems without reports remain unmeasured"
+                )
+            return combined, notes
 
     collected = _run_tool(root, config, report_dir, notes)
     if collected is not None:
@@ -106,14 +118,13 @@ def _collect(
 
 
 def _best_existing(root: Path) -> CoverageSummary | None:
-    best: CoverageSummary | None = None
+    summaries: list[CoverageSummary] = []
     for path in find_existing_reports(root):
         parsed = parse_coverage_file(path)
         if parsed is None or parsed.line_percent is None:
             continue
-        if best is None or (parsed.lines_valid >= best.lines_valid):
-            best = parsed
-    return best
+        summaries.append(parsed)
+    return aggregate_summaries(summaries)
 
 
 def _run_tool(
@@ -122,6 +133,9 @@ def _run_tool(
     report_dir: Path,
     notes: list[str],
 ) -> CoverageSummary | None:
+    if config.trust != "trusted":
+        notes.append("test execution skipped because repository trust is not 'trusted'")
+        return None
     tool = config.coverage_tool
     runners = []
     if tool in {"auto", "pytest"}:
@@ -130,11 +144,26 @@ def _run_tool(
         runners.append(lambda: _js_coverage(root, notes))
     if tool in {"auto", "go"}:
         runners.append(lambda: _go_cover(root, report_dir, notes))
+    summaries: list[CoverageSummary] = []
+    seen_sources: set[str] = set()
     for runner in runners:
         summary = runner()
-        if summary is not None and summary.line_percent is not None:
-            return summary
-    return None
+        if summary is None or summary.line_percent is None:
+            continue
+        source = str(Path(summary.source).resolve()) if summary.source else ""
+        if source and source in seen_sources:
+            notes.append(f"duplicate coverage report ignored: {summary.source}")
+            continue
+        if source:
+            seen_sources.add(source)
+        summaries.append(summary)
+    aggregated = aggregate_summaries(summaries)
+    if len(summaries) > 1:
+        notes.append(
+            f"partial polyglot coverage: aggregated {len(summaries)} independent "
+            "reports; ecosystems without reports remain unmeasured"
+        )
+    return aggregated
 
 
 def _pytest_cov(

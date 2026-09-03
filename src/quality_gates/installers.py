@@ -9,9 +9,15 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 from quality_gates.paths import bin_dir, cache_dir, tooling_js_dir
+from quality_gates.tool_manifest import (
+    artifact_for_install,
+    atomic_write,
+    cache_lock,
+    load_tool_manifest,
+)
 from quality_gates.tools import run, which
 
-USER_AGENT = "quality-gates/1.0 (+https://github.com)"
+USER_AGENT = "quality-gates/1.6.0 (+https://github.com/pwoodman/poly-check)"
 
 GITLEAKS_VERSION = "8.24.3"
 OSV_VERSION = "2.0.2"
@@ -20,18 +26,28 @@ GOOGLE_JAVA_FORMAT = "1.25.2"
 CHECKSTYLE_VERSION = "10.21.4"
 
 
+def _manifest_artifact(tool_id: str):
+    spec = load_tool_manifest().by_id()[tool_id]
+    return artifact_for_install(spec)
+
+
 def _download(url: str, destination: Path, *, sha256: str | None = None) -> None:
+    if not sha256:
+        raise RuntimeError(
+            f"refusing unverified download from {url}; the tool manifest must "
+            "provide a SHA-256 for this platform"
+        )
     destination.parent.mkdir(parents=True, exist_ok=True)
-    request = Request(url, headers={"User-Agent": USER_AGENT})
-    with urlopen(request, timeout=120) as response:
-        data = response.read()
-    if sha256:
+    with cache_lock(destination.with_suffix(destination.suffix + ".lock")):
+        if destination.is_file():
+            return
+        request = Request(url, headers={"User-Agent": USER_AGENT})
+        with urlopen(request, timeout=120) as response:
+            data = response.read()
         digest = hashlib.sha256(data).hexdigest()
         if digest != sha256:
             raise RuntimeError(f"checksum mismatch for {url}: {digest} != {sha256}")
-    tmp = destination.with_suffix(destination.suffix + ".tmp")
-    tmp.write_bytes(data)
-    tmp.replace(destination)
+        atomic_write(destination, data)
 
 
 def _make_executable(path: Path) -> None:
@@ -73,12 +89,10 @@ def ensure_gitleaks() -> Path | None:
     target = bin_dir() / "gitleaks"
     if target.is_file():
         return target
-    url = (
-        "https://github.com/gitleaks/gitleaks/releases/download/"
-        f"v{GITLEAKS_VERSION}/gitleaks_{GITLEAKS_VERSION}_linux_x64.tar.gz"
-    )
+    artifact = _manifest_artifact("gitleaks")
+    url = artifact.url
     archive = cache_dir() / "downloads" / f"gitleaks_{GITLEAKS_VERSION}.tar.gz"
-    _download(url, archive)
+    _download(url, archive, sha256=artifact.sha256)
     _extract_named(archive, "gitleaks", target)
     return target
 
@@ -90,11 +104,8 @@ def ensure_osv_scanner() -> Path | None:
     target = bin_dir() / "osv-scanner"
     if target.is_file():
         return target
-    url = (
-        "https://github.com/google/osv-scanner/releases/download/"
-        f"v{OSV_VERSION}/osv-scanner_linux_amd64"
-    )
-    _download(url, target)
+    artifact = _manifest_artifact("osv-scanner")
+    _download(artifact.url, target, sha256=artifact.sha256)
     _make_executable(target)
     return target
 
@@ -106,41 +117,32 @@ def ensure_golangci_lint() -> Path | None:
     target = bin_dir() / "golangci-lint"
     if target.is_file():
         return target
-    url = (
-        "https://github.com/golangci/golangci-lint/releases/download/"
-        f"v{GOLANGCI_VERSION}/golangci-lint-{GOLANGCI_VERSION}-linux-amd64.tar.gz"
-    )
+    artifact = _manifest_artifact("golangci-lint")
+    url = artifact.url
     archive = cache_dir() / "downloads" / f"golangci-lint-{GOLANGCI_VERSION}.tar.gz"
-    _download(url, archive)
+    _download(url, archive, sha256=artifact.sha256)
     _extract_named(archive, "golangci-lint", target)
     return target
 
 
-def ensure_jar(name: str, url: str) -> Path:
+def ensure_jar(name: str, tool_id: str) -> Path:
     jars = cache_dir() / "jars"
     jars.mkdir(parents=True, exist_ok=True)
     target = jars / name
     if not target.is_file():
-        _download(url, target)
+        artifact = _manifest_artifact(tool_id)
+        _download(artifact.url, target, sha256=artifact.sha256)
     return target
 
 
 def ensure_google_java_format() -> Path:
     name = f"google-java-format-{GOOGLE_JAVA_FORMAT}-all-deps.jar"
-    url = (
-        "https://github.com/google/google-java-format/releases/download/"
-        f"v{GOOGLE_JAVA_FORMAT}/{name}"
-    )
-    return ensure_jar(name, url)
+    return ensure_jar(name, "google-java-format")
 
 
 def ensure_checkstyle() -> Path:
     name = f"checkstyle-{CHECKSTYLE_VERSION}-all.jar"
-    url = (
-        "https://github.com/checkstyle/checkstyle/releases/download/"
-        f"checkstyle-{CHECKSTYLE_VERSION}/{name}"
-    )
-    return ensure_jar(name, url)
+    return ensure_jar(name, "checkstyle")
 
 
 def ensure_node_tooling() -> None:
@@ -154,7 +156,10 @@ def ensure_node_tooling() -> None:
     npm = which("npm")
     if not npm:
         return
-    run([npm, "install", "--no-fund", "--no-audit"], cwd=js_dir, timeout=300)
+    lockfile = js_dir / "package-lock.json"
+    if not lockfile.is_file():
+        raise RuntimeError("refusing npm install without tooling/js/package-lock.json")
+    run([npm, "ci", "--no-fund", "--no-audit"], cwd=js_dir, timeout=300)
 
 
 def ensure_python_tools() -> None:

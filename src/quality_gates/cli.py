@@ -30,22 +30,25 @@ from quality_gates.installers import (
     ensure_google_java_format,
     ensure_node_tooling,
     ensure_osv_scanner,
-    ensure_python_tools,
-    ensure_sqlfluff,
     write_github_path,
 )
 from quality_gates.models import GateResult
-from quality_gates.paths import project_root
+from quality_gates.paths import cache_dir, project_root
 from quality_gates.policy import apply_policy, maybe_comment_pr, write_baseline
+from quality_gates.registry import canonical_name
 from quality_gates.report import (
     build_digest,
     emit_annotations,
     load_results,
     render_console,
     render_html,
+    render_junit,
     render_markdown,
+    render_sarif,
     write_reports,
 )
+from quality_gates.result_cache import cache_status, clean_cache
+from quality_gates.tool_manifest import load_tool_manifest, platform_id
 from quality_gates.tools import tool_version, which
 
 INIT_WORKFLOW = """name: Quality gates
@@ -63,7 +66,8 @@ permissions:
 
 jobs:
   quality:
-    uses: REPLACE_ORG/quality-gates/.github/workflows/quality.yml@v1
+    # Replace with a reviewed 40-character commit SHA from pwoodman/poly-check.
+    uses: pwoodman/poly-check/.github/workflows/quality.yml@REPLACE_FULL_COMMIT_SHA
     secrets: inherit
 """
 
@@ -83,14 +87,14 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
       - name: Install quality-gates
-        run: pip install "git+https://github.com/REPLACE_ORG/quality-gates.git@v1"
+        run: pip install "git+https://github.com/pwoodman/poly-check.git@v1"
       - name: Run gates
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -122,6 +126,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     doctor = sub.add_parser("doctor", help="show which tools are available")
     doctor.add_argument(
         "--install", action="store_true", help="download pinned CI binaries"
+    )
+    cache_p = sub.add_parser("cache", help="inspect or clean deterministic results")
+    cache_p.add_argument(
+        "action", choices=["status", "clean"], nargs="?", default="status"
     )
 
     fmt = sub.add_parser("format", help="run formatters")
@@ -186,7 +194,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     sub.add_parser(
         "coverage",
-        help="test coverage vs configurable floor (default 80% lines)",
+        help="test coverage vs configurable floor (default 80%% lines)",
     )
     sub.add_parser(
         "audit",
@@ -237,7 +245,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     report_p.add_argument(
         "--format",
         dest="report_format",
-        choices=["console", "markdown", "html", "json"],
+        choices=["console", "markdown", "html", "json", "sarif", "junit"],
         default="console",
         help="console (default), markdown, html, or json",
     )
@@ -257,6 +265,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _print_report(root, fmt=args.report_format, as_json=args.json)
     if args.command == "doctor":
         return _doctor(root, config, install=args.install, as_json=args.json)
+    if args.command == "cache":
+        payload = clean_cache() if args.action == "clean" else cache_status()
+        if args.json:
+            print(json.dumps(payload, indent=2))
+        else:
+            verb = "removed" if args.action == "clean" else "contains"
+            print(
+                f"cache {payload['path']} {verb} {payload['entries']} entries "
+                f"({payload['bytes']} bytes)"
+            )
+        return 0
     if args.command == "detect":
         info = detect_languages(root, config)
         return _print_detect(info, args.json)
@@ -431,7 +450,7 @@ def _resolve_languages(
     files: list[Path] | None,
 ) -> list[str]:
     if explicit:
-        return explicit
+        return [canonical_name(item) or item for item in explicit]
     return detect_languages(root, config, files)["languages"]
 
 
@@ -456,7 +475,9 @@ def _emit(
     results, policy = apply_policy(results, root, config)
     maybe_comment_pr(results, root, config, policy)
     emit_annotations(results)
-    digest = build_digest(results, policy=policy, report_dir=root / ".quality-reports")
+    digest = build_digest(
+        results, policy=policy, report_dir=root / ".quality-reports", root=root
+    )
     write_reports(digest, root / ".quality-reports", policy=policy)
     if as_json:
         print(json.dumps(digest.to_dict(), indent=2))
@@ -490,70 +511,131 @@ def _print_report(root: Path, *, fmt: str, as_json: bool) -> int:
         print(render_markdown(digest), end="")
     elif fmt == "html":
         print(render_html(digest), end="")
+    elif fmt == "sarif":
+        print(json.dumps(render_sarif(digest), indent=2))
+    elif fmt == "junit":
+        print(render_junit(digest), end="")
     else:
         print(render_console(digest))
     return 0 if digest.verdict == "pass" else 1
 
 
 def _doctor(root: Path, config: QualityConfig, *, install: bool, as_json: bool) -> int:
-    if install or config.should_auto_install():
+    if install and config.offline:
+        print(
+            "doctor --install is unavailable while quality.offline=true",
+            file=sys.stderr,
+        )
+        return 2
+    if install:
         _install_all()
         write_github_path()
-    rows = []
-    checks = [
-        ("python", "python3", ("--version",)),
-        ("ruff", "ruff", ("--version",)),
-        ("node", "node", ("--version",)),
-        ("npm", "npm", ("--version",)),
-        ("prettier", "prettier", ("--version",)),
-        ("eslint", "eslint", ("--version",)),
-        ("jscpd", "jscpd", ("--version",)),
-        ("go", "go", ("version",)),
-        ("gofmt", "gofmt", ()),
-        ("golangci-lint", "golangci-lint", ("version",)),
-        ("rustc", "rustc", ("--version",)),
-        ("cargo", "cargo", ("--version",)),
-        ("rustfmt", "rustfmt", ("--version",)),
-        ("java", "java", ("-version",)),
-        ("dotnet", "dotnet", ("--version",)),
-        ("csharpier", "csharpier", ("--version",)),
-        ("sqlfluff", "sqlfluff", ("--version",)),
-        ("gitleaks", "gitleaks", ("version",)),
-        ("osv-scanner", "osv-scanner", ("--version",)),
-        ("semgrep", "semgrep", ("--version",)),
-        ("playwright", "playwright", ("--version",)),
-        ("cypress", "cypress", ("--version",)),
-        ("coverage", "coverage", ("--version",)),
+    detected = detect_languages(root, config)
+    manifest = load_tool_manifest()
+    language_set = set(detected["languages"])
+    kind_set = set(detected["file_kinds"])
+    required = set(config.required_tools)
+    selected = [
+        tool
+        for tool in manifest.tools
+        if language_set.intersection(tool.languages)
+        or kind_set.intersection(tool.file_kinds)
+        or required.intersection({tool.id})
+        or set(tool.capabilities).intersection({"security", "dry"})
     ]
-    for label, command, argv in checks:
-        path = which(command, project=root, prefer_project=True)
-        version = tool_version(command, argv or ("--version",)) if path else None
+    rows: list[dict[str, object]] = []
+    for tool in selected:
+        path = next(
+            (
+                found
+                for command in tool.commands
+                if (
+                    found := which(
+                        command,
+                        project=root,
+                        prefer_project=config.prefer_project_tools,
+                    )
+                )
+            ),
+            None,
+        )
+        if path is None and tool.cache_path:
+            cached = cache_dir() / tool.cache_path
+            path = str(cached) if cached.is_file() else None
+        command = tool.commands[0] if tool.commands else tool.id
+        version = (
+            tool_version(command, tool.version_args)
+            if path and tool.commands
+            else tool.version
+            if path
+            else None
+        )
         rows.append(
             {
-                "tool": label,
+                "tool": tool.id,
                 "path": path,
                 "version": version,
                 "ok": bool(path),
+                "required": tool.id in required,
+                "capabilities": list(tool.capabilities),
+                "platform_supported": tool.supports_current_platform(),
+                "auto_install_supported": tool.install_supported,
+                "auto_install_reason": tool.install_reason,
             }
         )
+    known = {tool.id for tool in selected}
+    for tool_id in sorted(required - known):
+        rows.append(
+            {
+                "tool": tool_id,
+                "path": None,
+                "version": None,
+                "ok": False,
+                "required": True,
+                "capabilities": [],
+                "platform_supported": False,
+                "auto_install_supported": False,
+                "auto_install_reason": "not present in the tool manifest",
+            }
+        )
+    missing_required = [
+        str(row["tool"]) for row in rows if row["required"] and not row["ok"]
+    ]
+    missing_optional = [
+        str(row["tool"]) for row in rows if not row["required"] and not row["ok"]
+    ]
+    payload = {
+        "platform": platform_id(),
+        "cache": str(cache_dir()),
+        "trust": config.trust,
+        "offline": config.offline,
+        "detected": detected,
+        "tools": rows,
+        "missing_required": missing_required,
+        "missing_optional": missing_optional,
+    }
     if as_json:
-        print(json.dumps(rows, indent=2))
+        print(json.dumps(payload, indent=2))
     else:
         print(f"project: {root}")
+        print(
+            f"platform: {payload['platform']} · trust: {config.trust} · "
+            f"offline: {str(config.offline).lower()}"
+        )
+        print(f"cache: {payload['cache']}")
         width = max(len(row["tool"]) for row in rows)
         for row in rows:
             mark = "ok" if row["ok"] else "missing"
+            requirement = "required" if row["required"] else "optional"
             extra = row["version"] or row["path"] or "not on PATH"
-            print(f"  {row['tool']:<{width}}  {mark:<8}  {extra}")
+            print(f"  {row['tool']:<{width}}  {mark:<8}  {requirement:<8}  {extra}")
         print(
             "\nTip: quality doctor --install downloads gitleaks, osv-scanner, golangci-lint, and Java jars."
         )
-    return 0
+    return 1 if missing_required else 0
 
 
 def _install_all() -> None:
-    ensure_python_tools()
-    ensure_sqlfluff()
     ensure_node_tooling()
     for loader in (
         ensure_gitleaks,
@@ -564,7 +646,7 @@ def _install_all() -> None:
     ):
         try:
             loader()
-        except OSError as exc:
+        except (OSError, RuntimeError) as exc:
             print(f"warning: {loader.__name__} failed: {exc}", file=sys.stderr)
 
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from quality_gates import ALL_LANGUAGES
+from quality_gates.registry import canonical_name
 
 DEFAULT_EXCLUDE = [
     ".git",
@@ -93,14 +94,52 @@ DEFAULT_FAIL_ON = [
 ]
 DEFAULT_GITHUB_GATES = ["format", "lint", "impact", "audit", "version", "review"]
 POLICIES = ("observe", "adopt", "enforce")
+TRUST_POLICIES = ("trusted", "prompt", "untrusted")
+CONFIG_VERSION = 1
+QUALITY_KEYS = frozenset(
+    {
+        "config_version",
+        "languages",
+        "fail_on",
+        "ai_review",
+        "auto_install",
+        "trust",
+        "offline",
+        "jobs",
+        "cache",
+        "required_tools",
+        "ci",
+        "compile",
+        "coverage",
+        "audit",
+        "ui",
+        "impact",
+        "version",
+        "detect",
+        "format",
+        "lint",
+        "dry",
+        "sql",
+        "review",
+        "policy",
+        "baseline",
+        "comment_on_pr",
+    }
+)
 
 
 @dataclass
 class QualityConfig:
+    config_version: int = CONFIG_VERSION
     languages: list[str] = field(default_factory=lambda: ["auto"])
     fail_on: list[str] = field(default_factory=lambda: list(DEFAULT_FAIL_ON))
     ai_review: str = "pr-only"
     auto_install: bool = False
+    trust: str = "trusted"
+    offline: bool = False
+    jobs: int = max(1, min(32, os.cpu_count() or 1))
+    cache_enabled: bool = True
+    required_tools: list[str] = field(default_factory=list)
     ci_mode: str = "local"
     ci_github_gates: list[str] = field(
         default_factory=lambda: list(DEFAULT_GITHUB_GATES)
@@ -152,15 +191,18 @@ class QualityConfig:
     def language_filter(self) -> list[str] | None:
         if not self.languages or self.languages == ["auto"]:
             return None
-        unknown = [item for item in self.languages if item not in ALL_LANGUAGES]
+        resolved = [canonical_name(item) for item in self.languages]
+        unknown = [
+            item
+            for item, canonical in zip(self.languages, resolved, strict=True)
+            if canonical not in ALL_LANGUAGES
+        ]
         if unknown:
             raise ValueError(f"Unknown languages in quality.toml: {unknown}")
-        return list(self.languages)
+        return list(dict.fromkeys(item for item in resolved if item is not None))
 
     def should_auto_install(self) -> bool:
         if os.environ.get("QUALITY_GATES_AUTO_INSTALL") == "1":
-            return True
-        if os.environ.get("GITHUB_ACTIONS") == "true":
             return True
         return self.auto_install
 
@@ -180,6 +222,20 @@ def load_config(project: Path) -> QualityConfig:
     if path.is_file():
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     quality = _section(data, "quality")
+    unknown = sorted(set(quality) - QUALITY_KEYS)
+    if unknown:
+        raise ValueError(f"Unknown top-level quality key(s): {', '.join(unknown)}")
+    config_version = quality.get("config_version", CONFIG_VERSION)
+    if not isinstance(config_version, int) or isinstance(config_version, bool):
+        raise ValueError("quality.config_version must be an integer")
+    if config_version != CONFIG_VERSION:
+        raise ValueError(
+            f"Unsupported quality.config_version {config_version}; expected {CONFIG_VERSION}"
+        )
+    default_trust = "untrusted" if is_pr_event() else "trusted"
+    trust = str(quality.get("trust", default_trust)).lower()
+    if trust not in TRUST_POLICIES:
+        raise ValueError("quality.trust must be one of: " + ", ".join(TRUST_POLICIES))
     detect = _section(data, "quality", "detect")
     fmt = _section(data, "quality", "format")
     dry = _section(data, "quality", "dry")
@@ -192,6 +248,7 @@ def load_config(project: Path) -> QualityConfig:
     impact_cfg = _section(data, "quality", "impact")
     coverage_cfg = _section(data, "quality", "coverage")
     audit_cfg = _section(data, "quality", "audit")
+    cache_cfg = _section(data, "quality", "cache")
 
     auto_install = quality.get("auto_install", False)
     if isinstance(auto_install, str):
@@ -234,10 +291,29 @@ def load_config(project: Path) -> QualityConfig:
         policy = "adopt"
 
     return QualityConfig(
+        config_version=config_version,
         languages=_as_list(quality.get("languages"), ["auto"]),
         fail_on=_as_list(quality.get("fail_on"), DEFAULT_FAIL_ON),
         ai_review=str(quality.get("ai_review", "pr-only")),
         auto_install=bool(auto_install),
+        trust=trust,
+        offline=_as_bool(quality.get("offline"), False),
+        jobs=max(
+            1,
+            min(
+                32,
+                int(
+                    os.environ.get("QUALITY_GATES_JOBS")
+                    or quality.get("jobs")
+                    or (os.cpu_count() or 1)
+                ),
+            ),
+        ),
+        cache_enabled=_as_bool(
+            os.environ.get("QUALITY_GATES_CACHE_ENABLED") or cache_cfg.get("enabled"),
+            True,
+        ),
+        required_tools=_as_list(quality.get("required_tools"), []),
         ci_mode=ci_mode,
         ci_github_gates=_as_list(ci.get("github_gates"), DEFAULT_GITHUB_GATES),
         require_changelog=changelog,

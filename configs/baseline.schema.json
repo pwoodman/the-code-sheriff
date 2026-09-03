@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/pwoodman/poly-check/schemas/baseline-v1.json",
+  "title": "quality-gates baseline",
+  "type": "object",
+  "required": ["schema_version", "version", "policy", "fingerprints"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "version": {"const": 1},
+    "policy": {"const": "adopt"},
+    "coverage_line": {"type": ["number", "null"]},
+    "fingerprints": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "note": {"type": "string"}
+  }
+}

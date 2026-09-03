@@ -39,6 +39,7 @@ def write_audit_reports(
                 potential.append(item)
 
     payload = {
+        "schema_version": "1.0.0",
         "surfaces": sorted(ctx.surfaces),
         "counts": counts,
         "min_confidence": min_confidence,

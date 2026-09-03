@@ -1,3 +1,4 @@
+---
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -32,7 +33,9 @@ repos:
         stages: [pre-commit]
       - id: quality-push
         name: quality dry, security, compile, impact, coverage, audit, ui
-        entry: python -m quality_gates run --only dry,security,compile,impact,coverage,audit,ui
+        entry: >-
+          python -m quality_gates run --only
+          dry,security,compile,impact,coverage,audit,ui
         language: system
         pass_filenames: false
         stages: [pre-push]

@@ -1,0 +1,35 @@
+name: Toolchain fixtures
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fixture:
+    name: ${{ matrix.os }} · ${{ matrix.language }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, language: python}
+          - {os: ubuntu-latest, language: javascript}
+          - {os: ubuntu-latest, language: go}
+          - {os: macos-latest, language: rust}
+          - {os: windows-latest, language: csharp}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: ./.github/actions/bootstrap
+        with:
+          install-binaries: "false"
+      - uses: ./.github/actions/setup-language
+        with:
+          language: ${{ matrix.language }}
+      - name: Verify manifest negotiation
+        run: |
+          quality doctor
+          quality detect

@@ -4,11 +4,12 @@ from pathlib import Path
 
 from quality_gates.config import QualityConfig, load_config
 from quality_gates.coverage_parse import (
+    CoverageSummary,
     parse_cobertura_xml,
     parse_istanbul_summary,
     parse_lcov,
 )
-from quality_gates.gates.coverage import run_coverage
+from quality_gates.gates.coverage import _run_tool, run_coverage
 
 
 def test_cobertura_percent(tmp_path: Path) -> None:
@@ -79,3 +80,52 @@ def test_coverage_config_defaults(tmp_path: Path) -> None:
     assert config.coverage_line == 80.0
     assert config.coverage_branch == 0.0
     assert "coverage" in config.fail_on
+
+
+def test_all_applicable_coverage_runners_are_aggregated(
+    tmp_path: Path, monkeypatch
+) -> None:
+    first = CoverageSummary(50.0, None, 5, 10, source=str(tmp_path / "python.xml"))
+    second = CoverageSummary(80.0, None, 8, 10, source=str(tmp_path / "lcov.info"))
+    calls: list[str] = []
+
+    def runner(name: str, summary: CoverageSummary):
+        def run(*_args):
+            calls.append(name)
+            return summary
+
+        return run
+
+    monkeypatch.setattr(
+        "quality_gates.gates.coverage._pytest_cov", runner("python", first)
+    )
+    monkeypatch.setattr(
+        "quality_gates.gates.coverage._js_coverage", runner("javascript", second)
+    )
+    monkeypatch.setattr("quality_gates.gates.coverage._go_cover", runner("go", None))
+    notes: list[str] = []
+    summary = _run_tool(tmp_path, QualityConfig(), tmp_path, notes)
+
+    assert calls == ["python", "javascript", "go"]
+    assert summary is not None
+    assert summary.lines_covered == 13
+    assert summary.lines_valid == 20
+    assert summary.line_percent == 65.0
+    assert any("partial polyglot coverage" in note for note in notes)
+
+
+def test_coverage_runner_deduplicates_same_source(tmp_path: Path, monkeypatch) -> None:
+    source = str(tmp_path / "coverage.xml")
+    summary = CoverageSummary(50.0, None, 5, 10, source=source)
+    monkeypatch.setattr(
+        "quality_gates.gates.coverage._pytest_cov", lambda *_args: summary
+    )
+    monkeypatch.setattr(
+        "quality_gates.gates.coverage._js_coverage", lambda *_args: summary
+    )
+    monkeypatch.setattr("quality_gates.gates.coverage._go_cover", lambda *_args: None)
+    notes: list[str] = []
+    combined = _run_tool(tmp_path, QualityConfig(), tmp_path, notes)
+    assert combined is not None
+    assert combined.lines_valid == 10
+    assert any("duplicate coverage report ignored" in note for note in notes)

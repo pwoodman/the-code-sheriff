@@ -46,7 +46,7 @@ def parse_coverage_file(path: Path) -> CoverageSummary | None:
     name = path.name.lower()
     try:
         if name.endswith(".xml") or name == "cobertura.xml":
-            return parse_cobertura_xml(path)
+            return parse_xml_coverage(path)
         if name.endswith(".json") or name == "coverage-summary.json":
             return parse_istanbul_summary(path)
         if "lcov" in name or name.endswith(".info"):
@@ -80,6 +80,84 @@ def parse_cobertura_xml(path: Path) -> CoverageSummary:
         branch_percent=branch_pct,
         lines_covered=lines_covered,
         lines_valid=lines_valid,
+        branches_covered=branches_covered,
+        branches_valid=branches_valid,
+        source=str(path),
+    )
+
+
+def parse_xml_coverage(path: Path) -> CoverageSummary:
+    """Parse Cobertura, JaCoCo, or OpenCover XML without resolving entities."""
+    data = path.read_text(encoding="utf-8-sig", errors="strict")
+    if "<!DOCTYPE" in data.upper() or "<!ENTITY" in data.upper():
+        raise ValueError("coverage XML with declarations/entities is not accepted")
+    root = ET.fromstring(data)
+    tag = root.tag.rsplit("}", 1)[-1].lower()
+    if tag == "report":
+        return _parse_jacoco_root(root, path)
+    if tag == "coveragesession":
+        return _parse_opencover_root(root, path)
+    line_rate = _attr_float(root, "line-rate")
+    branch_rate = _attr_float(root, "branch-rate")
+    lines_valid = _attr_int(root, "lines-valid")
+    lines_covered = _attr_int(root, "lines-covered")
+    branches_valid = _attr_int(root, "branches-valid")
+    branches_covered = _attr_int(root, "branches-covered")
+    if line_rate is None and lines_valid:
+        line_rate = lines_covered / lines_valid
+    if branch_rate is None and branches_valid:
+        branch_rate = branches_covered / branches_valid
+    return CoverageSummary(
+        line_percent=None if line_rate is None else round(line_rate * 100, 2),
+        branch_percent=None if branch_rate is None else round(branch_rate * 100, 2),
+        lines_covered=lines_covered,
+        lines_valid=lines_valid,
+        branches_covered=branches_covered,
+        branches_valid=branches_valid,
+        source=str(path),
+    )
+
+
+def _parse_jacoco_root(root: ET.Element, path: Path) -> CoverageSummary:
+    counters = {item.get("type"): item for item in root.findall("./counter")}
+    line = counters.get("LINE")
+    branch = counters.get("BRANCH")
+    covered = _attr_int(line, "covered") if line is not None else 0
+    missed = _attr_int(line, "missed") if line is not None else 0
+    br_covered = _attr_int(branch, "covered") if branch is not None else 0
+    br_missed = _attr_int(branch, "missed") if branch is not None else 0
+    return _from_counts(
+        path, covered, covered + missed, br_covered, br_covered + br_missed
+    )
+
+
+def _parse_opencover_root(root: ET.Element, path: Path) -> CoverageSummary:
+    summary = root.find("./Summary")
+    if summary is None:
+        summary = root.find(".//Summary")
+    if summary is None:
+        return CoverageSummary(None, None, source=str(path))
+    return _from_counts(
+        path,
+        _attr_int(summary, "visitedSequencePoints"),
+        _attr_int(summary, "numSequencePoints"),
+        _attr_int(summary, "visitedBranchPoints"),
+        _attr_int(summary, "numBranchPoints"),
+    )
+
+
+def _from_counts(
+    path: Path, covered: int, valid: int, branches_covered: int, branches_valid: int
+) -> CoverageSummary:
+    return CoverageSummary(
+        line_percent=None if not valid else round(covered * 100 / valid, 2),
+        branch_percent=(
+            None
+            if not branches_valid
+            else round(branches_covered * 100 / branches_valid, 2)
+        ),
+        lines_covered=covered,
+        lines_valid=valid,
         branches_covered=branches_covered,
         branches_valid=branches_valid,
         source=str(path),
@@ -172,8 +250,52 @@ def find_existing_reports(root: Path) -> list[Path]:
         root / ".quality-reports" / "coverage-summary.json",
         root / ".quality-reports" / "coverage.out",
         root / "coverage.out",
+        root / "target" / "site" / "jacoco" / "jacoco.xml",
+        root / "build" / "reports" / "jacoco" / "test" / "jacocoTestReport.xml",
+        root / "TestResults" / "coverage.opencover.xml",
+        root / "TestResults" / "coverage.cobertura.xml",
+        root / "coverage" / "cobertura-coverage.xml",
     ]
-    return [path for path in candidates if path.is_file()]
+    for pattern in (
+        "**/jacoco.xml",
+        "**/jacocoTestReport.xml",
+        "**/coverage.opencover.xml",
+        "**/coverage.cobertura.xml",
+        "**/lcov.info",
+        "**/coverage-summary.json",
+        "**/coverage.out",
+    ):
+        candidates.extend(
+            path
+            for path in root.glob(pattern)
+            if not ({".git", "node_modules", ".venv"} & set(path.parts))
+        )
+    return list(dict.fromkeys(path for path in candidates if path.is_file()))
+
+
+def aggregate_summaries(summaries: list[CoverageSummary]) -> CoverageSummary | None:
+    """Aggregate independent reports by measured line/branch totals."""
+    usable = [item for item in summaries if item.lines_valid > 0]
+    if not usable:
+        return None
+    lines_valid = sum(item.lines_valid for item in usable)
+    lines_covered = sum(item.lines_covered for item in usable)
+    branch_items = [item for item in usable if item.branches_valid > 0]
+    branches_valid = sum(item.branches_valid for item in branch_items)
+    branches_covered = sum(item.branches_covered for item in branch_items)
+    return CoverageSummary(
+        line_percent=round(lines_covered * 100 / lines_valid, 2),
+        branch_percent=(
+            round(branches_covered * 100 / branches_valid, 2)
+            if branches_valid
+            else None
+        ),
+        lines_covered=lines_covered,
+        lines_valid=lines_valid,
+        branches_covered=branches_covered,
+        branches_valid=branches_valid,
+        source=" + ".join(item.source for item in usable),
+    )
 
 
 def _attr_float(node: ET.Element, name: str) -> float | None:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from quality_gates.cli import main
 from quality_gates.gates.common import fail_or_pass, merge_results
 from quality_gates.models import Finding
@@ -24,6 +26,15 @@ def test_run_unknown_gate_errors(tmp_path: Path, capsys, monkeypatch) -> None:
     err = capsys.readouterr().err
     assert "unknown gate" in err
     assert "not-a-gate" in err
+
+
+def test_help_renders_literal_coverage_percentage(capsys) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["--help"])
+
+    assert exc.value.code == 0
+    rendered = " ".join(capsys.readouterr().out.split())
+    assert "default 80% lines" in rendered
 
 
 def test_merge_results_fail_wins() -> None:

@@ -4,13 +4,25 @@ import html
 import json
 import os
 import re
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from quality_gates.diagnostics import detail_lines, enrich_findings, pointer
 from quality_gates.models import Finding, GateResult
 
 INDUSTRY_COVERAGE = 80.0
+REPORT_SCHEMA_VERSION = "1.0.0"
+SUPPORTED_STATUSES = (
+    "pass",
+    "fail",
+    "warning",
+    "skip",
+    "not-applicable",
+    "unsupported",
+    "tool-error",
+)
 
 
 @dataclass
@@ -76,7 +88,9 @@ class QualityDigest:
 
     @property
     def failed(self) -> list[str]:
-        return [item.name for item in self.results if item.status == "fail"]
+        return [
+            item.name for item in self.results if item.status in {"fail", "tool-error"}
+        ]
 
     @property
     def verdict(self) -> str:
@@ -89,6 +103,7 @@ class QualityDigest:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "schema_version": REPORT_SCHEMA_VERSION,
             "policy": self.policy,
             "verdict": self.verdict,
             "failed": self.failed,
@@ -97,6 +112,12 @@ class QualityDigest:
             "performance": self.performance.to_dict(),
             "recommendations": [item.to_dict() for item in self.recommendations],
             "results": [item.to_dict() for item in self.results],
+            "support": {
+                "statuses": list(SUPPORTED_STATUSES),
+                "capability_coverage": {
+                    item.name: item.status for item in self.results
+                },
+            },
         }
 
 
@@ -122,7 +143,16 @@ def _emit(finding: Finding) -> None:
         args.append(f"title={_escape_anno(finding.rule)}")
     if args:
         bits.append(" " + ",".join(args))
-    bits.append(f"::{_escape_anno(finding.message)}")
+    detail = finding.message
+    if finding.snippet:
+        detail += f" At: {finding.snippet}."
+    if finding.reason:
+        detail += f" Why: {finding.reason}."
+    if finding.suggestion:
+        detail += f" Fix: {finding.suggestion}"
+    if finding.documentation_url:
+        detail += f" Docs: {finding.documentation_url}"
+    bits.append(f"::{_escape_anno(detail)}")
     print("".join(bits))
 
 
@@ -141,7 +171,11 @@ def build_digest(
     *,
     policy: str = "enforce",
     report_dir: Path | None = None,
+    root: Path | None = None,
 ) -> QualityDigest:
+    if root is not None:
+        for result in results:
+            enrich_findings(result.findings, root)
     performance = _performance(results, report_dir)
     recs = _recommendations(results, performance, policy)
     return QualityDigest(
@@ -173,7 +207,138 @@ def write_reports(
     (directory / "quality-report.html").write_text(
         render_html(digest), encoding="utf-8"
     )
+    (directory / "quality-report.sarif").write_text(
+        json.dumps(render_sarif(digest), indent=2) + "\n", encoding="utf-8"
+    )
+    (directory / "quality-report.junit.xml").write_text(
+        render_junit(digest), encoding="utf-8"
+    )
     return path
+
+
+def render_sarif(results: list[GateResult] | QualityDigest) -> dict[str, Any]:
+    digest = _as_digest(results)
+    rules: dict[str, dict[str, Any]] = {}
+    sarif_results: list[dict[str, Any]] = []
+    for finding in digest.issues():
+        rule_id = finding.rule or f"quality/{finding.gate}"
+        rules.setdefault(
+            rule_id,
+            {
+                "id": rule_id,
+                "shortDescription": {"text": f"{finding.gate} finding"},
+                **(
+                    {"helpUri": finding.documentation_url}
+                    if finding.documentation_url
+                    else {}
+                ),
+            },
+        )
+        entry: dict[str, Any] = {
+            "ruleId": rule_id,
+            "level": "error"
+            if finding.severity == "error"
+            else "warning"
+            if finding.severity == "warning"
+            else "note",
+            "message": {"text": finding.message},
+            "properties": {
+                key: value
+                for key, value in {
+                    "tool": finding.tool,
+                    "reason": finding.reason,
+                    "suggestion": finding.suggestion,
+                    "snippet": finding.snippet,
+                }.items()
+                if value
+            },
+        }
+        if finding.path:
+            region: dict[str, Any] = {}
+            if finding.line:
+                region["startLine"] = finding.line
+            if finding.column:
+                region["startColumn"] = finding.column
+            if finding.snippet:
+                region["snippet"] = {"text": finding.snippet}
+            location: dict[str, Any] = {
+                "physicalLocation": {
+                    "artifactLocation": {"uri": finding.path.replace("\\", "/")}
+                }
+            }
+            if region:
+                location["physicalLocation"]["region"] = region
+            entry["locations"] = [location]
+        sarif_results.append(entry)
+    return {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "quality-gates",
+                        "informationUri": "https://github.com/pwoodman/poly-check",
+                        "rules": [rules[key] for key in sorted(rules)],
+                    }
+                },
+                "results": sarif_results,
+            }
+        ],
+    }
+
+
+def render_junit(results: list[GateResult] | QualityDigest) -> str:
+    digest = _as_digest(results)
+    suite = ET.Element(
+        "testsuite",
+        {
+            "name": "quality-gates",
+            "tests": str(len(digest.results)),
+            "failures": str(sum(item.status == "fail" for item in digest.results)),
+            "errors": str(sum(item.status == "tool-error" for item in digest.results)),
+            "skipped": str(
+                sum(
+                    item.status in {"skip", "not-applicable", "unsupported"}
+                    for item in digest.results
+                )
+            ),
+        },
+    )
+    for result in digest.results:
+        case = ET.SubElement(
+            suite,
+            "testcase",
+            {"classname": "quality-gates", "name": result.name},
+        )
+        execution = []
+        if result.command:
+            execution.append("command: " + " ".join(result.command))
+        if result.working_directory:
+            execution.append("working directory: " + result.working_directory)
+        if result.return_code is not None:
+            execution.append(f"return code: {result.return_code}")
+        if result.output_excerpt:
+            execution.append("output:\n" + result.output_excerpt)
+        text = "\n".join(
+            [
+                *result.notes,
+                *execution,
+                *(_issue_line(item, markdown=False) for item in result.findings),
+            ]
+        )
+        if result.status == "fail":
+            ET.SubElement(
+                case, "failure", {"message": "quality gate failed"}
+            ).text = text
+        elif result.status == "tool-error":
+            ET.SubElement(case, "error", {"message": "quality tool error"}).text = text
+        elif result.status in {"skip", "not-applicable", "unsupported"}:
+            ET.SubElement(case, "skipped", {"message": result.status}).text = text
+        elif text:
+            ET.SubElement(case, "system-out").text = text
+    ET.indent(suite)
+    return ET.tostring(suite, encoding="unicode", xml_declaration=True) + "\n"
 
 
 def load_results(report_dir: Path) -> tuple[list[GateResult], str]:
@@ -197,6 +362,14 @@ def load_results(report_dir: Path) -> tuple[list[GateResult], str]:
                 column=item.get("column"),
                 rule=item.get("rule"),
                 language=item.get("language"),
+                tool=item.get("tool"),
+                tool_version=item.get("tool_version"),
+                raw_artifact=item.get("raw_artifact"),
+                safety=item.get("safety"),
+                reason=item.get("reason"),
+                suggestion=item.get("suggestion"),
+                documentation_url=item.get("documentation_url"),
+                snippet=item.get("snippet"),
             )
             for item in row.get("findings") or []
         ]
@@ -209,6 +382,16 @@ def load_results(report_dir: Path) -> tuple[list[GateResult], str]:
                 notes=list(row.get("notes") or []),
                 skipped_tools=list(row.get("skipped_tools") or []),
                 duration_ms=int(duration) if isinstance(duration, int) else None,
+                tool=row.get("tool"),
+                tool_version=row.get("tool_version"),
+                raw_artifacts=list(row.get("raw_artifacts") or []),
+                safety=row.get("safety"),
+                exit_state=row.get("exit_state"),
+                tool_errors=list(row.get("tool_errors") or []),
+                command=list(row.get("command") or []),
+                working_directory=row.get("working_directory"),
+                return_code=row.get("return_code"),
+                output_excerpt=row.get("output_excerpt"),
             )
         )
     return out, policy
@@ -329,10 +512,14 @@ def render_console(results: list[GateResult] | QualityDigest) -> str:
             for finding in findings:
                 if shown >= 24:
                     break
-                loc = finding.path or finding.rule or gate
-                if finding.line:
-                    loc = f"{loc}:{finding.line}"
-                rows.append(f"    {finding.severity}: {loc}: {finding.message}")
+                loc = pointer(finding) if finding.path or finding.rule else gate
+                label = f" [{finding.rule}]" if finding.rule else ""
+                tool = f" via {finding.tool}" if finding.tool else ""
+                rows.append(
+                    f"    {finding.severity}: {loc}{label}{tool}: {finding.message}"
+                )
+                for line in detail_lines(finding):
+                    rows.append(f"      {line}")
                 shown += 1
             if shown >= 24:
                 leftover = sum(len(items) for items in grouped.values()) - shown
@@ -509,7 +696,7 @@ def _html_issues(digest: QualityDigest) -> str:
             "<li class='"
             + html.escape(item.severity)
             + "'>"
-            + html.escape(_issue_line(item))
+            + _html_finding(item)
             + "</li>"
             for item in findings[:40]
         )
@@ -574,7 +761,7 @@ def _html_gates(digest: QualityDigest) -> str:
             "<li class='"
             + html.escape(item.severity)
             + "'>"
-            + html.escape(_issue_line(item))
+            + _html_finding(item)
             + "</li>"
             for item in result.findings[:50]
         )
@@ -641,7 +828,9 @@ table.score { width: 100%; border-collapse: collapse; }
 .pill.pass { color: var(--pass); background: color-mix(in srgb, var(--pass) 16%, transparent); }
 .pill.fail { color: var(--fail); background: color-mix(in srgb, var(--fail) 16%, transparent); }
 .pill.skip { color: var(--skip); background: color-mix(in srgb, var(--skip) 16%, transparent); }
-.why { margin: .25rem 0 0; color: var(--muted); font-size: .88rem; }
+.why, .fix, .docs { margin: .25rem 0 0; color: var(--muted); font-size: .88rem; }
+.snippet { margin: .4rem 0 .2rem; padding: .4rem .65rem; background: var(--bg);
+  border-radius: 8px; overflow-x: auto; font-size: .82rem; }
 .time { display: flex; flex-direction: column; align-items: flex-end; gap: .25rem; }
 .mini { display: block; width: 88px; height: 5px; background: var(--line); border-radius: 99px; overflow: hidden; }
 .mini > span { display: block; height: 100%; background: var(--fill); }
@@ -930,15 +1119,17 @@ def _recommendations(
         add(
             "P1",
             "Install security scanners",
-            "Compile stays blocked until gitleaks, osv-scanner, and/or semgrep can run.",
-            "quality doctor --install",
+            "No security scanner ran. Use doctor to see verified installation options.",
+            "quality doctor",
         )
     elif security and security.skipped_tools:
         add(
             "P2",
-            "Fill in skipped security tools",
-            "Skipped: " + ", ".join(security.skipped_tools) + ".",
-            "quality doctor --install",
+            "Review optional security tools",
+            "Skipped: "
+            + ", ".join(security.skipped_tools)
+            + ". Doctor reports whether verified auto-install is available.",
+            "quality doctor",
         )
 
     if (
@@ -982,13 +1173,64 @@ def _recommendations(
     return recs
 
 
-def _issue_line(finding: Finding) -> str:
-    loc = finding.path or ""
-    if finding.line:
-        loc = f"{loc}:{finding.line}"
-    rule = f" `{finding.rule}`" if finding.rule else ""
-    where = f"`{loc}` — " if loc else ""
-    return f"[{finding.severity}] {where}{finding.message}{rule}"
+def _html_finding(finding: Finding) -> str:
+    loc = pointer(finding)
+    parts = [
+        f"<strong>{html.escape(finding.severity)}</strong> ",
+        f"<code>{html.escape(loc)}</code> ",
+        html.escape(finding.message),
+    ]
+    if finding.rule:
+        parts.append(f" <span class='dim'>[{html.escape(finding.rule)}]</span>")
+    if finding.tool:
+        parts.append(f" <span class='dim'>via {html.escape(finding.tool)}</span>")
+    if finding.snippet:
+        parts.append(
+            "<pre class='snippet'><code>"
+            + html.escape(finding.snippet)
+            + "</code></pre>"
+        )
+    if finding.reason:
+        parts.append(
+            "<p class='why'><strong>Why.</strong> "
+            + html.escape(finding.reason)
+            + "</p>"
+        )
+    if finding.suggestion:
+        parts.append(
+            "<p class='fix'><strong>Fix.</strong> "
+            + html.escape(finding.suggestion)
+            + "</p>"
+        )
+    if finding.documentation_url:
+        parts.append(
+            "<p class='docs'><a href='"
+            + html.escape(finding.documentation_url)
+            + "'>Docs</a></p>"
+        )
+    return "<div class='finding'>" + "".join(parts) + "</div>"
+
+
+def _issue_line(finding: Finding, *, markdown: bool = True) -> str:
+    loc = pointer(finding)
+    rule = (
+        f" `{finding.rule}`"
+        if finding.rule and markdown
+        else f" [{finding.rule}]"
+        if finding.rule
+        else ""
+    )
+    where = f"`{loc}` — " if loc and markdown else f"{loc}: " if loc else ""
+    detail = f"[{finding.severity}] {where}{finding.message}{rule}"
+    if finding.snippet:
+        detail += f" At: {finding.snippet}."
+    if finding.reason:
+        detail += f" Why: {finding.reason}."
+    if finding.suggestion:
+        detail += f" Fix: {finding.suggestion}"
+    if finding.documentation_url:
+        detail += f" Docs: {finding.documentation_url}"
+    return detail
 
 
 def _fmt_ms(value: int) -> str:

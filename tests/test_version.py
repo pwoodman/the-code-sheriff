@@ -31,7 +31,11 @@ def test_inconsistent_versions_fail(tmp_path: Path) -> None:
     (tmp_path / "__init__.py").write_text('__version__ = "1.0.1"\n', encoding="utf-8")
     result = run_version(tmp_path, load_config(tmp_path))
     assert result.status == "fail"
-    assert any(item.rule == "consistent" for item in result.findings)
+    finding = next(item for item in result.findings if item.rule == "consistent")
+    assert finding.path == "pyproject.toml"
+    assert finding.line == 3
+    assert finding.reason
+    assert "quality bump" in (finding.suggestion or "")
 
 
 def test_non_semver_fails(tmp_path: Path) -> None:

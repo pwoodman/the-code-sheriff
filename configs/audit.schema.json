@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/pwoodman/poly-check/schemas/audit-v1.json",
+  "title": "quality-gates audit report",
+  "type": "object",
+  "required": ["schema_version", "surfaces", "counts", "checks", "findings"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "surfaces": {"type": "array", "items": {"type": "string"}},
+    "counts": {"type": "object"},
+    "checks": {"type": "array"},
+    "findings": {"type": "array"},
+    "potential_risks": {"type": "array"}
+  }
+}

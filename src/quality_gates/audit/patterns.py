@@ -41,7 +41,7 @@ _SQL_CONCAT = re.compile(
     """
 )
 _MONGO_INJECT = re.compile(
-    r"""(?ix)(?:find|update|delete)\s*\(\s*(?:request\.|req\.|body|json|params)"""
+    r"""(?ix)(?:find|update|delete)\s*\(\s*(?:request\.|req\.|body|json(?!\.)|params)"""
 )
 _SHELL = re.compile(
     r"""(?ix)

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quality-gates.dev/schema/quality-v1.json",
+  "title": "quality.toml",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "config_version": {"type": "integer", "const": 1},
+        "languages": {"type": "array", "items": {"type": "string"}},
+        "fail_on": {"type": "array", "items": {"type": "string"}},
+        "ai_review": {"type": "string", "enum": ["pr-only", "always", "never"]},
+        "auto_install": {"type": "boolean"},
+        "trust": {"type": "string", "enum": ["trusted", "prompt", "untrusted"]},
+        "offline": {"type": "boolean"},
+        "jobs": {"type": "integer", "minimum": 1},
+        "cache": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {"enabled": {"type": "boolean"}}
+        },
+        "required_tools": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "policy": {"type": "string", "enum": ["observe", "adopt", "enforce"]},
+        "baseline": {"type": "string"},
+        "comment_on_pr": {"type": "boolean"},
+        "ci": {"type": "object"},
+        "compile": {"type": "object"},
+        "coverage": {"type": "object"},
+        "audit": {"type": "object"},
+        "ui": {"type": "object"},
+        "impact": {"type": "object"},
+        "version": {"type": "object"},
+        "detect": {"type": "object"},
+        "format": {"type": "object"},
+        "lint": {"type": "object"},
+        "dry": {"type": "object"},
+        "sql": {"type": "object"},
+        "review": {"type": "object"}
+      }
+    }
+  }
+}

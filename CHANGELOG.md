@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.6.0
+
+- Failure reports now include what failed, where (path:line:column plus a source
+  snippet), why, and a concrete fix, plus redacted command / working-directory /
+  exit-code context across console, JSON, HTML, Markdown, SARIF, JUnit, and
+  annotations. Common yamllint, ruff, and version rules get targeted help.
+
+- Deterministic, atomic result cache for parse/format/lint profile adapters,
+  bounded parallel profile execution, stable result ordering, and cache
+  status/clean commands. Builds, tests, review, and security scans stay uncached.
+- Versioned JSON report, audit, coverage, and baseline formats; bundled report,
+  audit, and baseline schemas; SARIF 2.1.0 and JUnit XML exports.
+- Cross-platform Python 3.11–3.14 CI, scheduled representative toolchain
+  fixtures, wheel-content checks, SHA-pinned Actions, trusted PyPI publishing,
+  GitHub release provenance, and open-source SPDX SBOM/license artifacts.
+- Automatic downloads now require a manifest platform artifact with a verified
+  SHA-256. Unverified binary and Python-package installers report unsupported;
+  project-local Node tooling continues to use `npm ci` and its lockfile.
+- Added security, privacy, contribution, conduct, third-party, compatibility,
+  plugin, and troubleshooting policies; clarified that builds can execute
+  project plugins and scripts and that broad registry support is experimental.
+
 ## 1.5.1
 
 - Security gate skips (and therefore blocks compile) when gitleaks, osv-scanner,

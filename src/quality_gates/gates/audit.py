@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from quality_gates.audit.code_quality import code_quality_capability_notes
 from quality_gates.audit.engine import run_audit_engine
 from quality_gates.audit.model import AuditFinding
 from quality_gates.audit.report import write_audit_reports
@@ -40,6 +41,7 @@ def run_audit(root: Path, config: QualityConfig) -> GateResult:
         f"confirmed findings: {len(confirmed)} ({errors} at fail priority)",
         "wrote .quality-reports/audit.json and audit.md",
     ]
+    notes.extend(code_quality_capability_notes(ctx))
     counts = _count_status(outcomes)
     notes.append(
         "status: "

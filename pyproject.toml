@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "quality-gates"
-version = "1.5.1"
+version = "1.6.0"
 description = "Multi-language quality gates: format, lint, DRY, security, compile, coverage, 120-point audit, selective UI tests, and AI review."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,6 +19,7 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = []
@@ -34,7 +35,10 @@ all = ["ruff>=0.8", "sqlfluff>=3.2", "semgrep>=1.90", "pytest>=8.0", "pytest-cov
 quality = "quality_gates.cli:main"
 
 [project.urls]
-Homepage = "https://github.com"
+Homepage = "https://github.com/pwoodman/poly-check"
+Repository = "https://github.com/pwoodman/poly-check"
+Issues = "https://github.com/pwoodman/poly-check/issues"
+Changelog = "https://github.com/pwoodman/poly-check/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/quality_gates"]
@@ -42,6 +46,7 @@ packages = ["src/quality_gates"]
 [tool.hatch.build.targets.wheel.force-include]
 "configs" = "quality_gates/bundled"
 "tooling/js/package.json" = "quality_gates/tooling_js/package.json"
+"tooling/js/package-lock.json" = "quality_gates/tooling_js/package-lock.json"
 "tooling/js/eslint.config.js" = "quality_gates/tooling_js/eslint.config.js"
 
 [tool.ruff]

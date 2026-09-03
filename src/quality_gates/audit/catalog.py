@@ -211,7 +211,7 @@ CHECKS: tuple[Check, ...] = (
     ),
     _c(55, "References to Nonexistent Functions or Classes", "HIGH", CAT_AI, "runtime"),
     _c(56, "Comments Do Not Match Implementation", "HIGH", CAT_AI, "runtime"),
-    _c(57, "Dead Code After AI Refactors", "HIGH", CAT_AI, "runtime"),
+    _c(57, "Dead Code After AI Refactors", "HIGH", CAT_AI, "dead_code"),
     _c(58, "Fake Success Paths", "HIGH", CAT_AI, "pattern", "http"),
     _c(59, "Exceptions Silently Swallowed", "HIGH", CAT_AI, "pattern"),
     _c(60, "Tests Mock Away the Actual Feature", "HIGH", CAT_AI, "runtime"),
