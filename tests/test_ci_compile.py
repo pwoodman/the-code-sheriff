@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from quality_gates.ci_plan import select_gates
+import pytest
+
+from quality_gates.ci_plan import select_gates, unknown_gates
 from quality_gates.config import QualityConfig
 from quality_gates.gates.compile import security_cleared
 from quality_gates.models import Finding, GateResult
@@ -44,6 +46,12 @@ def test_compile_allowed_when_security_passed() -> None:
     passed = GateResult(name="security", status="pass")
     ok, _reason = security_cleared(passed)
     assert ok is True
+
+
+def test_unknown_only_gates_are_rejected() -> None:
+    assert unknown_gates(["audit", "nope"]) == ["nope"]
+    with pytest.raises(ValueError, match="unknown gate"):
+        select_gates(QualityConfig(), only=["not-a-gate"])
 
 
 def test_ui_stays_in_full_local_plan(monkeypatch) -> None:

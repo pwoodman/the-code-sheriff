@@ -89,7 +89,6 @@ _CUSTOM_AUTH = re.compile(
 _JWT_NONE = re.compile(
     r"""(?ix)
     jwt\.(?:decode|verify)\s*\([^)]{0,200}(?:verify\s*=\s*False|algorithms\s*=\s*\[\s*['\"]none['\"])
-    |jwt\.decode\s*\([^)]*\)\s*(?!.*algorithms)
     """
 )
 _LOCAL_TOKEN = re.compile(
@@ -257,7 +256,7 @@ _FILTER_DOS = re.compile(
 )
 _SYNC_LONG = re.compile(
     r"""(?ix)
-    (?:openai|anthropic|replicate|ffmpeg)\s*\([^)]{0,200}\)
+    \b(?:openai|anthropic|replicate|ffmpeg)\s*\([^)]{0,200}\)
     """
 )
 _SERIALIZE = re.compile(

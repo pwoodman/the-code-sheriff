@@ -28,7 +28,8 @@ def run_security(root: Path, config: QualityConfig, languages: list[str]) -> Gat
 
     if languages:
         notes.append("languages in scope: " + ", ".join(languages))
-    if not findings and skipped and not notes:
+    scanners = {"gitleaks", "osv-scanner", "semgrep"}
+    if not findings and scanners.issubset(set(skipped)):
         notes.append(
             "security scanners skipped; install gitleaks, osv-scanner, and/or semgrep"
         )

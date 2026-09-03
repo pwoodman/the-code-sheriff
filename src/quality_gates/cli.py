@@ -7,8 +7,8 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from quality_gates import __version__
-from quality_gates.ci_plan import select_gates
+from quality_gates import GATES, __version__
+from quality_gates.ci_plan import select_gates, unknown_gates
 from quality_gates.config import QualityConfig, is_pr_event, load_config
 from quality_gates.detect import detect_languages, git_changed_files
 from quality_gates.gates.audit import run_audit
@@ -44,7 +44,7 @@ INIT_WORKFLOW = """name: Quality gates
 on:
   pull_request:
   push:
-    branches: [main, master]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -63,7 +63,7 @@ INIT_LOCAL = """name: Quality gates (vendored CLI)
 on:
   pull_request:
   push:
-    branches: [main, master]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -302,10 +302,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = run_audit(root, config)
         return _emit([result], root, config, args.json, ["audit"])
     if args.command == "run":
+        only = _csv(args.only) or None
+        skip = _csv(args.skip)
+        bad = unknown_gates(only) + unknown_gates(skip)
+        if bad:
+            print(
+                "unknown gate(s): "
+                + ", ".join(dict.fromkeys(bad))
+                + ". Choose from: "
+                + ", ".join(GATES),
+                file=sys.stderr,
+            )
+            return 2
         gates = select_gates(
             config,
-            only=_csv(args.only) or None,
-            skip=_csv(args.skip),
+            only=only,
+            skip=skip,
             full=args.full,
         )
         if not args.only and not args.full:
@@ -586,10 +598,6 @@ require_downstream = true
 [quality.version]
 require_changelog = "if-present"
 """
-
-
-def _default_toml() -> str:
-    return _consumer_toml("adopt")
 
 
 if __name__ == "__main__":

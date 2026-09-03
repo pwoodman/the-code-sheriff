@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from quality_gates.audit.catalog import CHECK_COUNT, CHECKS
-from quality_gates.audit.patterns import scan_patterns
+from quality_gates.audit.catalog import CHECK_BY_ID, CHECK_COUNT, CHECKS
+from quality_gates.audit.engine import run_audit_engine
+from quality_gates.audit.patterns import _JWT_NONE, _SYNC_LONG, scan_patterns
 from quality_gates.audit.walk import load_context
 from quality_gates.config import QualityConfig, load_config
 from quality_gates.gates.audit import run_audit
@@ -89,3 +90,64 @@ def test_python_only_repo_has_no_http_surface(tmp_path: Path) -> None:
     assert "http" not in ctx.surfaces
     assert "frontend" not in ctx.surfaces
     assert 4 not in scan_patterns(ctx)
+
+
+def test_weak_needles_do_not_invent_surfaces(tmp_path: Path) -> None:
+    (tmp_path / "cli.py").write_text(
+        'select = "changed"\nimport zipfile\npassword = "example"\nsession = {}\n',
+        encoding="utf-8",
+    )
+    ctx = load_context(tmp_path, QualityConfig())
+    assert "sql" not in ctx.surfaces
+    assert "db" not in ctx.surfaces
+    assert "upload" not in ctx.surfaces
+    assert "auth" not in ctx.surfaces
+
+
+def test_sqlalchemy_still_marks_db(tmp_path: Path) -> None:
+    (tmp_path / "db.py").write_text(
+        "from sqlalchemy import create_engine\n", encoding="utf-8"
+    )
+    ctx = load_context(tmp_path, QualityConfig())
+    assert "sql" in ctx.surfaces
+    assert "db" in ctx.surfaces
+
+
+def test_jwt_decode_with_algorithms_is_not_flagged() -> None:
+    good = "payload = jwt.decode(token, key, algorithms=['HS256'])"
+    assert _JWT_NONE.search(good) is None
+    assert _JWT_NONE.search("jwt.decode(token, key, verify=False)")
+    assert _JWT_NONE.search("jwt.decode(token, key, algorithms=['none'])")
+
+
+def test_sync_long_requires_word_boundary() -> None:
+    assert _SYNC_LONG.search("def _chat_anthropic(prompt):") is None
+    assert _SYNC_LONG.search("result = anthropic(prompt)")
+
+
+def test_check_68_is_runtime_not_false_pass(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text(
+        "from fastapi import FastAPI\n"
+        "from sqlalchemy import create_engine\n"
+        "app = FastAPI()\n",
+        encoding="utf-8",
+    )
+    assert CHECK_BY_ID[68].detector == "runtime"
+    outcomes, ctx = run_audit_engine(tmp_path, QualityConfig())
+    assert "http" in ctx.surfaces
+    assert "db" in ctx.surfaces
+    by_id = {row.check_id: row for row in outcomes}
+    assert by_id[68].status == "not_statically_provable"
+
+
+def test_self_audit_on_repo_root_does_not_raise() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root)
+    result = run_audit(root, config)
+    assert result.status in {"pass", "fail", "skip"}
+    ctx = load_context(root, config)
+    assert "auth" not in ctx.surfaces
+    assert "sql" not in ctx.surfaces
+    assert "db" not in ctx.surfaces
+    assert "upload" not in ctx.surfaces
+    assert "http" not in ctx.surfaces

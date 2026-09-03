@@ -43,6 +43,13 @@ def ui_allowed_on_github(config: QualityConfig) -> bool:
     return bool(config.ui_on_github)
 
 
+def unknown_gates(names: list[str] | None) -> list[str]:
+    if not names:
+        return []
+    known = set(GATES)
+    return [name for name in names if name not in known]
+
+
 def select_gates(
     config: QualityConfig,
     *,
@@ -50,13 +57,15 @@ def select_gates(
     skip: list[str] | None = None,
     full: bool = False,
 ) -> list[str]:
+    bad = unknown_gates(only) + unknown_gates(skip)
+    if bad:
+        names = ", ".join(dict.fromkeys(bad))
+        raise ValueError(f"unknown gate(s): {names}. Choose from: {', '.join(GATES)}")
     skip_set = set(skip or [])
     if only:
-        chosen = [gate for gate in only if gate in GATES or gate in only]
+        chosen = [gate for gate in only if gate in GATES]
     elif on_github_actions() and not github_runs_full_suite(config) and not full:
         chosen = list(config.ci_github_gates)
     else:
         chosen = list(GATES)
-    ordered = [gate for gate in GATES if gate in chosen and gate not in skip_set]
-    extras = [gate for gate in chosen if gate not in GATES and gate not in skip_set]
-    return ordered + extras
+    return [gate for gate in GATES if gate in chosen and gate not in skip_set]

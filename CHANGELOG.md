@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.5.1
+
+- Security gate skips (and therefore blocks compile) when gitleaks, osv-scanner,
+  and semgrep are all missing — language notes no longer turn that into a pass.
+- `--only` / `--skip` reject unknown gate names instead of dropping them.
+- `tools.run` decodes subprocess output with replacement so non-UTF8 stdout
+  cannot crash a gate.
+- Audit check 68 is runtime (not a silent pattern pass). JWT `algorithms=`
+  allowlists are no longer flagged; long-running work matches on word boundaries.
+- Surface needles no longer treat `select =`, `password`, `zipfile`, or scanner
+  source as an auth/SQL/upload app. Self-scan on this toolkit stays `ci`/`deps`.
+- Pin GitHub Actions to commit SHAs; drop unused `master` workflow triggers;
+  unit-test CI now fails under 50% line coverage.
+
 ## 1.5.0
 
 - Policy layer so old repos are not blocked on first install:

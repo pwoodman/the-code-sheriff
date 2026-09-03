@@ -8,7 +8,7 @@ name: Quality gates (CLI)
 on:
   pull_request:
   push:
-    branches: [main, master]
+    branches: [main]
   workflow_dispatch:
     inputs:
       full_suite:

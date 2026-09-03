@@ -81,19 +81,17 @@ HTTP_NEEDLES = (
 AUTH_NEEDLES = (
     "jwt",
     "oauth",
-    "session",
-    "password",
     "bcrypt",
     "argon2",
     "login_required",
     "HTTPBearer",
-    "Authorization",
     "passport",
     "next-auth",
 )
 
 SQL_NEEDLES = (
-    "select ",
+    "select *",
+    "select distinct",
     "sqlalchemy",
     "django.db",
     "prisma.",
@@ -115,8 +113,6 @@ UPLOAD_NEEDLES = (
     "formidable",
     "werkzeug.datastructures.FileStorage",
     "request.files",
-    "zipfile",
-    "tarfile",
     "shutil.unpack_archive",
 )
 
@@ -258,11 +254,13 @@ def _surfaces(ctx: RepoContext) -> set[str]:
 
 
 def _is_auditor_source(hit: FileHit) -> bool:
-    """Needle lists live in the audit package; they are not the product surface."""
+    """Scanner catalogs and detector source are not the product surface."""
     posix = hit.relative.replace("\\", "/")
-    return posix.startswith("src/quality_gates/audit/") or posix.startswith(
+    if posix.startswith("src/quality_gates/audit/") or posix.startswith(
         "quality_gates/audit/"
-    )
+    ):
+        return True
+    return posix.endswith("gates/security.py") or posix.endswith("gates/review.py")
 
 
 def _contains(text: str, needles: tuple[str, ...]) -> bool:
