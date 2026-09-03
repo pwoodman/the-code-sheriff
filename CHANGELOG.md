@@ -13,6 +13,9 @@
   source as an auth/SQL/upload app. Self-scan on this toolkit stays `ci`/`deps`.
 - Pin GitHub Actions to commit SHAs; drop unused `master` workflow triggers;
   unit-test CI fails under 50% combined coverage; this repo’s line floor is 55.
+- Scorecard report after every run: performance (coverage, duplication, impact,
+  audit, gate timings), issues, and recommended next commands. Writes
+  `.quality-reports/quality-report.md` + `.html`. Reprint with `quality report`.
 
 ## 1.5.0
 

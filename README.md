@@ -55,6 +55,7 @@ quality ui --list                  # which Playwright/Cypress specs the diff sel
 quality impact                     # who is upstream/downstream of the diff
 quality coverage                   # line coverage vs 80% floor
 quality audit                      # 120-point evidence-backed inspection
+quality report                     # scorecard, performance, issues, recommendations
 ```
 
 ## GitHub cost knob
@@ -148,9 +149,18 @@ quality version [--base origin/main]
 quality bump auto|major|minor|patch
 quality review [--base origin/main] [--post]
 quality run [--only security,compile,impact,coverage,audit,ui] [--skip review] [--full]
+quality report [--format console|markdown|html|json]
 quality init --org YOUR_ORG [--policy adopt]
 quality --policy observe run --skip review
 ```
+
+After `quality run`, `.quality-reports/` holds a scorecard you can print or share:
+
+- `quality-report.md` — performance, issues, and recommended next commands
+- `quality-report.html` — same report, print-friendly in a browser
+- `quality-report.json` — machine-readable digest
+
+`quality report` reprints the last run without re-executing gates.
 
 Exit `1` = a gate in `fail_on` reported errors. Skip ≠ fail.
 

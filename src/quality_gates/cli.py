@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -36,7 +37,15 @@ from quality_gates.installers import (
 from quality_gates.models import GateResult
 from quality_gates.paths import project_root
 from quality_gates.policy import apply_policy, maybe_comment_pr, write_baseline
-from quality_gates.report import emit_annotations, render_console, write_reports
+from quality_gates.report import (
+    build_digest,
+    emit_annotations,
+    load_results,
+    render_console,
+    render_html,
+    render_markdown,
+    write_reports,
+)
 from quality_gates.tools import tool_version, which
 
 INIT_WORKFLOW = """name: Quality gates
@@ -221,6 +230,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="merge with the existing baseline; raise coverage floor if it improved",
     )
 
+    report_p = sub.add_parser(
+        "report",
+        help="reprint the last run: scorecard, performance, issues, recommendations",
+    )
+    report_p.add_argument(
+        "--format",
+        dest="report_format",
+        choices=["console", "markdown", "html", "json"],
+        default="console",
+        help="console (default), markdown, html, or json",
+    )
+
     args = parser.parse_args(argv)
     root = project_root(args.root)
     os.chdir(root)
@@ -232,6 +253,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _init(root, args.org, policy=args.init_policy)
     if args.command == "baseline":
         return _baseline(root, config, ratchet=args.ratchet)
+    if args.command == "report":
+        return _print_report(root, fmt=args.report_format, as_json=args.json)
     if args.command == "doctor":
         return _doctor(root, config, install=args.install, as_json=args.json)
     if args.command == "detect":
@@ -327,6 +350,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         results = []
         prior = []
         for gate in gates:
+            started = time.perf_counter()
             if gate == "format":
                 item = run_format(root, config, languages, check=True)
             elif gate == "lint":
@@ -343,8 +367,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                     and "security" not in gates
                 ):
                     security = run_security(root, config, languages)
+                    security.duration_ms = max(
+                        0, int((time.perf_counter() - started) * 1000)
+                    )
                     results.append(security)
                     prior.append(security)
+                    started = time.perf_counter()
                 if not config.compile_require_security and security is None:
                     from quality_gates.models import GateResult as GR
 
@@ -382,6 +410,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             else:
                 continue
+            item.duration_ms = max(0, int((time.perf_counter() - started) * 1000))
             results.append(item)
             prior.append(item)
         return _emit(results, root, config, args.json, config.fail_on)
@@ -427,17 +456,12 @@ def _emit(
     results, policy = apply_policy(results, root, config)
     maybe_comment_pr(results, root, config, policy)
     emit_annotations(results)
-    write_reports(results, root / ".quality-reports")
-    payload = {
-        "policy": policy,
-        "results": [item.to_dict() for item in results],
-    }
+    digest = build_digest(results, policy=policy, report_dir=root / ".quality-reports")
+    write_reports(digest, root / ".quality-reports", policy=policy)
     if as_json:
-        print(json.dumps(payload, indent=2))
+        print(json.dumps(digest.to_dict(), indent=2))
     else:
-        print(f"Quality gates · policy={policy}")
-        print(render_console(results))
-        print("\nWrote .quality-reports/quality-report.md")
+        print(render_console(digest))
     failed = [
         item
         for item in results
@@ -446,6 +470,29 @@ def _emit(
     ]
     # skip does not fail
     return 1 if failed else 0
+
+
+def _print_report(root: Path, *, fmt: str, as_json: bool) -> int:
+    report_dir = root / ".quality-reports"
+    results, policy = load_results(report_dir)
+    if not results:
+        print(
+            "no .quality-reports/quality-report.json — run `quality run` first",
+            file=sys.stderr,
+        )
+        return 2
+    digest = build_digest(results, policy=policy, report_dir=report_dir)
+    write_reports(digest, report_dir, policy=policy)
+    if as_json or fmt == "json":
+        print(json.dumps(digest.to_dict(), indent=2))
+        return 0 if digest.verdict == "pass" else 1
+    if fmt == "markdown":
+        print(render_markdown(digest), end="")
+    elif fmt == "html":
+        print(render_html(digest), end="")
+    else:
+        print(render_console(digest))
+    return 0 if digest.verdict == "pass" else 1
 
 
 def _doctor(root: Path, config: QualityConfig, *, install: bool, as_json: bool) -> int:
