@@ -93,6 +93,23 @@ def test_broken_local_upstream(tmp_path: Path) -> None:
     assert impact.broken_upstream.get("pkg/service.py")
 
 
+def test_function_level_import_is_not_a_graph_edge(tmp_path: Path) -> None:
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "a.py").write_text(
+        "def load():\n    from pkg.b import VALUE\n    return VALUE\n",
+        encoding="utf-8",
+    )
+    (pkg / "b.py").write_text(
+        "def load():\n    from pkg.a import load as other\n    return other\n",
+        encoding="utf-8",
+    )
+    graph = build_graph(tmp_path, QualityConfig())
+    assert "pkg/b.py" not in graph.imports.get("pkg/a.py", set())
+    assert "pkg/a.py" not in graph.imports.get("pkg/b.py", set())
+
+
 def test_expand_downstream_includes_consumers(tmp_path: Path) -> None:
     _py_pkg(tmp_path)
     expanded = expand_downstream(tmp_path, QualityConfig(), ["pkg/core.py"])

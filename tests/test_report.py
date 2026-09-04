@@ -11,6 +11,8 @@ from quality_gates.report import (
     render_markdown,
     write_reports,
 )
+from quality_gates.report_model import INDUSTRY_COVERAGE
+from quality_gates.report_render import render_html as render_html_direct
 
 
 def _fail(name: str, message: str, *, path: str = "a.py") -> GateResult:
@@ -22,6 +24,12 @@ def _fail(name: str, message: str, *, path: str = "a.py") -> GateResult:
         ],
         duration_ms=12,
     )
+
+
+def test_extracted_report_modules_are_covered() -> None:
+    digest = build_digest([])
+    assert INDUSTRY_COVERAGE == 80.0
+    assert render_html_direct(digest).startswith("<!DOCTYPE html>")
 
 
 def test_digest_includes_performance_issues_and_recs() -> None:

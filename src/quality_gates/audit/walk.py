@@ -153,6 +153,10 @@ SKIP_DIR_PARTS = {
     "htmlcov",
     ".ruff_cache",
     ".pytest_cache",
+    ".mypy_cache",
+    ".zvec-grep",
+    ".cursor",
+    ".idea",
 }
 
 
@@ -212,9 +216,9 @@ def load_context(root: Path, config: QualityConfig) -> RepoContext:
         }
         if not known and suffix not in {".yml", ".yaml"} and "dockerfile" not in name:
             continue
-        if path.stat().st_size > 750_000:
-            continue
         try:
+            if path.stat().st_size > 750_000:
+                continue
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
@@ -281,7 +285,9 @@ def _is_auditor_source(hit: FileHit) -> bool:
         "quality_gates/audit/"
     ):
         return True
-    return posix.endswith("gates/security.py") or posix.endswith("gates/review.py")
+    return posix.endswith(
+        ("gates/security.py", "gates/review.py", "review/heuristic.py")
+    )
 
 
 def _contains(text: str, needles: tuple[str, ...]) -> bool:

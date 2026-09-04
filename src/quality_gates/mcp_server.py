@@ -156,9 +156,9 @@ def _call_tool(
 
 
 def _default_runner(argv: list[str]) -> int:
-    from quality_gates.cli import main
+    import subprocess
 
-    return main(argv)
+    return subprocess.call([sys.executable, "-m", "quality_gates", *argv])
 
 
 def _root():

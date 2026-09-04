@@ -215,6 +215,26 @@ def test_self_audit_on_repo_root_does_not_raise() -> None:
     assert {item.check_id: item.status for item in outcomes}[57] == "pass"
 
 
+def test_lazy_imports_are_not_circular_dependencies(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text(
+        "def load():\n    from b import value\n    return value\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "b.py").write_text(
+        "def load():\n    from a import load as other\n    return other\n",
+        encoding="utf-8",
+    )
+    result = run_audit(tmp_path, QualityConfig())
+    assert "audit-45" not in {item.rule for item in result.findings}
+
+
+def test_module_level_import_cycle_is_reported(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("from b import value\nvalue = 1\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("from a import value\nvalue = 1\n", encoding="utf-8")
+    result = run_audit(tmp_path, QualityConfig())
+    assert "audit-45" in {item.rule for item in result.findings}
+
+
 @pytest.mark.parametrize(
     ("filename", "source"),
     [

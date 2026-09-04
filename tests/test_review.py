@@ -52,6 +52,61 @@ def test_heuristic_review_flags_eval_and_missing_tests() -> None:
     assert "missing-tests" in rules
 
 
+def test_heuristic_skips_detector_docs_and_fixtures() -> None:
+    diff = """
+diff --git a/src/quality_gates/review/heuristic.py b/src/quality_gates/review/heuristic.py
++++ b/src/quality_gates/review/heuristic.py
+@@ -1,0 +1,3 @@
++(re.compile(r"\\beval\\s*\\("), "eval() on untrusted input")
++(re.compile(r"new Function\\s*\\("), "new Function() is eval")
++shell=True
+diff --git a/standards/AI_REVIEW.md b/standards/AI_REVIEW.md
++++ b/standards/AI_REVIEW.md
+@@ -1,0 +1,1 @@
++Mention eval() in the review contract.
+diff --git a/tests/test_app.py b/tests/test_app.py
++++ b/tests/test_app.py
+@@ -1,0 +1,1 @@
++value = eval(user_input)
+""".lstrip()
+    findings = heuristic_review(diff, ["python"], [])
+    assert [item.rule for item in findings if item.rule == "unsafe-api"] == []
+
+
+def test_large_pr_counts_production_source_not_tests_or_docs() -> None:
+    source_lines = "\n".join(f"+x = {i}" for i in range(800))
+    test_lines = "\n".join(f"+assert {i}" for i in range(400))
+    diff = f"""
+diff --git a/src/app.py b/src/app.py
++++ b/src/app.py
+@@ -0,0 +1,800 @@
+{source_lines}
+diff --git a/tests/test_app.py b/tests/test_app.py
++++ b/tests/test_app.py
+@@ -0,0 +1,400 @@
+{test_lines}
+diff --git a/README.md b/README.md
++++ b/README.md
+@@ -0,0 +1,2 @@
++# title
++docs
+""".lstrip()
+    findings = heuristic_review(diff, ["python"], [])
+    rules = {item.rule for item in findings}
+    assert "large-pr" in rules
+    message = next(item.message for item in findings if item.rule == "large-pr")
+    assert "800 production source lines" in message
+
+    small = """
+diff --git a/tests/test_app.py b/tests/test_app.py
++++ b/tests/test_app.py
+@@ -0,0 +1,900 @@
+""" + "\n".join(f"+assert {i}" for i in range(900))
+    assert "large-pr" not in {
+        item.rule for item in heuristic_review(small.lstrip(), ["python"], [])
+    }
+
+
 def test_review_bench_fixture_matches_expected_rules() -> None:
     meta = json.loads(
         (Path(__file__).parent / "fixtures/review_bench/eval_injection.json").read_text(
@@ -272,11 +327,13 @@ def test_mcp_lists_and_calls_oracle(tmp_path: Path, monkeypatch) -> None:
 
 def test_post_review_writes_inline_and_check_run(monkeypatch) -> None:
     calls: list[tuple[str, str]] = []
+    payloads: list[dict] = []
 
     def fake_request(
         method: str, url: str, token: str, payload: dict
     ) -> tuple[int, dict]:
         calls.append((method, url))
+        payloads.append(payload)
         return 201, {"id": 1}
 
     monkeypatch.setenv("GITHUB_TOKEN", "tok")
@@ -292,15 +349,25 @@ def test_post_review_writes_inline_and_check_run(monkeypatch) -> None:
             line=4,
             rule="unsafe-api",
             message="eval",
-        )
+        ),
+        Finding(
+            gate="review",
+            severity="error",
+            path="standards/AI_REVIEW.md",
+            line=12,
+            rule="unsafe-api",
+            message="eval() mentioned in docs",
+        ),
     ]
     notes = post_review(
         "body",
         findings,
-        diff_lines={"src/app.py": {4}},
+        diff_lines={"src/app.py": {4}, "standards/AI_REVIEW.md": {12}},
         inline=True,
         check_run=True,
     )
+    review = next(item for item in payloads if item.get("comments") is not None)
+    assert [item["path"] for item in review["comments"]] == ["src/app.py"]
     assert any("reviews" in url for _method, url in calls)
     assert any("check-runs" in url for _method, url in calls)
     assert any("inline" in note for note in notes)
@@ -343,4 +410,3 @@ def test_oracle_cli_json(tmp_path: Path, capsys, monkeypatch) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert payload["green"] is False
     assert "oracle --run" in payload["next"]
-

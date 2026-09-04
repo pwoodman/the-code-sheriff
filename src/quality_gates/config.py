@@ -24,10 +24,14 @@ DEFAULT_EXCLUDE = [
     "__pycache__",
     ".ruff_cache",
     ".pytest_cache",
+    ".mypy_cache",
     "tests/fixtures",
     "tooling/js/node_modules",
     ".coverage",
     "htmlcov",
+    ".zvec-grep",
+    ".cursor",
+    ".idea",
 ]
 
 
