@@ -1,0 +1,8 @@
+diff --git a/src/app.py b/src/app.py
+--- a/src/app.py
++++ b/src/app.py
+@@ -1,2 +1,4 @@
++value = eval(user_input)
++count = count + 1
+ def main():
+     return 1

@@ -2,15 +2,39 @@
 
 Review is a **pull-request** step, not a merge blocker, unless you add
 `review` to `quality.fail_on`. Format/lint/DRY/security already own the
-mechanical bar; review is for judgment.
+mechanical bar; review is for bugs those gates cannot statically prove.
 
 ## What runs
 
 1. A heuristic pass over the diff (unsafe APIs, TODO/FIXME, huge files, source
-   changed with no tests, prior DRY/security findings).
-2. If a key is present, a model writes a narrative review using the same
-   standards listed in `standards/`.
-3. The comment is posted on the PR (`--post` / the GitHub Actions review job).
+   changed with no tests). Format and lint findings are not re-raised.
+2. Context packing: impact graph neighbors, `.quality-reports/impact.json` and
+   `audit.json` when present, prior gate errors, and `.quality/rules/*.md`.
+3. If a key is present, a model reviews that bundle. Default mode is **agentic**
+   (the model may request extra files or greps, then must submit JSON findings).
+   `ensemble` runs shuffled-diff passes and keeps majority-vote issues.
+   `single` is one shot. `heuristic` skips the model.
+4. Style-nit findings are dropped. A validator pass (same model) can drop false
+   positives. Output is `.quality-reports/review.json` plus `review.md`.
+5. `--post` / the GitHub Actions review job writes **inline** pull-request
+   comments at `path:line` and a `quality-review` check run (not only an issue
+   comment). Resolution rate vs the previous `review.json` is recorded.
+
+## Custom rules
+
+Put markdown files in `.quality/rules/` (override with `rules_dir`):
+
+```markdown
+---
+name: no-eval
+paths: ["**/*.py", "src/**"]
+severity: error
+---
+Do not introduce eval() or equivalent dynamic execution of untrusted strings.
+```
+
+Rules whose `paths` globs miss every changed file are omitted from the prompt.
+See `examples/review-rules/`.
 
 ## Providers (`quality.review.provider = "auto"`)
 
@@ -19,10 +43,34 @@ mechanical bar; review is for judgment.
 | Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
 | OpenAI | `OPENAI_API_KEY` | `gpt-4.1` |
 | GitHub Models | `GITHUB_TOKEN` on Actions | `openai/gpt-4.1-mini` |
-| Heuristic only | none of the above | — |
+| Heuristic only | none of the above, `mode = "heuristic"`, or `offline` | — |
+
+```toml
+[quality.review]
+provider = "auto"
+mode = "auto"          # auto | agentic | ensemble | single | heuristic
+passes = 3             # ensemble only
+tool_rounds = 4
+rules_dir = ".quality/rules"
+inline_comments = true
+check_run = true
+validate = true
+```
 
 Set `ai_review = "always"` in `quality.toml` to run on branch pushes as well.
 Set `ai_review = "never"` to disable the job.
 
-The prompt tells the model **not** to nibble at Prettier/gofmt/ruff nits.
+## Agent loop
+
+Coding agents should treat gates as the oracle, not the chat transcript:
+
+```bash
+quality oracle --run --prompt
+# fix blocking findings
+quality oracle --run
+```
+
+`quality mcp` exposes `quality_oracle`, `quality_run`, and `quality_review` over
+MCP stdio so Cursor / Claude Code can iterate until `green` is true.
+
 Without a key, you still get the heuristic review as `.quality-reports/review.md`.

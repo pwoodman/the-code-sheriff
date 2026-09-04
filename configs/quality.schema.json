@@ -38,7 +38,30 @@
         "lint": {"type": "object"},
         "dry": {"type": "object"},
         "sql": {"type": "object"},
-        "review": {"type": "object"}
+        "review": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "provider": {
+              "type": "string",
+              "enum": ["auto", "openai", "anthropic", "github-models", "off"]
+            },
+            "model": {"type": "string"},
+            "max_diff_bytes": {"type": "integer", "minimum": 1000},
+            "mode": {
+              "type": "string",
+              "enum": ["auto", "agentic", "ensemble", "single", "heuristic"]
+            },
+            "passes": {"type": "integer", "minimum": 2, "maximum": 8},
+            "tool_rounds": {"type": "integer", "minimum": 0, "maximum": 8},
+            "rules_dir": {"type": "string"},
+            "related_files": {"type": "integer", "minimum": 0},
+            "related_bytes": {"type": "integer", "minimum": 4000},
+            "validate": {"type": "boolean"},
+            "inline_comments": {"type": "boolean"},
+            "check_run": {"type": "boolean"}
+          }
+        }
       }
     }
   }

@@ -21,6 +21,9 @@ quality baseline
 pre-commit install --hook-type pre-commit --hook-type pre-push
 ```
 
+Coding agents can loop on `quality oracle --run` (or `quality mcp`) until the
+oracle reports green.
+
 Existing/legacy repos should stay on **adopt** and commit `.quality-baseline.json` so
 PRs are not blocked by yesterday's backlog. New repos can use `--policy enforce`.
 See [`standards/POLICY.md`](../standards/POLICY.md).

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.7.0
+
+- AI review now packs impact, audit, and security context plus related files
+  from the import graph, instead of sending a truncated diff to a single LLM
+  call. Findings are JSON, style nits are dropped, and `.quality/rules/*.md`
+  custom rules (optional path globs) apply to the change set.
+- PR posting writes inline review comments at path:line and a `quality-review`
+  GitHub check run. `quality oracle` and `quality mcp` let coding agents loop
+  until mechanical gates are green. Optional ensemble majority-vote and a
+  validator pass; resolution rate is recorded vs the previous review.json.
+
 ## 1.6.0
 
 - Failure reports now include what failed, where (path:line:column plus a source
