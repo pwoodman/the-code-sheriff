@@ -84,6 +84,50 @@ def test_auto_provider_ignores_retired_github_models(monkeypatch) -> None:
     assert resolve_client(QualityConfig(review_provider="github-models")) is None
 
 
+def test_auto_provider_uses_current_anthropic_model(monkeypatch) -> None:
+    from quality_gates.review.llm import DEFAULT_ANTHROPIC_MODEL, resolve_client
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    client = resolve_client(QualityConfig())
+    assert client is not None
+    assert client.name == "anthropic"
+    assert client.model == DEFAULT_ANTHROPIC_MODEL
+    assert client.model == "claude-sonnet-4-6"
+
+
+def test_llm_http_error_includes_model_and_falls_back(tmp_path: Path) -> None:
+    import io
+    import urllib.error
+
+    class BoomClient:
+        name = "anthropic"
+        model = "claude-sonnet-4-20250514"
+
+        def complete(self, messages, *, temperature=0.2, max_tokens=2400) -> str:
+            raise urllib.error.HTTPError(
+                "https://api.anthropic.com/v1/messages",
+                404,
+                "Not Found",
+                hdrs=None,  # type: ignore[arg-type]
+                fp=io.BytesIO(b'{"error":{"type":"not_found_error"}}'),
+            )
+
+    summary, findings, mode = run_llm_review(
+        BoomClient(),
+        "review this",
+        mode="single",
+        config=QualityConfig(),
+        root=tmp_path,
+        diff="",
+    )
+    assert mode == "heuristic"
+    assert findings == []
+    assert "HTTP 404" in summary
+    assert "claude-sonnet-4-20250514" in summary
+
+
 def test_large_pr_counts_production_source_not_tests_or_docs() -> None:
     source_lines = "\n".join(f"+x = {i}" for i in range(800))
     test_lines = "\n".join(f"+assert {i}" for i in range(400))

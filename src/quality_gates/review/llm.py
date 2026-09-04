@@ -52,6 +52,9 @@ Use action=need only if a specific file or search is required to confirm a bug.
 Do not request files already provided. Empty findings is allowed.
 """.strip()
 
+DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6"
+DEFAULT_OPENAI_MODEL = "gpt-4.1"
+
 
 @dataclass
 class ChatTurn:
@@ -178,11 +181,13 @@ def resolve_client(config: QualityConfig) -> ChatClient | None:
         return None
     if provider == "anthropic" and anthropic_key:
         model = config.review_model or os.environ.get(
-            "ANTHROPIC_MODEL", "claude-sonnet-4-20250514"
+            "ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_MODEL
         )
         return AnthropicClient(anthropic_key, model)
     if provider == "openai" and openai_key:
-        model = config.review_model or os.environ.get("OPENAI_MODEL", "gpt-4.1")
+        model = config.review_model or os.environ.get(
+            "OPENAI_MODEL", DEFAULT_OPENAI_MODEL
+        )
         return OpenAICompatClient(
             "https://api.openai.com/v1/chat/completions",
             openai_key,
@@ -190,6 +195,26 @@ def resolve_client(config: QualityConfig) -> ChatClient | None:
             "openai",
         )
     return None
+
+
+def _http_error_detail(exc: urllib.error.HTTPError, client: ChatClient) -> str:
+    if exc.code == 410:
+        return (
+            "HTTP 410: GitHub Models was retired on 2026-07-30; "
+            "set ANTHROPIC_API_KEY or OPENAI_API_KEY"
+        )
+    body = ""
+    try:
+        body = exc.read().decode("utf-8", errors="replace").strip()[:300]
+    except OSError:
+        body = ""
+    model = getattr(client, "model", "") or ""
+    parts = [f"HTTP {exc.code}: {exc.reason or exc}"]
+    if model:
+        parts.append(f"model={model}")
+    if body:
+        parts.append(body)
+    return "; ".join(parts)
 
 
 def run_llm_review(
@@ -213,14 +238,8 @@ def run_llm_review(
         summary, findings = _agentic(client, prompt, config, root)
         return summary, findings, "agentic"
     except urllib.error.HTTPError as exc:
-        detail = str(exc.reason or exc)
-        if exc.code == 410:
-            detail = (
-                "GitHub Models was retired on 2026-07-30; "
-                "set ANTHROPIC_API_KEY or OPENAI_API_KEY"
-            )
         return (
-            f"LLM review failed (HTTP {exc.code}: {detail}); "
+            f"LLM review failed ({_http_error_detail(exc, client)}); "
             "heuristic findings still apply.",
             [],
             "heuristic",

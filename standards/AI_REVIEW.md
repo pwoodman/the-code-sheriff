@@ -40,7 +40,7 @@ See `examples/review-rules/`.
 
 | Provider | Env | Default model |
 | --- | --- | --- |
-| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
+| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` |
 | OpenAI | `OPENAI_API_KEY` | `gpt-4.1` |
 | Heuristic only | no key, `provider = "github-models"` (retired), `mode = "heuristic"`, or `offline` | — |
 

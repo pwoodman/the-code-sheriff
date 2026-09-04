@@ -6,6 +6,9 @@
   `models.github.ai` with `GITHUB_TOKEN` (that produced HTTP 410 and fell
   back to heuristics). Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for LLM
   review; `github-models` in config now means heuristic-only.
+- Default Anthropic model is `claude-sonnet-4-6` (`claude-sonnet-4-20250514`
+  was retired 2026-06-15 and returned HTTP 404). Override with
+  `ANTHROPIC_MODEL` or `quality.review.model`.
 - Split HTML report rendering out of the formats module. Large-file review
   uses the same 800-line floor as the audit god-file check.
 
