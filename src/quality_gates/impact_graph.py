@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import re
 from collections import defaultdict, deque
@@ -291,25 +292,23 @@ def _python_deps(
     current = root / rel
     resolved: list[str] = []
     unresolved: list[str] = []
-    for match in PY_FROM.finditer(text):
-        module = match.group(1)
-        imported = match.group(2)
-        if module in {"__future__", "typing", "typing_extensions"}:
+    for module, imported in _module_level_python_imports(text):
+        if imported:
+            if module in {"__future__", "typing", "typing_extensions"}:
+                continue
+            if module.startswith("."):
+                hits = _resolve_python_relative(current, module, imported, root, index)
+                if hits:
+                    resolved.extend(hits)
+                else:
+                    unresolved.append(module or imported.strip().split(",")[0])
+                continue
+            hit = _resolve_python_abs(module, index, root)
+            if hit:
+                resolved.append(hit)
+            elif _looks_local(module, packages):
+                unresolved.append(module)
             continue
-        if module.startswith("."):
-            hits = _resolve_python_relative(current, module, imported, root, index)
-            if hits:
-                resolved.extend(hits)
-            else:
-                unresolved.append(module or imported.strip().split(",")[0])
-            continue
-        hit = _resolve_python_abs(module, index, root)
-        if hit:
-            resolved.append(hit)
-        elif _looks_local(module, packages):
-            unresolved.append(module)
-    for match in PY_IMPORT.finditer(text):
-        module = match.group(1)
         if module.split(".")[0] in {
             "os",
             "sys",
@@ -330,6 +329,51 @@ def _python_deps(
         elif _looks_local(module, packages):
             unresolved.append(module)
     return resolved, unresolved
+
+
+def _module_level_python_imports(text: str) -> list[tuple[str, str]]:
+    """Runtime imports that execute while the module loads.
+
+    Function-level and `if TYPE_CHECKING` imports are deferred (or erased) and
+    are not initialization cycles.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return _regex_python_imports(text)
+    found: list[tuple[str, str]] = []
+    for node in tree.body:
+        found.extend(_import_record(node))
+        if isinstance(node, ast.If) and not _is_type_checking(node):
+            for child in [*node.body, *node.orelse]:
+                found.extend(_import_record(child))
+    return found
+
+
+def _regex_python_imports(text: str) -> list[tuple[str, str]]:
+    found: list[tuple[str, str]] = []
+    for match in PY_FROM.finditer(text):
+        found.append((match.group(1), match.group(2)))
+    for match in PY_IMPORT.finditer(text):
+        found.append((match.group(1), ""))
+    return found
+
+
+def _import_record(node: ast.AST) -> list[tuple[str, str]]:
+    if isinstance(node, ast.ImportFrom):
+        module = "." * node.level + (node.module or "")
+        imported = ", ".join(alias.name for alias in node.names if alias.name)
+        return [(module, imported)]
+    if isinstance(node, ast.Import):
+        return [(alias.name, "") for alias in node.names]
+    return []
+
+
+def _is_type_checking(node: ast.If) -> bool:
+    test = node.test
+    if isinstance(test, ast.Name) and test.id == "TYPE_CHECKING":
+        return True
+    return isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
 
 
 def _resolve_python_abs(module: str, index: dict[str, Path], root: Path) -> str | None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 
 from quality_gates.models import Finding, RunResult
@@ -216,9 +217,7 @@ def _generic_suggestion(finding: Finding, result: RunResult | None) -> str | Non
     if finding.path:
         return f"Open `{loc}` and apply the {finding.tool or finding.gate} finding, then re-run `quality {finding.gate}`."
     if result is not None and result.argv:
-        from quality_gates.gates.common import format_command
-
-        return f"Re-run `{format_command(result.argv)}` from `{result.cwd or '.'}`."
+        return f"Re-run `{shlex.join(result.argv)}` from `{result.cwd or '.'}`."
     return f"Re-run `quality {finding.gate}` after fixing the reported issue."
 
 

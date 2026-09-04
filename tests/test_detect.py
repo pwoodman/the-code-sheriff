@@ -66,6 +66,29 @@ def test_excludes_vendor_and_venv(tmp_path: Path) -> None:
     assert info["languages"] == ["python"]
 
 
+def test_skips_unknown_hidden_dirs_but_keeps_github(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("x = 1\n", encoding="utf-8")
+    indexer = tmp_path / ".zvec-grep" / "files.zvec"
+    indexer.mkdir(parents=True)
+    (indexer / "lock.json").write_text("{}\n", encoding="utf-8")
+    (tmp_path / ".cursor").mkdir()
+    (tmp_path / ".cursor" / "notes.py").write_text("eval(1)\n", encoding="utf-8")
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "ci.yml").write_text("name: ci\n", encoding="utf-8")
+    from quality_gates.detect import iter_project_files
+
+    files = {
+        path.relative_to(tmp_path).as_posix()
+        for path in iter_project_files(tmp_path, load_config(tmp_path))
+    }
+    assert "src/app.py" in files
+    assert ".github/workflows/ci.yml" in files
+    assert not any(path.startswith(".zvec-grep") for path in files)
+    assert not any(path.startswith(".cursor") for path in files)
+
+
 def test_language_filter_from_toml(tmp_path: Path) -> None:
     (tmp_path / "quality.toml").write_text(
         '[quality]\nlanguages = ["python", "go"]\n',

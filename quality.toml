@@ -96,6 +96,9 @@ exclude = [
   "src/quality_gates/tooling_js",
   ".coverage",
   "htmlcov",
+  ".zvec-grep",
+  ".cursor",
+  ".idea",
 ]
 
 [quality.format]

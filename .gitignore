@@ -42,6 +42,9 @@ obj/
 .quality-reports/
 *.sarif
 
+# zvec-grep local index
+.zvec-grep/
+
 # Editors / OS
 .idea/
 .vscode/

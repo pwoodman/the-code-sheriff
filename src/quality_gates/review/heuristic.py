@@ -48,6 +48,18 @@ SOURCE_SUFFIXES = (
 STYLE_GATES = frozenset({"format", "lint"})
 
 
+def _scan_unsafe_api(path: str) -> bool:
+    """Skip detector catalogs, docs, tests, and fixtures — they mention APIs without calling them."""
+    posix = path.replace("\\", "/").lstrip("./")
+    if posix.endswith(".md"):
+        return False
+    if TEST_HINT.search(posix):
+        return False
+    if "/fixtures/" in f"/{posix}/":
+        return False
+    return not posix.endswith(("review/heuristic.py", "gates/security.py"))
+
+
 def heuristic_review(
     diff: str,
     languages: list[str],
@@ -56,7 +68,7 @@ def heuristic_review(
     findings: list[Finding] = []
     current_file = None
     added_by_file: dict[str, int] = {}
-    added_lines_total = 0
+    added_source_lines = 0
     test_files_touched = False
     src_files_touched = False
 
@@ -72,7 +84,6 @@ def heuristic_review(
             new_file_line = int(match.group(1)) if match else 0
             continue
         if raw.startswith("+") and not raw.startswith("+++"):
-            added_lines_total += 1
             if current_file:
                 added_by_file[current_file] = added_by_file.get(current_file, 0) + 1
                 name = current_file
@@ -80,6 +91,7 @@ def heuristic_review(
                     test_files_touched = True
                 elif name.endswith(SOURCE_SUFFIXES):
                     src_files_touched = True
+                    added_source_lines += 1
                 text = raw[1:]
                 if TODO_RE.search(text):
                     findings.append(
@@ -92,23 +104,26 @@ def heuristic_review(
                             message="TODO/FIXME introduced in this change — track or resolve before merge",
                         )
                     )
-                for pattern, message in DANGEROUS:
-                    if pattern.search(text):
-                        findings.append(
-                            Finding(
-                                gate="review",
-                                severity="error",
-                                path=current_file,
-                                line=new_file_line,
-                                rule="unsafe-api",
-                                message=message,
+                if _scan_unsafe_api(current_file):
+                    for pattern, message in DANGEROUS:
+                        if pattern.search(text):
+                            findings.append(
+                                Finding(
+                                    gate="review",
+                                    severity="error",
+                                    path=current_file,
+                                    line=new_file_line,
+                                    rule="unsafe-api",
+                                    message=message,
+                                )
                             )
-                        )
             new_file_line += 1
         elif raw.startswith(" ") and not raw.startswith("+++"):
             new_file_line += 1
 
     for path, count in added_by_file.items():
+        if TEST_HINT.search(path) or path.endswith(".md"):
+            continue
         if count >= 400:
             findings.append(
                 Finding(
@@ -120,13 +135,16 @@ def heuristic_review(
                 )
             )
 
-    if added_lines_total >= 800:
+    if added_source_lines >= 800:
         findings.append(
             Finding(
                 gate="review",
                 severity="warning",
                 rule="large-pr",
-                message=f"diff adds {added_lines_total} lines — large PRs hide bugs; split if possible",
+                message=(
+                    f"diff adds {added_source_lines} production source lines — "
+                    "large PRs hide bugs; split if possible"
+                ),
             )
         )
 

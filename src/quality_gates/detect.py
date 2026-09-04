@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Iterable
 from pathlib import Path
@@ -11,6 +12,31 @@ from quality_gates.registry import (
     gate_language,
     profiles_for_path,
     profiles_for_shebang,
+)
+
+# Project config that quality should still read. Unknown dot-directories are
+# editor/indexer caches (`.zvec-grep`, `.cursor`, `.idea`) and are not source.
+KEEP_HIDDEN_DIRS = frozenset(
+    {".github", ".quality", ".husky", ".circleci", ".devcontainer"}
+)
+ALWAYS_SKIP_DIRS = frozenset(
+    {
+        "node_modules",
+        "dist",
+        "build",
+        "target",
+        "vendor",
+        "__pycache__",
+        "venv",
+        ".venv",
+        ".git",
+        ".quality-gates",
+        ".quality-reports",
+        ".ruff_cache",
+        ".pytest_cache",
+        ".mypy_cache",
+        "htmlcov",
+    }
 )
 
 LANGUAGE_BY_SUFFIX = {
@@ -44,14 +70,29 @@ def _is_excluded(path: Path, root: Path, exclude: Iterable[str]) -> bool:
     return False
 
 
+def _skip_walk_dir(name: str, full: Path, root: Path, exclude: Iterable[str]) -> bool:
+    if name in ALWAYS_SKIP_DIRS:
+        return True
+    if name.startswith(".") and name not in KEEP_HIDDEN_DIRS:
+        return True
+    return _is_excluded(full, root, exclude)
+
+
 def iter_project_files(root: Path, config: QualityConfig) -> list[Path]:
     files: list[Path] = []
-    for path in root.rglob("*"):
-        if not path.is_file():
-            continue
-        if _is_excluded(path, root, config.detect_exclude):
-            continue
-        files.append(path)
+    exclude = config.detect_exclude
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        current = Path(dirpath)
+        dirnames[:] = [
+            name
+            for name in dirnames
+            if not _skip_walk_dir(name, current / name, root, exclude)
+        ]
+        for filename in filenames:
+            path = current / filename
+            if _is_excluded(path, root, exclude):
+                continue
+            files.append(path)
     return files
 
 

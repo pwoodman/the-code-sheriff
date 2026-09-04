@@ -100,6 +100,15 @@ def pr_head_sha() -> str | None:
     return git_head(root)
 
 
+def _inlineable(item: Finding) -> bool:
+    if item.severity == "info" or not item.path or not item.line:
+        return False
+    posix = item.path.replace("\\", "/").lstrip("./")
+    if posix.endswith(".md"):
+        return False
+    return "/fixtures/" not in f"/{posix}/"
+
+
 def _post_pull_review(
     creds: tuple[str, str, str],
     body: str,
@@ -110,9 +119,9 @@ def _post_pull_review(
     token, repo, pr = creds
     comments = []
     for item in findings:
-        if item.severity == "info" or not item.path or not item.line:
+        if not _inlineable(item):
             continue
-        path = item.path.replace("\\", "/")
+        path = str(item.path).replace("\\", "/")
         allowed = diff_lines.get(path) or diff_lines.get(path.lstrip("./"))
         if allowed is not None and item.line not in allowed:
             continue
