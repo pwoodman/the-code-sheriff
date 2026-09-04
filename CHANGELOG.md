@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.7.1
+
+- Dogfood on this repo: skip unknown hidden/tool dirs, ignore function-level
+  Python imports when reporting cycles, skip unsafe-API hits in detector
+  catalogs/docs/tests/fixtures, and measure large-PR size on production source.
+- Split the HTML/JSON report module under the god-file limit and break
+  diagnostics/MCP import cycles that self-audit reported as P1.
+
 ## 1.7.0
 
 - AI review now packs impact, audit, and security context plus related files
@@ -10,9 +18,6 @@
   GitHub check run. `quality oracle` and `quality mcp` let coding agents loop
   until mechanical gates are green. Optional ensemble majority-vote and a
   validator pass; resolution rate is recorded vs the previous review.json.
-- Dogfood on this repo: skip unknown hidden/tool dirs, ignore function-level
-  Python imports when reporting cycles, skip unsafe-API hits in detector
-  catalogs/docs/tests/fixtures, and measure large-PR size on production source.
 
 ## 1.6.0
 

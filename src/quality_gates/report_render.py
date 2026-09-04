@@ -314,7 +314,9 @@ def render_html(digest: QualityDigest) -> str:
 
 
 def _html_scorecard(digest: QualityDigest) -> str:
-    max_ms = max((item.duration_ms or 0) for item in digest.results) or 1
+    max_ms = (
+        max((item.duration_ms or 0) for item in digest.results) if digest.results else 0
+    ) or 1
     rows = []
     for result in digest.results:
         timing = _fmt_ms(result.duration_ms) if result.duration_ms is not None else "—"
