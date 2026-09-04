@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from quality_gates import report_render
+from quality_gates import report_html, report_render
 from quality_gates.diagnostics import enrich_findings
 from quality_gates.models import Finding, GateResult
 from quality_gates.report_model import (
@@ -151,7 +151,7 @@ def render_console(results: list[GateResult] | QualityDigest) -> str:
 
 
 def render_html(results: list[GateResult] | QualityDigest) -> str:
-    return report_render.render_html(_as_digest(results))
+    return report_html.render_html(_as_digest(results))
 
 
 def load_results(report_dir: Path) -> tuple[list[GateResult], str]:

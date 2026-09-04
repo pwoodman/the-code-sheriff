@@ -166,16 +166,16 @@ def resolve_client(config: QualityConfig) -> ChatClient | None:
         return None
     openai_key = os.environ.get("OPENAI_API_KEY")
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
-    github_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if provider == "auto":
         if anthropic_key:
             provider = "anthropic"
         elif openai_key:
             provider = "openai"
-        elif github_token and os.environ.get("GITHUB_ACTIONS") == "true":
-            provider = "github-models"
         else:
             return None
+    if provider == "github-models":
+        # Retired 2026-07-30. GITHUB_TOKEN on Actions is not an inference key.
+        return None
     if provider == "anthropic" and anthropic_key:
         model = config.review_model or os.environ.get(
             "ANTHROPIC_MODEL", "claude-sonnet-4-20250514"
@@ -188,16 +188,6 @@ def resolve_client(config: QualityConfig) -> ChatClient | None:
             openai_key,
             model,
             "openai",
-        )
-    if provider == "github-models" and github_token:
-        model = config.review_model or os.environ.get(
-            "GITHUB_MODELS_MODEL", "openai/gpt-4.1-mini"
-        )
-        return OpenAICompatClient(
-            "https://models.github.ai/inference/chat/completions",
-            github_token,
-            model,
-            "github-models",
         )
     return None
 
@@ -222,6 +212,19 @@ def run_llm_review(
             return summary, findings, "single"
         summary, findings = _agentic(client, prompt, config, root)
         return summary, findings, "agentic"
+    except urllib.error.HTTPError as exc:
+        detail = str(exc.reason or exc)
+        if exc.code == 410:
+            detail = (
+                "GitHub Models was retired on 2026-07-30; "
+                "set ANTHROPIC_API_KEY or OPENAI_API_KEY"
+            )
+        return (
+            f"LLM review failed (HTTP {exc.code}: {detail}); "
+            "heuristic findings still apply.",
+            [],
+            "heuristic",
+        )
     except (
         urllib.error.URLError,
         TimeoutError,

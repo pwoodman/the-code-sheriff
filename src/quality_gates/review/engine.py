@@ -200,9 +200,9 @@ def render_review(
     if provider == "heuristic" and not summary:
         lines.append(
             '_No LLM key configured (or `quality.review.mode = "heuristic"` / '
-            "offline). Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or use GitHub "
-            "Models on Actions. Heuristic flags, impact/audit context, and "
-            "`.quality/rules` still run._"
+            "offline). Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. GitHub Models "
+            "was retired in July 2026 and is not used. Heuristic flags, "
+            "impact/audit context, and `.quality/rules` still run._"
         )
     return "\n".join(lines).strip() + "\n"
 

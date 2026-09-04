@@ -11,8 +11,8 @@ from quality_gates.report import (
     render_markdown,
     write_reports,
 )
+from quality_gates.report_html import render_html as render_html_direct
 from quality_gates.report_model import INDUSTRY_COVERAGE
-from quality_gates.report_render import render_html as render_html_direct
 
 
 def _fail(name: str, message: str, *, path: str = "a.py") -> GateResult:

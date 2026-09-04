@@ -17,7 +17,7 @@ from quality_gates.tool_manifest import (
 )
 from quality_gates.tools import run, which
 
-USER_AGENT = "quality-gates/1.7.1 (+https://github.com/pwoodman/poly-check)"
+USER_AGENT = "quality-gates/1.7.2 (+https://github.com/pwoodman/poly-check)"
 
 GITLEAKS_VERSION = "8.24.3"
 OSV_VERSION = "2.0.2"

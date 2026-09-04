@@ -73,6 +73,17 @@ diff --git a/tests/test_app.py b/tests/test_app.py
     assert [item.rule for item in findings if item.rule == "unsafe-api"] == []
 
 
+def test_auto_provider_ignores_retired_github_models(monkeypatch) -> None:
+    from quality_gates.review.llm import resolve_client
+
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_TOKEN", "ghs_dead")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert resolve_client(QualityConfig()) is None
+    assert resolve_client(QualityConfig(review_provider="github-models")) is None
+
+
 def test_large_pr_counts_production_source_not_tests_or_docs() -> None:
     source_lines = "\n".join(f"+x = {i}" for i in range(800))
     test_lines = "\n".join(f"+assert {i}" for i in range(400))

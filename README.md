@@ -166,8 +166,9 @@ tools; installation is only performed by an explicit `quality doctor --install`.
 
 ### AI review keys
 
-Heuristic review always runs. For JSON findings on the PR: `ANTHROPIC_API_KEY`,
-`OPENAI_API_KEY`, or GitHub Models via `GITHUB_TOKEN`. Review packs impact/audit
+Heuristic review always runs. For JSON findings on the PR: `ANTHROPIC_API_KEY`
+or `OPENAI_API_KEY`. GitHub Models was retired in July 2026; `GITHUB_TOKEN` is
+only used to post review comments. Review packs impact/audit
 context and `.quality/rules/*.md`; it posts inline comments and a check run.
 `quality oracle` / `quality mcp` loop coding agents until gates are green.
 See [`standards/AI_REVIEW.md`](standards/AI_REVIEW.md).
