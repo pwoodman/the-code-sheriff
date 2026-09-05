@@ -46,6 +46,9 @@ SOURCE_SUFFIXES = (
     ".sql",
 )
 STYLE_GATES = frozenset({"format", "lint"})
+# Match audit god-file (800). 400 flagged HTML templates and extracted modules.
+LARGE_FILE_LINES = 800
+LARGE_PR_SOURCE_LINES = 800
 
 
 def _scan_unsafe_api(path: str) -> bool:
@@ -124,7 +127,7 @@ def heuristic_review(
     for path, count in added_by_file.items():
         if TEST_HINT.search(path) or path.endswith(".md"):
             continue
-        if count >= 400:
+        if count >= LARGE_FILE_LINES:
             findings.append(
                 Finding(
                     gate="review",
@@ -135,7 +138,7 @@ def heuristic_review(
                 )
             )
 
-    if added_source_lines >= 800:
+    if added_source_lines >= LARGE_PR_SOURCE_LINES:
         findings.append(
             Finding(
                 gate="review",

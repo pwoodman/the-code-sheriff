@@ -40,10 +40,13 @@ See `examples/review-rules/`.
 
 | Provider | Env | Default model |
 | --- | --- | --- |
-| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
+| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` |
 | OpenAI | `OPENAI_API_KEY` | `gpt-4.1` |
-| GitHub Models | `GITHUB_TOKEN` on Actions | `openai/gpt-4.1-mini` |
-| Heuristic only | none of the above, `mode = "heuristic"`, or `offline` | — |
+| Heuristic only | no key, `provider = "github-models"` (retired), `mode = "heuristic"`, or `offline` | — |
+
+GitHub Models (`models.github.ai`) was retired on 2026-07-30. A `GITHUB_TOKEN`
+on Actions is not an inference credential. `provider = "github-models"` is
+accepted for old configs and runs the heuristic pass only.
 
 ```toml
 [quality.review]

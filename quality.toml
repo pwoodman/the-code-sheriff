@@ -134,7 +134,7 @@ ignore = [
 dialect = "ansi"
 
 [quality.review]
-# openai | anthropic | github-models | auto | off
+# openai | anthropic | auto | off  (github-models is retired; treated as heuristic)
 provider = "auto"
 max_diff_bytes = 120000
 model = ""
