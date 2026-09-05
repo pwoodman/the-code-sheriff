@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from quality_gates.config import load_config
 from quality_gates.diagnostics import enrich_findings
+from quality_gates.diagnostics_help import RULE_HELP
 from quality_gates.github_comment import _inline_body
 from quality_gates.models import Finding
 from quality_gates.review.apply import apply_finding
@@ -17,11 +19,13 @@ from quality_gates.review.contract import (
     finding_payload,
     suggestion_fence,
 )
+from quality_gates.review.evidence import collect_test_evidence
 from quality_gates.review.external_eval import (
     macroscope_reconstructed,
     score_against_goldens,
 )
 from quality_gates.review.heuristic import heuristic_review
+from quality_gates.review.neighbors import function_windows
 
 
 def test_reviewbench_heuristic_suite_meets_bar() -> None:
@@ -98,6 +102,22 @@ def test_martian_lexical_judge() -> None:
     score = score_against_goldens(findings, goldens)
     assert score["matched"] >= 1
     assert score["goldens"] == 2
+
+
+def test_review_supporting_context_helpers(tmp_path: Path) -> None:
+    assert RULE_HELP[("review", "unsafe-api")][0]
+    config = load_config(tmp_path)
+    assert collect_test_evidence(tmp_path, config, []) == ""
+
+    source = tmp_path / "src" / "app.py"
+    source.parent.mkdir()
+    source.write_text("def changed():\n    return helper()\n", encoding="utf-8")
+    windows = function_windows(
+        tmp_path,
+        "+++ b/src/app.py\n@@ -0,0 +1,2 @@\n+def changed():\n+    return helper()\n",
+        config,
+    )
+    assert windows and windows[0][0] == "src/app.py"
 
 
 def test_eval_cli_reviewbench(capsys) -> None:
