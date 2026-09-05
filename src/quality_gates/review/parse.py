@@ -58,7 +58,10 @@ def findings_from_payload(payload: dict[str, object]) -> tuple[str, list[Finding
                 line=line_no,
                 rule=str(item.get("rule") or "logic").strip() or "logic",
                 message=message[:800],
+                reason=str(item.get("reason") or "").strip() or None,
                 suggestion=str(item.get("suggestion") or "").strip() or None,
+                patch=str(item.get("patch") or "").strip() or None,
+                verify=str(item.get("verify") or "").strip() or None,
             )
         )
     return summary, findings

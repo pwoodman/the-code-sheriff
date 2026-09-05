@@ -1,0 +1,21 @@
+{
+  "id": "dangerously_set",
+  "kind": "positive",
+  "languages": [
+    "javascript"
+  ],
+  "heuristic": true,
+  "must_rules": [
+    "unsafe-api"
+  ],
+  "must_not_rules": [
+    "format",
+    "lint"
+  ],
+  "max_findings": 6,
+  "needles": [
+    "react"
+  ],
+  "rationale": "React XSS bypass",
+  "diff": "dangerously_set.diff"
+}

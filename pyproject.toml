@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "quality-gates"
-version = "1.7.2"
+version = "1.8.0"
 description = "Multi-language quality gates: format, lint, DRY, security, compile, coverage, 120-point audit, selective UI tests, and AI review."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -45,6 +45,7 @@ packages = ["src/quality_gates"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "configs" = "quality_gates/bundled"
+"tests/fixtures/review_bench" = "quality_gates/bundled/review_bench"
 "tooling/js/package.json" = "quality_gates/tooling_js/package.json"
 "tooling/js/package-lock.json" = "quality_gates/tooling_js/package-lock.json"
 "tooling/js/eslint.config.js" = "quality_gates/tooling_js/eslint.config.js"

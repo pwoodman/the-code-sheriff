@@ -12,6 +12,7 @@ from typing import Any
 
 from quality_gates.gitutil import git_head
 from quality_gates.models import Finding
+from quality_gates.review.contract import suggestion_fence
 
 API_VERSION = "2022-11-28"
 MAX_INLINE = 24
@@ -227,10 +228,27 @@ def _post_check_run(
 
 
 def _inline_body(item: Finding) -> str:
-    suggestion = f"\n\nSuggested fix: {item.suggestion}" if item.suggestion else ""
-    return (
-        f"**{item.rule or 'review'}** ({item.severity})\n\n{item.message}{suggestion}"
+    parts = [f"**{item.rule or 'review'}** ({item.severity})", "", item.message]
+    if item.reason:
+        parts.extend(["", f"Why: {item.reason}"])
+    if item.snippet:
+        parts.extend(["", f"Where: `{item.snippet}`"])
+    if item.suggestion:
+        parts.extend(["", f"Suggested fix: {item.suggestion}"])
+    if item.verify:
+        parts.extend(["", f"Verify: `{item.verify}`"])
+    if item.documentation_url:
+        parts.extend(["", f"Docs: {item.documentation_url}"])
+    fence = suggestion_fence(item)
+    if fence:
+        parts.extend(["", fence])
+    parts.extend(
+        [
+            "",
+            "Fix with `quality oracle --prompt` or MCP `quality_finding_context`.",
+        ]
     )
+    return "\n".join(parts)
 
 
 def _creds() -> tuple[str, str, str] | None:

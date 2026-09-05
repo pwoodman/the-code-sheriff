@@ -1,0 +1,5 @@
+diff --git a/src/sh.js b/src/sh.js
+--- a/src/sh.js
++++ b/src/sh.js
+@@ -0,0 +1,1 @@
++child_process.exec(userCmd)

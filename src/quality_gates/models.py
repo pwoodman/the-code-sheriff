@@ -22,6 +22,9 @@ class Finding:
     suggestion: str | None = None
     documentation_url: str | None = None
     snippet: str | None = None
+    patch: str | None = None
+    verify: str | None = None
+    confidence: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in asdict(self).items() if v is not None}

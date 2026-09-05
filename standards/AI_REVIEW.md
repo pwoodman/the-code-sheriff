@@ -58,6 +58,8 @@ rules_dir = ".quality/rules"
 inline_comments = true
 check_run = true
 validate = true
+verify_tests = false
+symbol_neighbors = true
 ```
 
 Set `ai_review = "always"` in `quality.toml` to run on branch pushes as well.
@@ -73,7 +75,15 @@ quality oracle --run --prompt
 quality oracle --run
 ```
 
-`quality mcp` exposes `quality_oracle`, `quality_run`, and `quality_review` over
-MCP stdio so Cursor / Claude Code can iterate until `green` is true.
+`quality mcp` exposes `quality_oracle`, `quality_run`, `quality_review`,
+`quality_finding_context`, and `quality_apply_fix` over MCP stdio so Cursor /
+Claude Code can iterate until `green` is true. Inline GitHub comments include
+why / fix / verify and an apply-able suggestion fence when a patch is present.
+
+`quality eval --suite reviewbench` scores labeled diffs (must-catch bugs and
+must-stay-quiet hard negatives). Macroscope's 118-bug JSON is not public; use
+`quality eval --suite martian --download` for the MIT Code Review Bench goldens
+those vendors already scored, and `quality eval --suite macroscope` for the
+reconstructed commons-math GCD sample they published.
 
 Without a key, you still get the heuristic review as `.quality-reports/review.md`.

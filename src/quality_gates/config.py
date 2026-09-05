@@ -179,6 +179,8 @@ class QualityConfig:
     review_validate: bool = True
     review_inline: bool = True
     review_check_run: bool = True
+    review_verify_tests: bool = False
+    review_symbol_neighbors: bool = True
     ui_select: str = "changed"
     ui_framework: str = "auto"
     ui_spec_dirs: list[str] = field(default_factory=list)
@@ -352,6 +354,8 @@ def load_config(project: Path) -> QualityConfig:
         review_validate=_as_bool(review.get("validate"), True),
         review_inline=_as_bool(review.get("inline_comments"), True),
         review_check_run=_as_bool(review.get("check_run"), True),
+        review_verify_tests=_as_bool(review.get("verify_tests"), False),
+        review_symbol_neighbors=_as_bool(review.get("symbol_neighbors"), True),
         ui_select=ui_select,
         ui_framework=ui_framework,
         ui_spec_dirs=_as_list(ui_cfg.get("spec_dirs"), []),

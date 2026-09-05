@@ -1,0 +1,5 @@
+diff --git a/src/auth.py b/src/auth.py
+--- a/src/auth.py
++++ b/src/auth.py
+@@ -0,0 +1,1 @@
++digest = md5(password)

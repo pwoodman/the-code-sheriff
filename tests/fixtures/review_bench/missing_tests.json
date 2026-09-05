@@ -1,0 +1,21 @@
+{
+  "id": "missing_tests",
+  "kind": "positive",
+  "languages": [
+    "python"
+  ],
+  "heuristic": true,
+  "must_rules": [
+    "missing-tests"
+  ],
+  "must_not_rules": [
+    "format",
+    "lint"
+  ],
+  "max_findings": 6,
+  "needles": [
+    "source"
+  ],
+  "rationale": "source without tests",
+  "diff": "missing_tests.diff"
+}

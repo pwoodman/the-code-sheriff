@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.8.0
+
+- Findings now carry a full resolution contract (reason, snippet, suggestion,
+  optional patch, verify command, docs) through console, HTML, SARIF, oracle,
+  MCP, and GitHub. Inline comments emit apply-able `suggestion` fences when a
+  patch is present. MCP adds `quality_finding_context` and `quality_apply_fix`.
+- Rule help covers common ruff, ESLint, clippy, gitleaks, and osv-scanner ids
+  in addition to yamllint/version. Generic "open the file" is last resort.
+- ReviewBench: 15+ labeled positives, 8+ hard negatives, volume cap, and
+  `quality eval --suite reviewbench` CI scorecard. Closed-loop apply-and-recheck
+  for patches. Optional impact-selected test evidence and function-level
+  neighbors around the diff.
+- Third-party eval: Macroscope's 118-bug JSON is not public; we reconstruct
+  their published commons-math GCD sample and fetch Martian's MIT Code Review
+  Bench goldens (`quality eval --suite martian --download`) for an apples-to-apples
+  comparison against the same PRs those vendors already scored.
+
+
 ## 1.7.2
 
 - GitHub Models was retired on 2026-07-30. Auto review no longer calls

@@ -1,0 +1,5 @@
+diff --git a/standards/AI_REVIEW.md b/standards/AI_REVIEW.md
+--- a/standards/AI_REVIEW.md
++++ b/standards/AI_REVIEW.md
+@@ -0,0 +1,1 @@
++Heuristic flags eval() and innerHTML.

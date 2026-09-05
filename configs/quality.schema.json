@@ -59,7 +59,9 @@
             "related_bytes": {"type": "integer", "minimum": 4000},
             "validate": {"type": "boolean"},
             "inline_comments": {"type": "boolean"},
-            "check_run": {"type": "boolean"}
+            "check_run": {"type": "boolean"},
+            "verify_tests": {"type": "boolean"},
+            "symbol_neighbors": {"type": "boolean"}
           }
         }
       }

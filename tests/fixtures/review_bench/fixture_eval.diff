@@ -1,0 +1,5 @@
+diff --git a/tests/fixtures/sample.py b/tests/fixtures/sample.py
+--- a/tests/fixtures/sample.py
++++ b/tests/fixtures/sample.py
+@@ -0,0 +1,1 @@
++value = eval(user_input)

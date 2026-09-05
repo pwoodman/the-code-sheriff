@@ -1,0 +1,21 @@
+{
+  "id": "runtime_exec",
+  "kind": "positive",
+  "languages": [
+    "java"
+  ],
+  "heuristic": true,
+  "must_rules": [
+    "unsafe-api"
+  ],
+  "must_not_rules": [
+    "format",
+    "lint"
+  ],
+  "max_findings": 6,
+  "needles": [
+    "runtime.exec"
+  ],
+  "rationale": "Runtime.exec",
+  "diff": "runtime_exec.diff"
+}

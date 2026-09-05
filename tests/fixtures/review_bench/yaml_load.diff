@@ -1,0 +1,5 @@
+diff --git a/src/conf.py b/src/conf.py
+--- a/src/conf.py
++++ b/src/conf.py
+@@ -0,0 +1,1 @@
++cfg = yaml.load(raw)

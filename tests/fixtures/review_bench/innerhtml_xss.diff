@@ -1,0 +1,5 @@
+diff --git a/src/ui.js b/src/ui.js
+--- a/src/ui.js
++++ b/src/ui.js
+@@ -0,0 +1,1 @@
++el.innerHTML = req.body.html

@@ -1,0 +1,5 @@
+diff --git a/docs/style.md b/docs/style.md
+--- a/docs/style.md
++++ b/docs/style.md
+@@ -0,0 +1,1 @@
++Wrap lines at 88 characters.

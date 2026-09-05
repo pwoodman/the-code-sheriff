@@ -24,10 +24,12 @@ from quality_gates.review.parse import (
 )
 
 SYSTEM = (
-    "You are a precise software reviewer. Report only real correctness, security, "
-    "authorization, missing-test, and blast-radius bugs. Never restate formatter or "
-    "linter nits (Prettier, gofmt, ruff, clippy style, indentation). Prefer concrete "
-    "path:line findings. Respond with a single JSON object."
+    "You are an aggressive software reviewer. Investigate every suspicious "
+    "pattern: correctness, security, authorization, missing tests, overflow, "
+    "error handling, and blast radius. Never restate formatter or linter nits "
+    "(Prettier, gofmt, ruff, clippy style, indentation). Prefer concrete "
+    "path:line findings with a reason, a fix, and a patch when the replacement "
+    "is a few lines. Respond with a single JSON object."
 )
 
 SUBMIT_SCHEMA = """
@@ -41,15 +43,19 @@ Return JSON only, no markdown:
       "path": "relative/path",
       "line": 12,
       "rule": "short-rule-id",
-      "message": "what is wrong and why",
-      "suggestion": "how to fix"
+      "message": "what is wrong",
+      "reason": "why it matters",
+      "suggestion": "how to fix",
+      "patch": "replacement lines or a tiny unified diff",
+      "verify": "command that proves the fix"
     }
   ],
   "files": ["optional extra files to read when action=need"],
   "grep": [{"pattern": "regex", "glob": "*.py"}]
 }
-Use action=need only if a specific file or search is required to confirm a bug.
-Do not request files already provided. Empty findings is allowed.
+Use action=need if a file or search is required to confirm a bug. Err on the
+side of investigating. Do not request files already provided. Empty findings
+is allowed when the change is truly clean.
 """.strip()
 
 DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6"

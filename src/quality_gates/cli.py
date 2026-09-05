@@ -174,6 +174,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="post inline review comments and a check run",
     )
 
+    eval_p = sub.add_parser(
+        "eval",
+        help="ReviewBench scorecard; optional Martian / Macroscope comparison",
+    )
+    eval_p.add_argument(
+        "--suite",
+        dest="eval_suite",
+        choices=["reviewbench", "martian", "macroscope", "all"],
+        default="reviewbench",
+    )
+    eval_p.add_argument(
+        "--download",
+        action="store_true",
+        help="fetch Martian golden comments (MIT) into .quality-reports/eval",
+    )
+    eval_p.add_argument(
+        "--llm",
+        action="store_true",
+        help="require a live LLM (QUALITY_REVIEW_EVAL / provider key)",
+    )
+
     oracle_p = sub.add_parser(
         "oracle",
         help="remaining blockers for coding agents (loop until green)",
@@ -195,7 +216,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     sub.add_parser(
         "mcp",
-        help="MCP stdio server: quality_oracle, quality_run, quality_review",
+        help="MCP stdio server: quality_oracle, quality_run, quality_review, quality_finding_context, quality_apply_fix",
     )
 
     ui_p = sub.add_parser(
@@ -293,6 +314,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return serve()
     if args.command == "oracle":
         return _oracle(root, args)
+    if args.command == "eval":
+        return _eval(root, args)
     if args.command == "baseline":
         return _baseline(root, config, ratchet=args.ratchet)
     if args.command == "report":
@@ -491,6 +514,42 @@ def _oracle(root: Path, args: argparse.Namespace) -> int:
     else:
         print(json.dumps(payload, indent=2))
     return 0 if payload.get("green") else 1
+
+
+def _eval(root: Path, args: argparse.Namespace) -> int:
+    from quality_gates.review.bench import run_heuristic_suite
+    from quality_gates.review.external_eval import (
+        download_martian,
+        llm_eval_enabled,
+        macroscope_reconstructed,
+    )
+
+    suite = args.eval_suite
+    payload: dict[str, object] = {}
+    if suite in {"reviewbench", "all"}:
+        payload["reviewbench"] = run_heuristic_suite()
+    if suite in {"martian", "all"}:
+        if args.download or suite == "martian":
+            payload["martian"] = download_martian(root, force=args.download)
+        else:
+            payload["martian"] = {
+                "skipped": "pass --download to fetch MIT golden comments",
+                "url": "https://github.com/withmartian/code-review-benchmark",
+            }
+    if suite in {"macroscope", "all"}:
+        payload["macroscope"] = macroscope_reconstructed()
+    if args.llm and not llm_eval_enabled():
+        payload["llm"] = {
+            "skipped": True,
+            "reason": "set QUALITY_REVIEW_EVAL=1 and ANTHROPIC_API_KEY or OPENAI_API_KEY",
+        }
+    print(json.dumps(payload, indent=2))
+    bench = payload.get("reviewbench")
+    if isinstance(bench, dict) and bench.get("failed"):
+        return 1
+    if args.llm and not llm_eval_enabled():
+        return 2
+    return 0
 
 
 def _csv(value: str | None) -> list[str]:

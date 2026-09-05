@@ -1,0 +1,16 @@
+{
+  "id": "format_only",
+  "kind": "hard_negative",
+  "languages": [
+    "python"
+  ],
+  "heuristic": true,
+  "must_rules": [],
+  "must_not_rules": [
+    "unsafe-api"
+  ],
+  "max_findings": 2,
+  "needles": [],
+  "rationale": "formatter/docs only",
+  "diff": "format_only.diff"
+}

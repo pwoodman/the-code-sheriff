@@ -1,0 +1,16 @@
+{
+  "id": "comment_only",
+  "kind": "hard_negative",
+  "languages": [
+    "python"
+  ],
+  "heuristic": true,
+  "must_rules": [],
+  "must_not_rules": [
+    "unsafe-api"
+  ],
+  "max_findings": 2,
+  "needles": [],
+  "rationale": "comment/docs only",
+  "diff": "comment_only.diff"
+}
