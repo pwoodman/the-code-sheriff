@@ -1,0 +1,21 @@
+{
+  "id": "shell_true",
+  "kind": "positive",
+  "languages": [
+    "python"
+  ],
+  "heuristic": true,
+  "must_rules": [
+    "unsafe-api"
+  ],
+  "must_not_rules": [
+    "format",
+    "lint"
+  ],
+  "max_findings": 6,
+  "needles": [
+    "shell=true"
+  ],
+  "rationale": "shell=True injection",
+  "diff": "shell_true.diff"
+}

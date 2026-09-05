@@ -368,6 +368,18 @@ def _html_finding(finding: Finding) -> str:
             + html.escape(finding.suggestion)
             + "</p>"
         )
+    if finding.verify:
+        parts.append(
+            "<p class='verify'><strong>Verify.</strong> <code>"
+            + html.escape(finding.verify)
+            + "</code></p>"
+        )
+    if finding.patch:
+        parts.append(
+            "<pre class='snippet'><code>"
+            + html.escape(finding.patch[:2000])
+            + "</code></pre>"
+        )
     if finding.documentation_url:
         parts.append(
             "<p class='docs'><a href='"

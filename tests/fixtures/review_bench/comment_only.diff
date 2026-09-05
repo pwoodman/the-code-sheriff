@@ -1,0 +1,5 @@
+diff --git a/src/note.md b/src/note.md
+--- a/src/note.md
++++ b/src/note.md
+@@ -0,0 +1,1 @@
++# leftover comment about pickle.loads

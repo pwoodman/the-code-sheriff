@@ -1,0 +1,5 @@
+diff --git a/src/job.py b/src/job.py
+--- a/src/job.py
++++ b/src/job.py
+@@ -0,0 +1,1 @@
++subprocess.run(cmd, shell=True)

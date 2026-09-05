@@ -355,6 +355,7 @@ def test_oracle_prompt_lists_blockers() -> None:
     prompt = render_prompt(payload)
     assert "a.py:3" in prompt
     assert "quality oracle --run" in prompt
+    assert "why:" in prompt or "E001" in prompt
 
 
 def test_mcp_lists_and_calls_oracle(tmp_path: Path, monkeypatch) -> None:
@@ -364,7 +365,13 @@ def test_mcp_lists_and_calls_oracle(tmp_path: Path, monkeypatch) -> None:
     )
     assert listed is not None
     names = {tool["name"] for tool in listed["result"]["tools"]}
-    assert names == {"quality_oracle", "quality_run", "quality_review"}
+    assert {
+        "quality_oracle",
+        "quality_run",
+        "quality_review",
+        "quality_finding_context",
+        "quality_apply_fix",
+    } <= names
     called = handle(
         {
             "jsonrpc": "2.0",

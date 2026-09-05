@@ -1,5 +1,25 @@
 {
   "id": "eval_injection",
-  "expected_rules": ["unsafe-api", "missing-tests"],
-  "languages": ["python"]
+  "kind": "positive",
+  "languages": [
+    "python"
+  ],
+  "heuristic": true,
+  "must_rules": [
+    "unsafe-api"
+  ],
+  "must_not_rules": [
+    "format",
+    "lint"
+  ],
+  "max_findings": 6,
+  "needles": [
+    "eval()"
+  ],
+  "rationale": "eval() on request input",
+  "diff": "eval_injection.diff",
+  "after_patch": "eval_injection.after.diff",
+  "expected_rules": [
+    "unsafe-api"
+  ]
 }

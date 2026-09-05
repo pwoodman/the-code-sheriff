@@ -1,0 +1,5 @@
+diff --git a/src/db.py b/src/db.py
+--- a/src/db.py
++++ b/src/db.py
+@@ -0,0 +1,1 @@
++cur.execute('SELECT * FROM t WHERE id=' + user_id)

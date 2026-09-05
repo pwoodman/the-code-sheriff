@@ -1,0 +1,23 @@
+{
+  "id": "macroscope_gcd_overflow",
+  "kind": "positive",
+  "languages": [
+    "java"
+  ],
+  "heuristic": false,
+  "must_rules": [
+    "logic"
+  ],
+  "must_not_rules": [
+    "format"
+  ],
+  "max_findings": 4,
+  "needles": [
+    "overflow",
+    "gcd",
+    "zero"
+  ],
+  "rationale": "Macroscope public sample: u * v == 0 overflows for 65536*65536",
+  "source": "https://macroscope.com/blog/code-review-benchmark",
+  "diff": "macroscope_gcd_overflow.diff"
+}

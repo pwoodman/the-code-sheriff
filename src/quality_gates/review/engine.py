@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from quality_gates.config import QualityConfig, is_pr_event
+from quality_gates.diagnostics import enrich_findings
 from quality_gates.models import Finding, GateResult
 from quality_gates.review.context import (
     active_rules,
@@ -16,8 +17,11 @@ from quality_gates.review.context import (
     related_files,
     render_rules,
 )
+from quality_gates.review.contract import finding_payload
+from quality_gates.review.evidence import collect_test_evidence
 from quality_gates.review.heuristic import heuristic_review
 from quality_gates.review.llm import resolve_client, run_llm_review, validate_findings
+from quality_gates.review.neighbors import function_windows
 from quality_gates.review.parse import drop_style_nits, merge_findings
 from quality_gates.review.resolve import resolution_stats, rotate_previous
 
@@ -61,6 +65,9 @@ def run_review(
     heuristic = heuristic_review(diff, languages, prior)
     rules = active_rules(root, config, paths)
     related = related_files(root, config, paths)
+    if config.review_symbol_neighbors:
+        already = {path for path, _text in related}
+        related = related + function_windows(root, diff, config, already=already)
     allowed = set(paths) | {path for path, _text in related}
     prompt = _prompt(
         diff=diff,
@@ -94,6 +101,8 @@ def run_review(
     heuristic_kept = [item for item in heuristic if item.rule not in {"languages"}]
     findings = merge_findings(heuristic_kept, llm_findings)
     findings = drop_style_nits(findings, allowed_paths=None)
+    findings = enrich_findings(findings, root)
+    evidence = collect_test_evidence(root, config, paths)
 
     report_dir = root / ".quality-reports"
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -108,7 +117,8 @@ def run_review(
         "rules": [rule.source for rule in rules],
         "related_files": [path for path, _text in related],
         "resolution": resolution,
-        "findings": [_finding_dict(item) for item in findings],
+        "findings": [finding_payload(item) for item in findings],
+        "evidence": evidence or None,
     }
     (report_dir / "review.json").write_text(
         json.dumps(payload, indent=2) + "\n", encoding="utf-8"
@@ -204,6 +214,15 @@ def render_review(
             "was retired in July 2026 and is not used. Heuristic flags, "
             "impact/audit context, and `.quality/rules` still run._"
         )
+    lines.extend(
+        [
+            "",
+            "Fix with `quality oracle --run --prompt`, or send one finding to an "
+            "agent via MCP `quality_finding_context`. Re-run `quality oracle --run` "
+            "until green.",
+            "",
+        ]
+    )
     return "\n".join(lines).strip() + "\n"
 
 
@@ -216,23 +235,9 @@ def _bullets(items: list[Finding]) -> list[str]:
             else (item.path or "repo")
         )
         extra = f" — {item.suggestion}" if item.suggestion else ""
-        lines.append(f"- `{loc}` {item.message}{extra}")
+        verify = f" (verify: `{item.verify}`)" if item.verify else ""
+        lines.append(f"- `{loc}` {item.message}{extra}{verify}")
     return lines
-
-
-def _finding_dict(item: Finding) -> dict[str, object]:
-    payload: dict[str, object] = {
-        "severity": item.severity,
-        "message": item.message,
-        "rule": item.rule,
-    }
-    if item.path:
-        payload["path"] = item.path
-    if item.line is not None:
-        payload["line"] = item.line
-    if item.suggestion:
-        payload["suggestion"] = item.suggestion
-    return payload
 
 
 def _prompt(

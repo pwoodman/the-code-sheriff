@@ -29,6 +29,14 @@ DANGEROUS = [
         re.compile(r"dangerouslySetInnerHTML"),
         "dangerouslySetInnerHTML bypasses React XSS protections",
     ),
+    (
+        re.compile(r"\bos\.system\s*\("),
+        "os.system is command-injection-prone; use subprocess with a list",
+    ),
+    (
+        re.compile(r"child_process\.exec\s*\("),
+        "child_process.exec runs a shell string; prefer execFile with argv",
+    ),
 ]
 
 TODO_RE = re.compile(r"\b(TODO|FIXME|HACK|XXX)\b")

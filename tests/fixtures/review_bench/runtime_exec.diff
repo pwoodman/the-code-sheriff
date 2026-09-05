@@ -1,0 +1,5 @@
+diff --git a/src/Proc.java b/src/Proc.java
+--- a/src/Proc.java
++++ b/src/Proc.java
+@@ -0,0 +1,1 @@
++Runtime.getRuntime().exec(cmd);

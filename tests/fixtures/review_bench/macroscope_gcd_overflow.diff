@@ -1,0 +1,10 @@
+diff --git a/src/MathUtils.java b/src/MathUtils.java
+--- a/src/MathUtils.java
++++ b/src/MathUtils.java
+@@ -0,0 +1,6 @@
++public static int gcd(int u, int v) {
++    if (u * v == 0) {
++        return Math.abs(u) + Math.abs(v);
++    }
++    return u;
++}

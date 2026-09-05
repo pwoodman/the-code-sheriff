@@ -45,6 +45,8 @@ def render_sarif(digest: QualityDigest) -> dict[str, Any]:
                     "reason": finding.reason,
                     "suggestion": finding.suggestion,
                     "snippet": finding.snippet,
+                    "patch": finding.patch,
+                    "verify": finding.verify,
                 }.items()
                 if value
             },

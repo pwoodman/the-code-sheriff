@@ -183,6 +183,9 @@ def load_results(report_dir: Path) -> tuple[list[GateResult], str]:
                 suggestion=item.get("suggestion"),
                 documentation_url=item.get("documentation_url"),
                 snippet=item.get("snippet"),
+                patch=item.get("patch"),
+                verify=item.get("verify"),
+                confidence=item.get("confidence"),
             )
             for item in row.get("findings") or []
         ]

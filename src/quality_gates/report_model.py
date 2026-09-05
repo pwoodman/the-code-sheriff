@@ -190,6 +190,8 @@ def _issue_line(finding: Finding, *, markdown: bool = True) -> str:
         detail += f" Why: {finding.reason}."
     if finding.suggestion:
         detail += f" Fix: {finding.suggestion}"
+    if finding.verify:
+        detail += f" Verify: `{finding.verify}`"
     if finding.documentation_url:
         detail += f" Docs: {finding.documentation_url}"
     return detail

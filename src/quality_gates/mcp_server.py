@@ -8,7 +8,11 @@ from collections.abc import Callable
 from typing import Any
 
 from quality_gates import __version__
-from quality_gates.oracle import remaining_from_reports, render_prompt
+from quality_gates.oracle import (
+    finding_from_reports,
+    remaining_from_reports,
+    render_prompt,
+)
 
 TOOLS = [
     {
@@ -51,6 +55,28 @@ TOOLS = [
                 "base": {"type": "string"},
                 "post": {"type": "boolean"},
             },
+        },
+    },
+    {
+        "name": "quality_finding_context",
+        "description": (
+            "Pack one finding (what/where/why/fix/patch/verify) for a coding agent. "
+            "Pass id to select; otherwise the first blocker."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"id": {"type": "string"}},
+        },
+    },
+    {
+        "name": "quality_apply_fix",
+        "description": (
+            "Apply a finding's patch to the working tree. Pass finding id from "
+            "quality_finding_context. Re-run quality_oracle after."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"id": {"type": "string"}},
         },
     },
 ]
@@ -152,6 +178,32 @@ def _call_tool(
         payload = remaining_from_reports(_root())
         payload["exit_code"] = code
         return json.dumps(payload, indent=2)
+    if name == "quality_finding_context":
+        finding_id = str(args["id"]) if args.get("id") else None
+        return json.dumps(finding_from_reports(_root(), finding_id), indent=2)
+    if name == "quality_apply_fix":
+        from quality_gates.models import Finding
+        from quality_gates.review.apply import apply_finding
+
+        packed = finding_from_reports(_root(), str(args.get("id") or "") or None)
+        row = packed.get("finding")
+        if not isinstance(row, dict):
+            return json.dumps(packed, indent=2)
+        finding = Finding(
+            gate=str(row.get("gate") or "review"),
+            message=str(row.get("message") or ""),
+            path=row.get("path"),
+            line=row.get("line") if isinstance(row.get("line"), int) else None,
+            rule=row.get("rule"),
+            patch=row.get("patch"),
+            suggestion=row.get("suggestion"),
+            verify=row.get("verify"),
+        )
+        status = apply_finding(_root(), finding)
+        return json.dumps(
+            {"status": status, "id": row.get("id"), "next": packed.get("prompt")},
+            indent=2,
+        )
     return f"unknown tool {name}"
 
 

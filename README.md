@@ -171,7 +171,9 @@ or `OPENAI_API_KEY`. GitHub Models was retired in July 2026; `GITHUB_TOKEN` is
 only used to post review comments. Review packs impact/audit
 context and `.quality/rules/*.md`; it posts inline comments and a check run.
 `quality oracle` / `quality mcp` loop coding agents until gates are green.
-See [`standards/AI_REVIEW.md`](standards/AI_REVIEW.md).
+Findings include why / fix / verify; GitHub comments can carry apply-able
+suggestion patches. `quality eval` scores ReviewBench and can download Martian's
+MIT golden comments. See [`standards/AI_REVIEW.md`](standards/AI_REVIEW.md).
 
 ## CLI
 
@@ -192,6 +194,7 @@ quality version [--base origin/main]
 quality bump auto|major|minor|patch
 quality review [--base origin/main] [--post]
 quality oracle [--run] [--prompt]
+quality eval [--suite reviewbench|martian|macroscope|all] [--download] [--llm]
 quality mcp
 quality run [--only security,compile,impact,coverage,audit,ui] [--skip review] [--full]
 quality report [--format console|markdown|html|json|sarif|junit]
