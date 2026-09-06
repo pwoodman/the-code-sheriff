@@ -19,14 +19,20 @@ class ExecutionState(StrEnum):
 
 
 _STATUS_STATES = {
+    "passed": ExecutionState.PASSED,
     "pass": ExecutionState.PASSED,
-    "fail": ExecutionState.FAILED,
+    "success": ExecutionState.PASSED,
     "warning": ExecutionState.PASSED,
-    "skip": ExecutionState.NOT_APPLICABLE,
+    "failed": ExecutionState.FAILED,
+    "fail": ExecutionState.FAILED,
     "not-applicable": ExecutionState.NOT_APPLICABLE,
+    "skip": ExecutionState.NOT_APPLICABLE,
     "unsupported": ExecutionState.UNSUPPORTED,
+    "missing": ExecutionState.UNSUPPORTED,
     "blocked": ExecutionState.BLOCKED,
+    "errored": ExecutionState.ERRORED,
     "tool-error": ExecutionState.ERRORED,
+    "timeout": ExecutionState.ERRORED,
     "cancelled": ExecutionState.CANCELLED,
 }
 
@@ -35,17 +41,9 @@ def execution_state(result: GateResult) -> ExecutionState:
     """Normalize legacy result strings without discarding explicit evidence."""
     if result.status == "fail" or result.error_count() > 0:
         raw = (result.exit_state or "failed").strip().lower()
-        if raw in _STATUS_STATES:
-            return _STATUS_STATES[raw]
-        return ExecutionState.FAILED
+        return _STATUS_STATES.get(raw, ExecutionState.FAILED)
     raw = (result.exit_state or result.status).strip().lower()
-    aliases = {
-        "pass": ExecutionState.PASSED,
-        "fail": ExecutionState.FAILED,
-        "skip": ExecutionState.NOT_APPLICABLE,
-        "tool-error": ExecutionState.ERRORED,
-    }
-    return aliases.get(raw, _STATUS_STATES.get(raw, ExecutionState.ERRORED))
+    return _STATUS_STATES.get(raw, ExecutionState.ERRORED)
 
 
 @dataclass(frozen=True)

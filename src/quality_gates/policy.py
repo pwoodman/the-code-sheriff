@@ -87,6 +87,16 @@ def _load_base_baseline(
     if not base:
         return False, None
     try:
+        verify = subprocess.run(
+            ["git", "rev-parse", "--verify", base],
+            cwd=root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=3,
+        )
+        if verify.returncode != 0:
+            return False, None
         rel = baseline_path(root, config).relative_to(root).as_posix()
         res = subprocess.run(
             ["git", "show", f"{base}:{rel}"],
@@ -101,12 +111,12 @@ def _load_base_baseline(
             return True, data if isinstance(data, dict) else None
         return True, None
     except (OSError, json.JSONDecodeError, ValueError, subprocess.TimeoutExpired):
-        return True, None
+        return False, None
 
 
 def load_baseline(root: Path, config: QualityConfig) -> dict[str, Any] | None:
     is_pr, base_data = _load_base_baseline(root, config)
-    if is_pr:
+    if is_pr and base_data is not None:
         return base_data
     path = baseline_path(root, config)
     if not path.is_file():
@@ -122,28 +132,35 @@ def baseline_state(
     root: Path, config: QualityConfig
 ) -> tuple[str, dict[str, Any] | None]:
     """Differentiate first onboarding from deleted or malformed evidence."""
+    path = baseline_path(root, config)
+    local_data = None
+    if path.is_file():
+        try:
+            local_data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return "invalid", None
+        if not isinstance(local_data, dict) or not isinstance(
+            local_data.get("fingerprints", []), list
+        ):
+            return "invalid", None
+
     is_pr, base_data = _load_base_baseline(root, config)
     if is_pr:
         if base_data is not None:
             if isinstance(base_data.get("fingerprints", []), list):
                 return "valid", base_data
             return "invalid", None
-        path = baseline_path(root, config)
-        if not path.is_file() and _tracked(root, path):
-            return "missing", None
-        return "initial", None
-    path = baseline_path(root, config)
+        if not path.is_file():
+            if _tracked(root, path):
+                return "missing", None
+            return "initial", None
+        return "valid", local_data
+
     if not path.is_file():
         if _tracked(root, path):
             return "missing", None
         return "initial", None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return "invalid", None
-    if not isinstance(data, dict) or not isinstance(data.get("fingerprints", []), list):
-        return "invalid", None
-    return "valid", data
+    return "valid", local_data
 
 
 def _tracked(root: Path, path: Path) -> bool:

@@ -333,9 +333,9 @@ def test_run_review_heuristic_writes_reports(tmp_path: Path, monkeypatch) -> Non
     assert payload["provider"] == "heuristic"
 
 
-def test_configured_review_errors_block_the_gate(tmp_path: Path, monkeypatch) -> None:
+def _patch_review_defaults(monkeypatch, diff: str = EVAL_DIFF) -> None:
     monkeypatch.setattr(
-        "quality_gates.review.engine.collect_diff", lambda *_a, **_k: EVAL_DIFF
+        "quality_gates.review.engine.collect_diff", lambda *_a, **_k: diff
     )
     monkeypatch.setattr(
         "quality_gates.review.engine.resolve_client", lambda *_a, **_k: None
@@ -343,6 +343,10 @@ def test_configured_review_errors_block_the_gate(tmp_path: Path, monkeypatch) ->
     monkeypatch.setattr(
         "quality_gates.review.engine.related_files", lambda *_a, **_k: []
     )
+
+
+def test_configured_review_errors_block_the_gate(tmp_path: Path, monkeypatch) -> None:
+    _patch_review_defaults(monkeypatch)
     config = QualityConfig(
         review_provider="off",
         review_mode="heuristic",
@@ -359,15 +363,7 @@ def test_configured_review_errors_block_the_gate(tmp_path: Path, monkeypatch) ->
 def test_untrusted_review_does_not_load_repository_rules(
     tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setattr(
-        "quality_gates.review.engine.collect_diff", lambda *_a, **_k: EVAL_DIFF
-    )
-    monkeypatch.setattr(
-        "quality_gates.review.engine.resolve_client", lambda *_a, **_k: None
-    )
-    monkeypatch.setattr(
-        "quality_gates.review.engine.related_files", lambda *_a, **_k: []
-    )
+    _patch_review_defaults(monkeypatch)
     monkeypatch.setattr(
         "quality_gates.review.engine.active_rules",
         lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not load rules")),

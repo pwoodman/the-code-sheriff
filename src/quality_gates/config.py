@@ -447,6 +447,16 @@ def _apply_trusted_merge_policy(project: Path, data: dict[str, Any]) -> dict[str
     if not base:
         return data
     try:
+        verify = subprocess.run(
+            ["git", "rev-parse", "--verify", base],
+            cwd=project,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=3,
+        )
+        if verify.returncode != 0:
+            return data
         raw = subprocess.run(
             ["git", "show", f"{base}:quality.toml"],
             cwd=project,

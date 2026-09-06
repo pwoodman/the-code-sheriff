@@ -320,6 +320,18 @@ def build_graph(root: Path, config: QualityConfig) -> ImportGraph:
     return graph
 
 
+def _can_share_symbols(name: str, other: str, graph: ImportGraph) -> bool:
+    if Path(other).parent == Path(name).parent:
+        return True
+    name_parts = Path(name).parts
+    other_parts = Path(other).parts
+    if name_parts and other_parts and name_parts[0] == other_parts[0]:
+        return True
+    return other in graph.imported_by.get(name, set()) or name in graph.imports.get(
+        other, set()
+    )
+
+
 def analyze(
     graph: ImportGraph,
     changed: list[str],
@@ -353,7 +365,7 @@ def analyze(
         name_symbols = graph.symbols.get(name, set())
         if name_symbols:
             for other in graph.files:
-                if other == name:
+                if other == name or not _can_share_symbols(name, other, graph):
                     continue
                 if graph.callers.get(other, set()) & name_symbols:
                     down.add(other)
