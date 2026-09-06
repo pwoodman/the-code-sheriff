@@ -316,3 +316,48 @@ def _num(value: object) -> float | None:
     if value is None or value == "":
         return None
     return float(value)
+
+
+def parse_line_hits(path: Path) -> dict[str, dict[int, int]]:
+    """Return mapping of normalized file_path -> {line_number: hits}."""
+    hits_by_file: dict[str, dict[int, int]] = {}
+    if not path.is_file():
+        return hits_by_file
+    name = path.name.lower()
+    try:
+        if name.endswith(".xml") or name == "cobertura.xml":
+            tree = ET.parse(path)
+            for cls in tree.findall(".//class"):
+                filename = cls.get("filename") or ""
+                if not filename:
+                    continue
+                norm = filename.replace("\\", "/")
+                file_hits: dict[int, int] = {}
+                for line in cls.findall(".//line"):
+                    nr = _attr_int(line, "number")
+                    hits = _attr_int(line, "hits")
+                    if nr:
+                        file_hits[nr] = hits
+                if file_hits:
+                    hits_by_file[norm] = file_hits
+        elif name.endswith(".json") or name == "coverage-summary.json":
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                for filepath, file_data in data.items():
+                    if (
+                        isinstance(file_data, dict)
+                        and "s" in file_data
+                        and "statementMap" in file_data
+                    ):
+                        norm = filepath.replace("\\", "/")
+                        file_hits = {}
+                        for s_id, hit in file_data["s"].items():
+                            loc = file_data["statementMap"].get(s_id, {})
+                            start_line = loc.get("start", {}).get("line")
+                            if start_line is not None:
+                                file_hits[int(start_line)] = int(hit)
+                        if file_hits:
+                            hits_by_file[norm] = file_hits
+    except Exception:
+        return hits_by_file
+    return hits_by_file

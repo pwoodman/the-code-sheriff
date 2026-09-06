@@ -5,7 +5,12 @@ from pathlib import Path
 
 from quality_gates.config import QualityConfig
 from quality_gates.detect import iter_project_files
-from quality_gates.gates.common import fail_or_pass, findings_from_text, skip_result
+from quality_gates.gates.common import (
+    fail_or_pass,
+    findings_from_text,
+    merge_results,
+    skip_result,
+)
 from quality_gates.models import Finding, GateResult
 from quality_gates.registry import LANGUAGE_PROFILES
 from quality_gates.tools import run, which
@@ -108,32 +113,10 @@ def run_compile(
         if "typescript" in builds:
             parts.append(_typescript(root))
 
-    findings: list[Finding] = []
     notes = [reason] if builds else ["non-executing syntax checks"]
-    skipped: list[str] = []
-    failed = False
-    any_pass = False
-    for part in parts:
-        findings.extend(part.findings)
-        notes.extend(part.notes)
-        skipped.extend(part.skipped_tools)
-        if part.status == "fail":
-            failed = True
-        elif part.status == "pass":
-            any_pass = True
-    if failed:
-        status = "fail"
-    elif any_pass:
-        status = "pass"
-    else:
-        status = "skip"
-    return GateResult(
-        name="compile",
-        status=status,
-        findings=findings,
-        notes=notes,
-        skipped_tools=skipped,
-    )
+    merged = merge_results("compile", parts)
+    merged.notes = sorted(dict.fromkeys(notes + merged.notes))
+    return merged
 
 
 def _c_family(root: Path, config: QualityConfig, language: str) -> GateResult:
@@ -498,12 +481,8 @@ def _typescript(root: Path) -> GateResult:
         )
     tsc = which("tsc", project=root, prefer_project=True)
     if not tsc:
-        npx = which("npx", project=root)
-        if not npx:
-            return skip_result("compile", "tsc/npx is not installed", tool="tsc")
-        argv = [npx, "--yes", "tsc", "--noEmit", "-p", str(tsconfig)]
-    else:
-        argv = [tsc, "--noEmit", "-p", str(tsconfig)]
+        return skip_result("compile", "resolved local tsc is not installed", tool="tsc")
+    argv = [tsc, "--noEmit", "-p", str(tsconfig)]
     result = run(argv, cwd=root, timeout=300)
     return fail_or_pass(
         "compile",

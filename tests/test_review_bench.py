@@ -85,6 +85,36 @@ def test_closed_loop_apply_clears_eval(tmp_path: Path) -> None:
     assert "count = count + 1" in text
 
 
+def test_unified_patch_is_transactional_when_a_later_hunk_is_stale(
+    tmp_path: Path,
+) -> None:
+    first = tmp_path / "first.py"
+    second = tmp_path / "second.py"
+    first.write_text("before = 1\n", encoding="utf-8")
+    second.write_text("actual = 2\n", encoding="utf-8")
+    finding = Finding(
+        gate="review",
+        message="patch",
+        patch="""--- a/first.py
++++ b/first.py
+@@ -1 +1 @@
+-before = 1
++after = 1
+--- a/second.py
++++ b/second.py
+@@ -1 +1 @@
+-expected = 2
++after = 2
+""",
+    )
+
+    status = apply_finding(tmp_path, finding)
+
+    assert status == "unified diff rejected: stale hunk in second.py"
+    assert first.read_text(encoding="utf-8") == "before = 1\n"
+    assert second.read_text(encoding="utf-8") == "actual = 2\n"
+
+
 def test_macroscope_sample_is_documented() -> None:
     info = macroscope_reconstructed()
     assert info["public_json"] is False
@@ -118,6 +148,17 @@ def test_review_supporting_context_helpers(tmp_path: Path) -> None:
         config,
     )
     assert windows and windows[0][0] == "src/app.py"
+
+
+def test_review_test_evidence_obeys_execution_trust(tmp_path: Path) -> None:
+    config = load_config(tmp_path)
+    config.review_verify_tests = True
+    config.trust = "untrusted"
+
+    evidence = collect_test_evidence(tmp_path, config, ["tests/test_app.py"])
+
+    assert "blocked" in evidence
+    assert "trusted" in evidence
 
 
 def test_eval_cli_reviewbench(capsys) -> None:

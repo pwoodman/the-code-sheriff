@@ -6,14 +6,17 @@ import json
 import os
 from pathlib import Path
 
+from quality_gates.change_manifest import ChangeManifest
 from quality_gates.config import QualityConfig
 from quality_gates.coverage_parse import (
     CoverageSummary,
     aggregate_summaries,
     find_existing_reports,
     parse_coverage_file,
+    parse_line_hits,
 )
 from quality_gates.detect import iter_project_files
+from quality_gates.evidence import config_digest, snapshot_digest
 from quality_gates.gates.common import fail_or_pass, skip_result
 from quality_gates.models import Finding, GateResult
 from quality_gates.tools import run, which
@@ -23,7 +26,13 @@ from quality_gates.tools import run, which
 DEFAULT_LINE = 80.0
 
 
-def run_coverage(root: Path, config: QualityConfig) -> GateResult:
+def run_coverage(
+    root: Path,
+    config: QualityConfig,
+    *,
+    manifest: ChangeManifest | None = None,
+    selection: list[str] | None = None,
+) -> GateResult:
     if not config.coverage_enabled:
         return skip_result("coverage", "coverage gate disabled in quality.toml")
 
@@ -36,8 +45,26 @@ def run_coverage(root: Path, config: QualityConfig) -> GateResult:
     report_dir = root / ".quality-reports"
     report_dir.mkdir(parents=True, exist_ok=True)
 
-    summary, notes = _collect(root, config, report_dir)
+    summary, notes = _collect(root, config, report_dir, manifest)
     if summary is None or summary.line_percent is None:
+        if any(
+            "stale coverage" in note or "existing coverage evidence" in note
+            for note in notes
+        ):
+            return GateResult(
+                name="coverage",
+                status="fail",
+                exit_state="blocked",
+                findings=[
+                    Finding(
+                        gate="coverage",
+                        rule="stale-evidence",
+                        message="coverage artifact is not attributable to the assessed snapshot",
+                        severity="error",
+                    )
+                ],
+                notes=notes,
+            )
         return skip_result(
             "coverage",
             "no coverage tool or report found — install pytest-cov, Jest/Vitest "
@@ -58,6 +85,11 @@ def run_coverage(root: Path, config: QualityConfig) -> GateResult:
             "80% statement coverage is the common industry / ISTQB-style floor; "
             "override [quality.coverage] line if this repo has a documented exception."
         ),
+        "evidence": {
+            "snapshot": snapshot_digest(root, manifest),
+            "configuration": config_digest(config),
+            "selection": sorted(selection or []),
+        },
     }
     (report_dir / "coverage.json").write_text(
         json.dumps(payload, indent=2) + "\n", encoding="utf-8"
@@ -74,6 +106,16 @@ def run_coverage(root: Path, config: QualityConfig) -> GateResult:
         f"{branch_note} from {Path(summary.source).name}"
     )
     findings: list[Finding] = []
+    for note in notes:
+        if note.startswith("test execution failed:"):
+            findings.append(
+                Finding(
+                    gate="coverage",
+                    rule="test-execution-failed",
+                    message=note,
+                    severity="error",
+                )
+            )
     if not ok:
         findings.append(
             Finding(
@@ -83,11 +125,72 @@ def run_coverage(root: Path, config: QualityConfig) -> GateResult:
                 severity="error",
             )
         )
+    if manifest is not None and summary.source:
+        hits = parse_line_hits(Path(summary.source))
+        if hits:
+            findings.extend(
+                _check_changed_lines(root, manifest, hits, config.coverage_line)
+            )
     return fail_or_pass("coverage", findings, notes)
 
 
+def _check_changed_lines(
+    root: Path,
+    manifest: ChangeManifest,
+    line_hits: dict[str, dict[int, int]],
+    floor: float,
+) -> list[Finding]:
+    findings: list[Finding] = []
+    for change in manifest.changes:
+        if change.kind == "deleted" or not change.path.endswith(
+            (".py", ".ts", ".js", ".tsx", ".jsx", ".go")
+        ):
+            continue
+        file_hits = None
+        for k, v in line_hits.items():
+            if (
+                k == change.path
+                or k.endswith("/" + change.path)
+                or change.path.endswith("/" + k)
+            ):
+                file_hits = v
+                break
+        if file_hits is None:
+            continue
+        uncovered: list[int] = []
+        if change.hunks:
+            for hunk in change.hunks:
+                for ln in range(
+                    hunk.new_start, hunk.new_start + max(1, hunk.new_count)
+                ):
+                    if ln in file_hits and file_hits[ln] == 0:
+                        uncovered.append(ln)
+        elif change.kind in {"added", "untracked"}:
+            for ln, hits in file_hits.items():
+                if hits == 0:
+                    uncovered.append(ln)
+        if uncovered and floor > 0:
+            findings.append(
+                Finding(
+                    gate="coverage",
+                    rule="uncovered-changed-lines",
+                    path=change.path,
+                    line=uncovered[0],
+                    message=(
+                        f"changed lines in {change.path} lack test coverage "
+                        f"({len(uncovered)} uncovered lines: {uncovered[:5]}...)"
+                    ),
+                    severity="error",
+                )
+            )
+    return findings
+
+
 def _collect(
-    root: Path, config: QualityConfig, report_dir: Path
+    root: Path,
+    config: QualityConfig,
+    report_dir: Path,
+    manifest: ChangeManifest | None = None,
 ) -> tuple[CoverageSummary | None, list[str]]:
     notes: list[str] = []
     tool = config.coverage_tool
@@ -96,6 +199,11 @@ def _collect(
         if existing is not None:
             notes.append(f"using existing report {existing.source}")
             if tool == "existing":
+                if not _fresh_coverage_evidence(root, config, manifest):
+                    notes.append(
+                        "existing coverage evidence is absent or does not match this snapshot"
+                    )
+                    return None, notes
                 return existing, notes
             collected = _run_tool(root, config, report_dir, notes)
             refreshed = _best_existing(root)
@@ -114,7 +222,27 @@ def _collect(
     collected = _run_tool(root, config, report_dir, notes)
     if collected is not None:
         return collected, notes
-    return _best_existing(root), notes
+    fallback = _best_existing(root)
+    if fallback is not None and not _fresh_coverage_evidence(root, config, manifest):
+        notes.append("refused stale coverage fallback")
+        return None, notes
+    return fallback, notes
+
+
+def _fresh_coverage_evidence(
+    root: Path, config: QualityConfig, manifest: ChangeManifest | None
+) -> bool:
+    path = root / ".quality-reports" / "coverage.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    evidence = payload.get("evidence")
+    if not isinstance(evidence, dict):
+        return False
+    return evidence.get("snapshot") == snapshot_digest(root, manifest) and evidence.get(
+        "configuration"
+    ) == config_digest(config)
 
 
 def _best_existing(root: Path) -> CoverageSummary | None:
@@ -197,6 +325,12 @@ def _pytest_cov(
     if result.skipped:
         notes.append(result.skip_reason or "pytest skipped")
         return None
+    if result.timed_out:
+        notes.append("test execution failed: pytest --cov timed out")
+    elif result.returncode == 5:
+        notes.append("test execution failed: pytest collected zero tests")
+    elif result.returncode not in {0, None}:
+        notes.append(f"test execution failed: pytest --cov exited {result.returncode}")
     if xml_path.is_file():
         parsed = parse_coverage_file(xml_path)
         if parsed:
@@ -221,24 +355,35 @@ def _js_coverage(root: Path, notes: list[str]) -> CoverageSummary | None:
     deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
     if "vitest" in deps:
         bin_name = "vitest"
-        argv = ["npx", "--yes", "vitest", "run", "--coverage"]
+        executable = which("vitest", project=root)
+        argv = [executable, "run", "--coverage"] if executable else []
     elif "jest" in deps:
         bin_name = "jest"
-        argv = [
-            "npx",
-            "--yes",
-            "jest",
-            "--coverage",
-            "--coverageReporters=json-summary",
-            "--watchAll=false",
-        ]
+        executable = which("jest", project=root)
+        argv = (
+            [
+                executable,
+                "--coverage",
+                "--coverageReporters=json-summary",
+                "--watchAll=false",
+            ]
+            if executable
+            else []
+        )
     else:
         return None
-    if not which("npx", project=root) and not which(bin_name, project=root):
+    if not argv:
+        notes.append(
+            f"{bin_name} is declared but no resolved local executable is available"
+        )
         return None
     result = run(argv, cwd=root, timeout=600)
     if result.skipped:
         return None
+    if result.timed_out:
+        notes.append(f"test execution failed: {bin_name} timed out")
+    elif result.returncode not in {0, None}:
+        notes.append(f"test execution failed: {bin_name} exited {result.returncode}")
     summary_path = root / "coverage" / "coverage-summary.json"
     parsed = parse_coverage_file(summary_path) if summary_path.is_file() else None
     if parsed:
@@ -257,7 +402,13 @@ def _go_cover(root: Path, report_dir: Path, notes: list[str]) -> CoverageSummary
         cwd=root,
         timeout=600,
     )
-    if result.skipped or not out.is_file():
+    if result.skipped:
+        return None
+    if result.timed_out:
+        notes.append("test execution failed: go test timed out")
+    elif result.returncode not in {0, None}:
+        notes.append(f"test execution failed: go test exited {result.returncode}")
+    if not out.is_file():
         return None
     parsed = parse_coverage_file(out)
     if parsed:

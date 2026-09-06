@@ -75,6 +75,24 @@ def test_coverage_fails_under_floor(tmp_path: Path) -> None:
     assert result.error_count() == 1
 
 
+def test_failed_tests_block_even_with_full_coverage(
+    tmp_path: Path, monkeypatch
+) -> None:
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_demo.py").write_text("def test_ok(): pass\n", encoding="utf-8")
+    summary = CoverageSummary(100.0, 100.0, 10, 10, source="coverage.xml")
+    monkeypatch.setattr(
+        "quality_gates.gates.coverage._collect",
+        lambda *_args: (summary, ["test execution failed: pytest --cov exited 1"]),
+    )
+
+    result = run_coverage(tmp_path, QualityConfig())
+
+    assert result.status == "fail"
+    assert [item.rule for item in result.findings] == ["test-execution-failed"]
+
+
 def test_coverage_config_defaults(tmp_path: Path) -> None:
     config = load_config(tmp_path)
     assert config.coverage_line == 80.0
@@ -129,3 +147,58 @@ def test_coverage_runner_deduplicates_same_source(tmp_path: Path, monkeypatch) -
     assert combined is not None
     assert combined.lines_valid == 10
     assert any("duplicate coverage report ignored" in note for note in notes)
+
+
+def test_changed_lines_coverage_detects_untested_new_lines(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from quality_gates.change_manifest import Change, ChangedHunk, ChangeManifest
+
+    cov_xml = tmp_path / "coverage.xml"
+    cov_xml.write_text(
+        """<?xml version="1.0" ?>
+<coverage version="7.0" line-rate="0.9" branch-rate="0" lines-covered="9" lines-valid="10">
+  <packages>
+    <package name="pkg">
+      <classes>
+        <class name="core.py" filename="src/app.py" line-rate="0.9">
+          <lines>
+            <line number="1" hits="1"/>
+            <line number="2" hits="1"/>
+            <line number="3" hits="0"/>
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>
+""",
+        encoding="utf-8",
+    )
+    summary = CoverageSummary(90.0, None, 9, 10, source=str(cov_xml))
+    monkeypatch.setattr(
+        "quality_gates.gates.coverage._collect",
+        lambda *_args: (summary, ["collected via pytest-cov"]),
+    )
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_smoke.py").write_text("def test_ok(): pass\n", encoding="utf-8")
+
+    manifest = ChangeManifest(
+        state="available",
+        base="HEAD~1",
+        target="HEAD",
+        target_tree=None,
+        working_tree_digest="digest",
+        changes=(
+            Change(
+                "modified",
+                "src/app.py",
+                hunks=(ChangedHunk("src/app.py", 1, 1, 3, 1),),
+            ),
+        ),
+    )
+    result = run_coverage(
+        tmp_path, QualityConfig(coverage_line=80.0), manifest=manifest
+    )
+    assert any(item.rule == "uncovered-changed-lines" for item in result.findings)

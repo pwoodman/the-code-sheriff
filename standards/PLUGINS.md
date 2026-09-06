@@ -5,8 +5,9 @@ an `AdapterMetadata` plus a `run(AdapterContext) -> GateResult` implementation.
 The API version must equal `ADAPTER_API_VERSION`; incompatible plugins fail
 explicitly during discovery.
 
-Plugins execute in the quality process and are not sandboxed. Install only
-trusted plugins. Declare truthful capabilities and safety class, use argument
-arrays rather than a shell, keep output deterministic, and use the standard
-statuses: pass, fail, warning, skip, not-applicable, unsupported, or tool-error.
-Third-party plugins are not cached automatically and may perform network calls.
+Plugins must declare input scopes, prerequisites, required permissions, output
+schema, and cacheability as well as truthful capabilities and safety class. Use
+argument arrays rather than a shell and keep output deterministic. A plugin
+failure is reported as an errored result; it must never turn the orchestrator
+green. Third-party plugins are not cached automatically and should run only in
+the configured isolated worker for untrusted changes.

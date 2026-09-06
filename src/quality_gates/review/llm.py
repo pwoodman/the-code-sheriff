@@ -8,6 +8,7 @@ import random
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 from quality_gates.config import QualityConfig
@@ -269,6 +270,8 @@ def validate_findings(
     findings: list[Finding],
     *,
     enabled: bool,
+    diff: str = "",
+    root: Path | None = None,
 ) -> list[Finding]:
     if not enabled or client is None or not findings:
         return findings
@@ -284,11 +287,20 @@ def validate_findings(
             for item in findings
         ]
     }
+    diff_context = ""
+    if diff:
+        clipped = diff[:6000] if len(diff) > 6000 else diff
+        diff_context = f"\n\nChanged diff context:\n```diff\n{clipped}\n```\n"
     prompt = (
-        "Drop false positives and formatter/linter nits. Keep only bugs you would "
-        "block a merge for, or high-value warnings. Return JSON "
-        '{"action":"submit","summary":"","findings":[...]} using the same shape. '
-        "Do not invent new issues.\n\n" + json.dumps(payload)
+        "Verify candidate findings against the provided code and diff context. "
+        "Confirm that each blocking finding identifies a real defect, clear trigger, "
+        "consequence, and exact location. Model agreement alone is not sufficient; "
+        "findings must correspond to actual behavior in the changed lines or their consumers. "
+        "Drop false positives, unverified claims, and formatter/linter nits. "
+        "Keep only bugs you would block a merge for, or high-value warnings. "
+        'Return JSON {"action":"submit","summary":"","findings":[...]} using the same shape. '
+        "Do not invent new issues."
+        f"{diff_context}\nCandidate findings:\n" + json.dumps(payload)
     )
     try:
         text = client.complete(

@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from quality_gates.change_manifest import ChangeManifest
 from quality_gates.config import QualityConfig
 from quality_gates.detect import iter_project_files
 from quality_gates.gates.common import fail_or_pass, skip_result
@@ -71,6 +72,7 @@ def run_version(
     config: QualityConfig,
     *,
     base: str | None = None,
+    manifest: ChangeManifest | None = None,
 ) -> GateResult:
     hits = discover_versions(root, config)
     if not hits:
@@ -113,7 +115,9 @@ def run_version(
         notes.append("current version: " + next(iter(unique_values)))
 
     if git_is_repo(root):
-        findings.extend(_bump_required(root, config, hits, valid, base, notes))
+        findings.extend(
+            _bump_required(root, config, hits, valid, base, notes, manifest=manifest)
+        )
     else:
         notes.append("not a git checkout; skipped bump-vs-base check")
 
@@ -260,9 +264,19 @@ def _bump_required(
     valid: list[tuple[VersionHit, SemVer]],
     base: str | None,
     notes: list[str],
+    manifest: ChangeManifest | None = None,
 ) -> list[Finding]:
-    resolved = git_base_ref(base) or _default_base(root)
-    changed = git_changed_names(root, resolved)
+    if manifest is not None:
+        if manifest.state == "unknown":
+            notes.append(
+                f"could not diff against a base ref: {manifest.reason}; skipped bump check"
+            )
+            return []
+        changed = manifest.paths
+        resolved = manifest.base
+    else:
+        resolved = git_base_ref(base) or _default_base(root)
+        changed = git_changed_names(root, resolved)
     if changed is None:
         notes.append("could not diff against a base ref; skipped bump check")
         return []

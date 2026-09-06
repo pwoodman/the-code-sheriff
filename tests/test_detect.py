@@ -112,3 +112,27 @@ def test_this_repo_detects_python_and_dogfoods_full_github_suite() -> None:
     assert github_runs_full_suite(config)
     assert config.ci_github_gates[:2] == ["format", "lint"]
     assert DEFAULT_GITHUB_GATES[:2] == ["format", "lint"]
+
+
+def test_discover_workspaces_and_filter_for_changes(tmp_path: Path) -> None:
+    from quality_gates.detect import discover_workspaces, filter_workspaces_for_changes
+
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    (frontend / "package.json").write_text('{"name":"web"}\n', encoding="utf-8")
+    backend = tmp_path / "backend"
+    backend.mkdir()
+    (backend / "pyproject.toml").write_text('[project]\nname="api"\n', encoding="utf-8")
+
+    workspaces = discover_workspaces(tmp_path)
+    assert len(workspaces) >= 2
+    ws_names = {ws.name for ws in workspaces}
+    assert "frontend" in ws_names
+    assert "backend" in ws_names
+
+    # Isolated change in frontend avoids backend
+    frontend_filtered = filter_workspaces_for_changes(
+        workspaces, ["frontend/src/index.ts"]
+    )
+    assert len(frontend_filtered) == 1
+    assert frontend_filtered[0].name == "frontend"

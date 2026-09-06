@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from quality_gates.change_manifest import discover_changes
 from quality_gates.config import QualityConfig
 from quality_gates.gates.common import fail_or_pass, skip_result
-from quality_gates.gitutil import git_base_ref, git_changed_names
 from quality_gates.impact_graph import (
     Impact,
     analyze,
@@ -24,8 +24,23 @@ def run_impact(
     *,
     base: str | None = None,
 ) -> GateResult:
-    changed = git_changed_names(root, git_base_ref(base))
-    if not changed:
+    manifest = discover_changes(root, base)
+    if manifest.state == "unknown":
+        return GateResult(
+            name="impact",
+            status="fail",
+            findings=[
+                Finding(
+                    gate="impact",
+                    rule="change-discovery-failed",
+                    message=manifest.reason or "change discovery failed",
+                    severity="error",
+                )
+            ],
+        )
+    manifest.write(root)
+    changed = manifest.paths
+    if manifest.state == "empty":
         return skip_result(
             "impact", "no changed files vs base — skipping impact analysis"
         )

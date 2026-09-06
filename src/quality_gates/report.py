@@ -208,6 +208,7 @@ def load_results(report_dir: Path) -> tuple[list[GateResult], str]:
                 working_directory=row.get("working_directory"),
                 return_code=row.get("return_code"),
                 output_excerpt=row.get("output_excerpt"),
+                evidence=dict(row.get("evidence") or {}),
             )
         )
     return out, policy

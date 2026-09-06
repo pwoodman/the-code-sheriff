@@ -32,6 +32,11 @@ class AdapterMetadata:
     tools: tuple[str, ...] = ()
     api_version: int = ADAPTER_API_VERSION
     safety_class: str = "static"
+    scopes: tuple[str, ...] = ("file",)
+    prerequisites: tuple[str, ...] = ()
+    permissions: tuple[str, ...] = ("read-only",)
+    output_schema: str = "quality-gates/gate-result/v1"
+    cacheable: bool = False
 
 
 @dataclass(frozen=True)
@@ -86,8 +91,41 @@ def discover_adapters() -> dict[str, type[BaseAdapter] | Adapter]:
                 f"adapter {entry_point.name!r} uses API {metadata_value.api_version}; "
                 f"expected {ADAPTER_API_VERSION}"
             )
+        if not metadata_value.scopes or not metadata_value.output_schema:
+            raise ValueError(
+                f"adapter {entry_point.name!r} must declare scope and output schema"
+            )
+        if not metadata_value.permissions:
+            raise ValueError(
+                f"adapter {entry_point.name!r} must declare execution permissions"
+            )
         loaded[entry_point.name] = candidate
     return loaded
+
+
+def run_adapter_safe(
+    adapter: BaseAdapter | Adapter, context: AdapterContext
+) -> GateResult:
+    """Isolate plugin failures from crashing the orchestrator."""
+    meta = getattr(adapter, "metadata", None)
+    name = getattr(meta, "tools", ("plugin",))[0] if meta and meta.tools else "plugin"
+    try:
+        return adapter.run(context)
+    except Exception as exc:
+        return GateResult(
+            name=name,
+            status="fail",
+            exit_state="errored",
+            findings=[
+                Finding(
+                    gate=name,
+                    rule="plugin-exception",
+                    message=f"plugin execution failed: {exc}",
+                    severity="error",
+                )
+            ],
+            notes=[f"plugin exception: {type(exc).__name__}: {exc}"],
+        )
 
 
 @dataclass(frozen=True)

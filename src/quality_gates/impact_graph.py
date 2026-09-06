@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import re
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from quality_gates.config import QualityConfig
 from quality_gates.detect import iter_project_files
@@ -45,9 +47,15 @@ JS_SUFFIXES = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte"}
 @dataclass
 class ImportGraph:
     files: set[str] = field(default_factory=set)
+    file_hashes: dict[str, str] = field(default_factory=dict)
     imports: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     imported_by: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
+    symbols: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
+    callers: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
+    inheritance: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     broken: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
+    confidence: dict[str, str] = field(default_factory=dict)
+    deleted_edges: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
 
 
 @dataclass
@@ -59,6 +67,11 @@ class Impact:
     tests: dict[str, list[str]]
     unvalidated_downstream: list[tuple[str, str]]
     untested_changes: list[str]
+    symbols: dict[str, list[str]] = field(default_factory=dict)
+    callers: dict[str, list[str]] = field(default_factory=dict)
+    inheritance: dict[str, list[str]] = field(default_factory=dict)
+    confidence: dict[str, str] = field(default_factory=dict)
+    config_affected: list[str] = field(default_factory=list)
 
 
 def is_source(path: str) -> bool:
@@ -77,18 +90,197 @@ def is_test(path: str) -> bool:
     return "tests" in parts or "test" in parts or "__tests__" in parts
 
 
+def _python_symbols_and_relations(text: str) -> tuple[set[str], set[str], set[str]]:
+    symbols: set[str] = set()
+    callers: set[str] = set()
+    inheritance: set[str] = set()
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return symbols, callers, inheritance
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            symbols.add(node.name)
+        elif isinstance(node, ast.ClassDef):
+            symbols.add(node.name)
+            for base in node.bases:
+                if isinstance(base, ast.Name):
+                    inheritance.add(f"{node.name}:{base.id}")
+                elif isinstance(base, ast.Attribute):
+                    inheritance.add(f"{node.name}:{base.attr}")
+        elif isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name):
+                callers.add(node.func.id)
+            elif isinstance(node.func, ast.Attribute):
+                callers.add(node.func.attr)
+    return symbols, callers, inheritance
+
+
+def _js_symbols_and_relations(text: str) -> tuple[set[str], set[str], set[str]]:
+    symbols: set[str] = set()
+    callers: set[str] = set()
+    inheritance: set[str] = set()
+    for m in re.finditer(
+        r"(?:export\s+)?(?:function|class|const|let|var)\s+(\w+)", text
+    ):
+        symbols.add(m.group(1))
+    for m in re.finditer(r"class\s+(\w+)\s+extends\s+(\w+)", text):
+        symbols.add(m.group(1))
+        inheritance.add(f"{m.group(1)}:{m.group(2)}")
+    for m in re.finditer(r"\b(\w+)\s*\(", text):
+        name = m.group(1)
+        if name not in {"if", "for", "while", "switch", "catch", "function", "return"}:
+            callers.add(name)
+    return symbols, callers, inheritance
+
+
+def configuration_impact(root: Path, changed_paths: list[str]) -> list[str]:
+    """Map config, manifest, and fixture changes to affected source targets."""
+    affected: set[str] = set()
+    changed_lower = [p.replace("\\", "/").lower() for p in changed_paths]
+    for path in changed_lower:
+        name = Path(path).name
+        if name in {
+            "pyproject.toml",
+            "requirements.txt",
+            "poetry.lock",
+            "uv.lock",
+            "setup.py",
+        }:
+            affected.update(
+                p.relative_to(root).as_posix()
+                for p in root.rglob("*.py")
+                if not any(part.startswith(".") for part in p.parts)
+            )
+        elif name in {
+            "package.json",
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "yarn.lock",
+            "tsconfig.json",
+        }:
+            affected.update(
+                p.relative_to(root).as_posix()
+                for p in root.rglob("*")
+                if p.suffix.lower() in JS_SUFFIXES
+                and not any(part.startswith(".") for part in p.parts)
+            )
+        elif name in {"cargo.toml", "cargo.lock"}:
+            affected.update(
+                p.relative_to(root).as_posix()
+                for p in root.rglob("*.rs")
+                if not any(part.startswith(".") for part in p.parts)
+            )
+        elif name in {"go.mod", "go.sum"}:
+            affected.update(
+                p.relative_to(root).as_posix()
+                for p in root.rglob("*.go")
+                if not any(part.startswith(".") for part in p.parts)
+            )
+        elif "fixtures" in path or name in {"conftest.py"}:
+            affected.update(
+                p.relative_to(root).as_posix()
+                for p in root.rglob("test_*.py")
+                if not any(part.startswith(".") for part in p.parts)
+            )
+    return sorted(affected)
+
+
+def _graph_path(root: Path) -> Path:
+    return root / ".quality-reports" / "impact-graph.json"
+
+
+def _load_graph(root: Path) -> dict[str, Any] | None:
+    path = _graph_path(root)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _save_graph(root: Path, graph: ImportGraph) -> None:
+    try:
+        path = _graph_path(root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "files": sorted(graph.files),
+                    "file_hashes": graph.file_hashes,
+                    "imports": {
+                        key: sorted(value) for key, value in graph.imports.items()
+                    },
+                    "imported_by": {
+                        key: sorted(value) for key, value in graph.imported_by.items()
+                    },
+                    "symbols": {
+                        key: sorted(value) for key, value in graph.symbols.items()
+                    },
+                    "callers": {
+                        key: sorted(value) for key, value in graph.callers.items()
+                    },
+                    "inheritance": {
+                        key: sorted(value) for key, value in graph.inheritance.items()
+                    },
+                    "broken": graph.broken,
+                    "deleted_edges": {
+                        key: sorted(value) for key, value in graph.deleted_edges.items()
+                    },
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        return
+
+
 def build_graph(root: Path, config: QualityConfig) -> ImportGraph:
-    graph = ImportGraph()
     aliases = config.ui_path_aliases
     index = _file_index(root, config)
-    graph.files = set(index)
+    cached = _load_graph(root)
+    old_hashes = cached.get("file_hashes", {}) if cached else {}
+    old_files = set(cached.get("files", [])) if cached else set()
+    current_files = set(index.keys())
+    deleted_files = old_files - current_files
+
+    graph = ImportGraph(files=set(current_files))
     packages = _python_packages(root, index)
     go_module = _go_module(root)
 
+    if cached:
+        for del_file in deleted_files:
+            prev_consumers = set(cached.get("imported_by", {}).get(del_file, []))
+            if prev_consumers:
+                graph.deleted_edges[del_file] = prev_consumers
+                graph.imported_by[del_file] = prev_consumers
+
     for rel, path in index.items():
         try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
+            content = path.read_bytes()
+            f_hash = hashlib.sha256(content).hexdigest()
         except OSError:
+            continue
+        graph.file_hashes[rel] = f_hash
+
+        if (
+            cached
+            and old_hashes.get(rel) == f_hash
+            and rel in cached.get("imports", {})
+        ):
+            graph.imports[rel] = set(cached["imports"].get(rel, []))
+            graph.symbols[rel] = set(cached.get("symbols", {}).get(rel, []))
+            graph.callers[rel] = set(cached.get("callers", {}).get(rel, []))
+            graph.inheritance[rel] = set(cached.get("inheritance", {}).get(rel, []))
+            if rel in cached.get("broken", {}):
+                graph.broken[rel] = list(cached["broken"][rel])
+            continue
+
+        try:
+            text = content.decode("utf-8", errors="ignore")
+        except UnicodeDecodeError:
             continue
         if len(text) > 400_000:
             continue
@@ -97,8 +289,16 @@ def build_graph(root: Path, config: QualityConfig) -> ImportGraph:
         unresolved: list[str] = []
         if suffix in {".py", ".pyi"}:
             resolved, unresolved = _python_deps(rel, text, index, packages, root)
+            syms, calls, inher = _python_symbols_and_relations(text)
+            graph.symbols[rel] = syms
+            graph.callers[rel] = calls
+            graph.inheritance[rel] = inher
         elif suffix in JS_SUFFIXES:
             resolved, unresolved = _js_deps(path, text, root, aliases, index)
+            syms, calls, inher = _js_symbols_and_relations(text)
+            graph.symbols[rel] = syms
+            graph.callers[rel] = calls
+            graph.inheritance[rel] = inher
         elif suffix == ".go":
             resolved, unresolved = _go_deps(rel, text, index, go_module)
         elif suffix == ".rs":
@@ -109,9 +309,14 @@ def build_graph(root: Path, config: QualityConfig) -> ImportGraph:
             if target == rel:
                 continue
             graph.imports[rel].add(target)
-            graph.imported_by[target].add(rel)
         if unresolved:
             graph.broken[rel].extend(unresolved)
+
+    for rel, targets in graph.imports.items():
+        for target in targets:
+            graph.imported_by[target].add(rel)
+
+    _save_graph(root, graph)
     return graph
 
 
@@ -120,39 +325,90 @@ def analyze(
     changed: list[str],
     *,
     depth: int,
+    verified_tests: set[str] | list[str] | None = None,
+    verified_contracts: set[str] | list[str] | None = None,
+    exceptions: list[dict[str, Any]] | None = None,
+    root: Path | None = None,
 ) -> Impact:
+    config_affected = configuration_impact(root, changed) if root else []
+    all_changed = list(dict.fromkeys(list(changed) + config_affected))
     changed_src = [
-        _norm(name) for name in changed if is_source(name) and not is_test(name)
+        _norm(name) for name in all_changed if is_source(name) and not is_test(name)
     ]
-    changed_set = set(changed_src) | {
-        _norm(name) for name in changed if is_source(name)
-    }
     upstream: dict[str, list[str]] = {}
     downstream: dict[str, list[str]] = {}
     broken: dict[str, list[str]] = {}
     tests: dict[str, list[str]] = {}
     unvalidated: list[tuple[str, str]] = []
     untested: list[str] = []
+    symbols: dict[str, list[str]] = {}
+    callers: dict[str, list[str]] = {}
+    inheritance: dict[str, list[str]] = {}
+    confidence: dict[str, str] = {}
 
     for name in changed_src:
         up = _walk(graph.imports, name, depth)
-        down = _walk(graph.imported_by, name, depth)
+        down = set(_walk(graph.imported_by, name, depth))
+
+        name_symbols = graph.symbols.get(name, set())
+        if name_symbols:
+            for other in graph.files:
+                if other == name:
+                    continue
+                if graph.callers.get(other, set()) & name_symbols:
+                    down.add(other)
+                for inher in graph.inheritance.get(other, set()):
+                    if ":" in inher:
+                        _c, base_c = inher.split(":", 1)
+                        if base_c in name_symbols:
+                            down.add(other)
+
         upstream[name] = sorted(up)
         downstream[name] = sorted(down)
+        symbols[name] = sorted(name_symbols)
+        callers[name] = sorted(graph.callers.get(name, set()))
+        inheritance[name] = sorted(graph.inheritance.get(name, set()))
+
         if graph.broken.get(name):
             broken[name] = list(graph.broken[name])
+            confidence[name] = "unresolved"
+        elif not down:
+            confidence[name] = "high"
+        else:
+            confidence[name] = "high" if covering_tests(graph, name) else "medium"
+
         covers = covering_tests(graph, name)
         tests[name] = sorted(covers)
         if not covers:
             untested.append(name)
+
         for consumer in down:
             if is_test(consumer):
                 continue
-            if consumer in changed_set:
-                continue
-            if covers or covering_tests(graph, consumer):
-                continue
-            unvalidated.append((name, consumer))
+            is_valid = False
+            if verified_tests is not None:
+                vt = set(verified_tests)
+                consumer_stem = Path(consumer).stem
+                has_test = (
+                    any(t in vt for t in covering_tests(graph, consumer))
+                    or any(t in vt for t in covers)
+                    or any(consumer_stem in t for t in vt)
+                )
+                if has_test:
+                    is_valid = True
+            elif covers or covering_tests(graph, consumer):
+                is_valid = True
+
+            if verified_contracts and (
+                consumer in verified_contracts
+                or any(consumer in str(c) for c in verified_contracts)
+            ):
+                is_valid = True
+            if exceptions and any(e.get("path") == consumer for e in exceptions):
+                is_valid = True
+
+            if not is_valid:
+                unvalidated.append((name, consumer))
 
     return Impact(
         changed=changed_src,
@@ -162,6 +418,11 @@ def analyze(
         tests=tests,
         unvalidated_downstream=unvalidated,
         untested_changes=untested,
+        symbols=symbols,
+        callers=callers,
+        inheritance=inheritance,
+        confidence=confidence,
+        config_affected=config_affected,
     )
 
 

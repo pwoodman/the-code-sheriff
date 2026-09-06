@@ -36,20 +36,39 @@ def collect_diff(root: Path, base: str | None, limit: int) -> str:
 
 
 def compact_diff(diff: str, limit: int) -> str:
+    packed, _reviewed, _unreviewed = partition_review_units(diff, limit)
+    return packed
+
+
+def partition_review_units(diff: str, limit: int) -> tuple[str, list[str], list[str]]:
+    """Partition diff into budgeted units, returning (packed_diff, reviewed_units, unreviewed_units)."""
     if len(diff) <= limit:
-        return diff
+        files = split_diff_files(diff)
+        return diff, [p for p, _ in files], []
     files = split_diff_files(diff)
     if not files:
-        return diff[:limit] + "\n\n[diff truncated]\n"
-    budget = max(2000, limit // max(1, len(files)))
-    parts = [f"[diff compacted: {len(files)} files, {len(diff)} bytes originally]"]
+        return diff[:limit] + "\n\n[diff truncated]\n", [], []
+    budget = max(500, limit // max(1, len(files)))
+    reviewed: list[str] = []
+    unreviewed: list[str] = []
+    header = f"[diff compacted: {len(files)} files, {len(diff)} bytes originally]"
+    parts = [header]
+    current_size = len(header)
     for path, body in files:
         chunk = body if len(body) <= budget else body[:budget] + "\n[file truncated]\n"
-        parts.append(f"+++ b/{path}\n{chunk}")
+        entry = f"+++ b/{path}\n{chunk}"
+        if not reviewed or (current_size + len(entry) <= limit):
+            parts.append(entry)
+            reviewed.append(path)
+            current_size += len(entry)
+        else:
+            unreviewed.append(path)
+    if unreviewed:
+        parts.append(
+            f"\n[diff truncated: {len(unreviewed)} unreviewed file(s) exceed budget: {', '.join(unreviewed[:3])}]\n"
+        )
     packed = "\n".join(parts)
-    if len(packed) > limit:
-        packed = packed[:limit] + "\n\n[diff truncated]\n"
-    return packed
+    return packed, reviewed, unreviewed
 
 
 def split_diff_files(diff: str) -> list[tuple[str, str]]:

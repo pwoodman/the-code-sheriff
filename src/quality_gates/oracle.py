@@ -6,12 +6,15 @@ import json
 from pathlib import Path
 from typing import Any
 
+from quality_gates.decision import evaluate
 from quality_gates.models import Finding, GateResult
 from quality_gates.report import load_results
 from quality_gates.review.contract import agent_prompt, finding_payload, verify_command
 
 
-def remaining_from_results(results: list[GateResult]) -> dict[str, Any]:
+def remaining_from_results(
+    results: list[GateResult], required: list[str] | None = None
+) -> dict[str, Any]:
     blocking: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
     for result in results:
@@ -22,7 +25,14 @@ def remaining_from_results(results: list[GateResult]) -> dict[str, Any]:
                 blocking.append(row)
             elif item.severity in {"error", "warning"}:
                 warnings.append(row)
-    green = not blocking
+    decision = evaluate(results, required or [item.name for item in results])
+    for item in decision.blocking:
+        name, state = item.split(": ", 1)
+        if not any(row.get("gate") == name for row in blocking):
+            blocking.append({"gate": name, "message": f"required gate {state}"})
+    for name in decision.missing:
+        blocking.append({"gate": name, "message": "required result is missing"})
+    green = decision.approved and not blocking
     return {
         "green": green,
         "blocking": blocking,
@@ -31,6 +41,7 @@ def remaining_from_results(results: list[GateResult]) -> dict[str, Any]:
             {"name": item.name, "status": item.status, "errors": item.error_count()}
             for item in results
         ],
+        "missing_required": decision.missing,
         "next": (
             "All blocking gates are green."
             if green

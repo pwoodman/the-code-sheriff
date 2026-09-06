@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 
 from quality_gates.config import QualityConfig
@@ -190,3 +191,70 @@ def detect_languages(
         "capabilities": capabilities,
         "ambiguities": sorted(ambiguities),
     }
+
+
+@dataclass(frozen=True)
+class Workspace:
+    name: str
+    path: str
+    manifest: str
+    language: str
+
+
+def discover_workspaces(root: Path) -> list[Workspace]:
+    """Discover root and nested packages / workspace boundaries."""
+    workspaces: list[Workspace] = []
+    manifest_types = [
+        ("package.json", "javascript"),
+        ("pyproject.toml", "python"),
+        ("Cargo.toml", "rust"),
+        ("go.mod", "go"),
+    ]
+    for manifest, lang in manifest_types:
+        if (root / manifest).is_file():
+            workspaces.append(
+                Workspace(name=root.name, path=".", manifest=manifest, language=lang)
+            )
+
+    try:
+        children = sorted(root.iterdir())
+    except OSError:
+        children = []
+
+    for child in children:
+        if (
+            not child.is_dir()
+            or child.name in ALWAYS_SKIP_DIRS
+            or child.name.startswith(".")
+        ):
+            continue
+        rel = child.relative_to(root).as_posix()
+        for manifest, lang in manifest_types:
+            if (child / manifest).is_file():
+                workspaces.append(
+                    Workspace(
+                        name=child.name, path=rel, manifest=manifest, language=lang
+                    )
+                )
+    return workspaces
+
+
+def filter_workspaces_for_changes(
+    workspaces: list[Workspace], changed_paths: list[str]
+) -> list[Workspace]:
+    """Isolate package changes so an edit in one package avoids unrelated package jobs."""
+    if not changed_paths:
+        return workspaces
+    matched: list[Workspace] = []
+    has_shared_change = any(
+        not any(p.startswith(ws.path + "/") for ws in workspaces if ws.path != ".")
+        for p in changed_paths
+    )
+    for ws in workspaces:
+        if ws.path == ".":
+            if has_shared_change:
+                matched.append(ws)
+            continue
+        if any(p == ws.path or p.startswith(ws.path + "/") for p in changed_paths):
+            matched.append(ws)
+    return matched or workspaces

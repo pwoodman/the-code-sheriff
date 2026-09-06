@@ -9,11 +9,16 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from quality_gates import GATES, __version__
-from quality_gates.ci_plan import select_gates, unknown_gates
+from quality_gates.change_manifest import discover_changes
+from quality_gates.ci_plan import select_change_gates, select_gates, unknown_gates
 from quality_gates.config import QualityConfig, is_pr_event, load_config
-from quality_gates.detect import detect_languages, git_changed_files
+from quality_gates.decision import evaluate
+from quality_gates.detect import detect_languages
+from quality_gates.evidence import attach_evidence
+from quality_gates.gates.advanced import run_advanced
 from quality_gates.gates.audit import run_audit
 from quality_gates.gates.compile import run_compile
+from quality_gates.gates.contract import run_contract
 from quality_gates.gates.coverage import run_coverage
 from quality_gates.gates.dry import run_dry
 from quality_gates.gates.format import run_format
@@ -21,6 +26,7 @@ from quality_gates.gates.impact import run_impact
 from quality_gates.gates.lint import run_lint
 from quality_gates.gates.review import run_review
 from quality_gates.gates.security import run_security
+from quality_gates.gates.test import run_tests
 from quality_gates.gates.ui import run_ui
 from quality_gates.gates.version import apply_bump, run_version
 from quality_gates.installers import (
@@ -34,6 +40,7 @@ from quality_gates.installers import (
 )
 from quality_gates.models import GateResult
 from quality_gates.paths import cache_dir, project_root
+from quality_gates.planner import build_plan, render_plan, write_plan
 from quality_gates.policy import apply_policy, maybe_comment_pr, write_baseline
 from quality_gates.registry import canonical_name
 from quality_gates.report import (
@@ -258,6 +265,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     run_p.add_argument(
         "--changed", action="store_true", help="only files changed vs --base"
     )
+    run_p.add_argument(
+        "--plan", action="store_true", help="show selected execution without running it"
+    )
     run_p.add_argument("--language", action="append", dest="languages")
     run_p.add_argument(
         "--full",
@@ -421,16 +431,39 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         if not args.only and not args.full:
             print(f"ci.mode={config.ci_mode} · gates: {', '.join(gates)}")
-        changed = git_changed_files(root, args.base) if args.changed else None
+        manifest = discover_changes(root, args.base) if args.changed else None
+        if manifest is not None and manifest.state == "unknown":
+            print(f"change discovery failed: {manifest.reason}", file=sys.stderr)
+            return 2
+        if manifest is not None:
+            manifest.write(root)
+            gates = select_change_gates(gates, manifest.paths)
+        changed = (
+            [
+                (root / path).resolve()
+                for path in manifest.paths
+                if (root / path).is_file()
+            ]
+            if manifest is not None
+            else None
+        )
+        plan = build_plan(gates, config, manifest)
+        write_plan(root, plan)
+        if args.plan:
+            if args.json:
+                print(json.dumps({"plan": [item.to_dict() for item in plan]}, indent=2))
+            else:
+                print(render_plan(plan))
+            return 0
         languages = _resolve_languages(root, config, args.languages, changed)
         results = []
         prior = []
         for gate in gates:
             started = time.perf_counter()
             if gate == "format":
-                item = run_format(root, config, languages, check=True)
+                item = run_format(root, config, languages, check=True, scope=changed)
             elif gate == "lint":
-                item = run_lint(root, config, languages)
+                item = run_lint(root, config, languages, scope=changed)
             elif gate == "dry":
                 item = run_dry(root, config, languages)
             elif gate == "security":
@@ -454,12 +487,21 @@ def main(argv: Sequence[str] | None = None) -> int:
 
                     security = GR(name="security", status="pass")
                 item = run_compile(root, config, languages, security=security)
+            elif gate == "contract":
+                item = run_contract(root, config, base=args.base)
             elif gate == "version":
-                item = run_version(root, config, base=args.base)
+                item = run_version(root, config, base=args.base, manifest=manifest)
             elif gate == "impact":
                 item = run_impact(root, config, base=args.base)
+            elif gate == "test":
+                item = run_tests(root, config)
             elif gate == "coverage":
-                item = run_coverage(root, config)
+                item = run_coverage(
+                    root,
+                    config,
+                    manifest=manifest,
+                    selection=manifest.paths if manifest else None,
+                )
             elif gate == "audit":
                 item = run_audit(root, config)
             elif gate == "ui":
@@ -471,6 +513,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     config,
                     base=args.base,
                     compile_result=compile_prior,
+                    manifest=manifest,
                 )
             elif gate == "review":
                 post = args.post_review or (
@@ -483,13 +526,33 @@ def main(argv: Sequence[str] | None = None) -> int:
                     base=args.base,
                     post=post,
                     prior=prior,
+                    manifest=manifest,
+                )
+            elif gate in {
+                "migration",
+                "authorization",
+                "resilience",
+                "mutation",
+                "performance",
+            }:
+                item = run_advanced(
+                    root, config, gate, manifest.paths if manifest else []
                 )
             else:
                 continue
             item.duration_ms = max(0, int((time.perf_counter() - started) * 1000))
+            plan_item = next((entry for entry in plan if entry.name == gate), None)
+            selection = list(plan_item.inputs) if plan_item else []
+            attach_evidence(item, root, config, manifest=manifest, selection=selection)
             results.append(item)
             prior.append(item)
-        return _emit(results, root, config, args.json, config.fail_on)
+        return _emit(
+            results,
+            root,
+            config,
+            args.json,
+            [item.name for item in plan if item.required],
+        )
     parser.error("unknown command")
     return 2
 
@@ -588,6 +651,9 @@ def _emit(
     fail_on: list[str],
 ) -> int:
     results, policy = apply_policy(results, root, config)
+    for result in results:
+        if not result.evidence:
+            attach_evidence(result, root, config)
     maybe_comment_pr(results, root, config, policy)
     emit_annotations(results)
     digest = build_digest(
@@ -598,14 +664,10 @@ def _emit(
         print(json.dumps(digest.to_dict(), indent=2))
     else:
         print(render_console(digest))
-    failed = [
-        item
-        for item in results
-        if item.status == "fail"
-        and (item.name in fail_on or (item.name == "review" and "review" in fail_on))
-    ]
-    # skip does not fail
-    return 1 if failed else 0
+    # ``fail_on`` is the selected run's required contract for one-command and
+    # CI execution. The evaluator also rejects failed scanners without findings.
+    required = [item.name for item in results if item.name in fail_on]
+    return 0 if evaluate(results, required).approved else 1
 
 
 def _print_report(root: Path, *, fmt: str, as_json: bool) -> int:

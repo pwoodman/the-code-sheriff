@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from quality_gates.authorization import check_authorization
 from quality_gates.config import QualityConfig
 from quality_gates.review.context import load_report_json
-from quality_gates.tools import run
+from quality_gates.tools import run, which
 
 TEST_HINT = ("test", "spec", "__tests__")
 
@@ -18,6 +19,11 @@ def collect_test_evidence(
 ) -> str:
     if not config.review_verify_tests:
         return ""
+    auth_reason = check_authorization(
+        config, "review test execution", permission="execution"
+    )
+    if auth_reason:
+        return f"### test evidence\n\n- blocked: {auth_reason}"
     specs = _candidate_tests(root, paths)
     if not specs:
         return ""
@@ -58,7 +64,10 @@ def _run_one(root: Path, spec: str) -> str:
     if posix.endswith(".py"):
         argv = ["pytest", posix, "-q", "--tb=line"]
     elif posix.endswith((".ts", ".js", ".tsx", ".jsx")):
-        argv = ["npx", "--yes", "--", "vitest", "run", posix]
+        vitest = which("vitest", project=root)
+        if not vitest:
+            return f"- skipped {posix} (resolved local vitest unavailable)"
+        argv = [vitest, "run", posix]
     else:
         return f"- skipped {posix} (no runner)"
     result = run(argv, cwd=root, timeout=45)

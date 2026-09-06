@@ -41,6 +41,49 @@ def apply_and_check(
     }
 
 
+def apply_and_verify(
+    root: Path, finding: Finding, *, attempts: int = 1
+) -> dict[str, object]:
+    """Apply one authorized patch and require newly-run verification evidence.
+
+    The fixed state is deliberately unavailable to callers that merely observe a
+    missing finding in an old report.  Retries are bounded so an unstable patch
+    loop has a visible unresolved outcome.
+    """
+    attempts = max(1, min(attempts, 3))
+    status = apply_finding(root, finding)
+    if not status.startswith("applied"):
+        return {"status": status, "resolved": False, "attempts": 0, "next": status}
+    from quality_gates.cli import main
+    from quality_gates.report import load_results
+    from quality_gates.review.ledger import mark_verified_fixed
+
+    gate = finding.gate if finding.gate else "review"
+    for attempt in range(1, attempts + 1):
+        code = main(["--root", str(root), "run", "--changed", "--only", gate])
+        results, _policy = load_results(root / ".quality-reports")
+        remaining = {
+            fingerprint(item, bucket=1)
+            for result in results
+            for item in result.findings
+            if item.severity == "error"
+        }
+        if code == 0 and fingerprint(finding, bucket=1) not in remaining:
+            mark_verified_fixed(root, finding)
+            return {
+                "status": status,
+                "resolved": True,
+                "attempts": attempt,
+                "verify": f"quality run --changed --only {gate}",
+            }
+    return {
+        "status": status,
+        "resolved": False,
+        "attempts": attempts,
+        "next": "fresh verification did not clear the finding; patch remains unresolved",
+    }
+
+
 def _looks_unified(patch: str) -> bool:
     return patch.startswith(("diff ", "--- ", "@@")) or "\n@@" in patch
 
@@ -89,51 +132,68 @@ def _apply_line_replacement(root: Path, finding: Finding, patch: str) -> str:
 
 
 def _apply_unified(root: Path, patch: str) -> str:
+    parsed = _parse_unified(patch)
+    if not parsed:
+        return "unified diff did not match"
+
+    # Validate every hunk against a single in-memory snapshot before changing
+    # disk. A stale second file must never leave a successful first file behind.
+    updated: dict[Path, str] = {}
+    for rel, hunks in parsed.items():
+        path = safe_repo_path(root, rel)
+        if path is None or not path.is_file():
+            return f"unified diff rejected: invalid path {rel}"
+        try:
+            text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+        except OSError:
+            return f"unified diff rejected: could not read {rel}"
+        for old, new in hunks:
+            old_block = "\n".join(old)
+            new_block = "\n".join(new)
+            if not old_block:
+                return "unified diff rejected: insertion-only hunks need context"
+            occurrences = text.count(old_block)
+            if occurrences != 1:
+                reason = "stale" if occurrences == 0 else "ambiguous"
+                return f"unified diff rejected: {reason} hunk in {rel}"
+            text = text.replace(old_block, new_block, 1)
+        updated[path] = text
+
+    try:
+        for path, text in updated.items():
+            path.write_text(text, encoding="utf-8")
+    except OSError:
+        # All inputs were validated. A filesystem write error is still explicit;
+        # normal local filesystems make this loop atomic enough for the target.
+        return "unified diff rejected: could not write validated patch"
+    return f"applied unified diff ({len(updated)} file(s))"
+
+
+def _parse_unified(patch: str) -> dict[str, list[tuple[list[str], list[str]]]]:
     current: str | None = None
     old: list[str] = []
     new: list[str] = []
-    applied = 0
+    parsed: dict[str, list[tuple[list[str], list[str]]]] = {}
+
+    def finish() -> None:
+        if current and (old or new):
+            parsed.setdefault(current, []).append((list(old), list(new)))
+
     for raw in patch.splitlines():
         if raw.startswith("+++ b/"):
-            if current and (old or new):
-                applied += _write_hunk(root, current, old, new)
+            finish()
             current = raw[6:].strip()
             old, new = [], []
-            continue
-        if raw.startswith("@@"):
-            if current and (old or new):
-                applied += _write_hunk(root, current, old, new)
+        elif raw.startswith("@@"):
+            finish()
             old, new = [], []
-            continue
-        if current is None:
-            continue
-        if raw.startswith("+") and not raw.startswith("+++"):
-            new.append(raw[1:])
-        elif raw.startswith("-") and not raw.startswith("---"):
-            old.append(raw[1:])
-        elif raw.startswith(" "):
-            old.append(raw[1:])
-            new.append(raw[1:])
-    if current and (old or new):
-        applied += _write_hunk(root, current, old, new)
-    if applied:
-        return f"applied unified diff ({applied} file(s))"
-    return "unified diff did not match"
-
-
-def _write_hunk(root: Path, rel: str, old: list[str], new: list[str]) -> int:
-    path = safe_repo_path(root, rel)
-    if path is None:
-        return 0
-    text = path.read_text(encoding="utf-8")
-    old_block = "\n".join(old)
-    new_block = "\n".join(new)
-    if old_block and old_block not in text.replace("\r\n", "\n"):
-        return 0
-    updated = text.replace("\r\n", "\n")
-    if old_block:
-        updated = updated.replace(old_block, new_block, 1)
-    elif new_block and new_block not in updated:
-        updated = new_block + "\n" + updated
-    path.write_text(updated, encoding="utf-8")
-    return 1
+        elif current is not None:
+            if raw.startswith("+") and not raw.startswith("+++"):
+                new.append(raw[1:])
+            elif raw.startswith("-") and not raw.startswith("---"):
+                old.append(raw[1:])
+            elif raw.startswith(" "):
+                old.append(raw[1:])
+                new.append(raw[1:])
+    finish()
+    return parsed
