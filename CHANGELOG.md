@@ -1,5 +1,14 @@
 # Changelog
 
+
+## 1.9.0
+
+- Delivery of the 50-task quality platform roadmap across 5 phases.
+- Trust foundations: explicit execution states, unified decision evaluation, independent test gating, attributable coverage binding, and protected PR merge policies.
+- Execution planning: immutable change manifest, dependency-aware task DAG, scoped adapter execution, incremental persistent impact graph, and workspace boundary support.
+- Verification breadth: breaking schema contract checks, risk-triggered verification (migrations, authorization, resilience, mutation, performance), and new project smoke test onboarding.
+- AI Review & Universal Integrations: specialist review routing, diff-context validation, review budget tracking, persistent finding ledger, transactional patch verification, and published capability support matrix.
+
 ## 1.8.0
 
 - Findings now carry a full resolution contract (reason, snippet, suggestion,

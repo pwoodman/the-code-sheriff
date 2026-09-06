@@ -9,20 +9,14 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from quality_gates import GATES, __version__
-from quality_gates.ci_plan import select_gates, unknown_gates
+from quality_gates import gates as gate_runners
+from quality_gates.change_manifest import discover_changes
+from quality_gates.ci_plan import select_change_gates, select_gates, unknown_gates
 from quality_gates.config import QualityConfig, is_pr_event, load_config
-from quality_gates.detect import detect_languages, git_changed_files
-from quality_gates.gates.audit import run_audit
-from quality_gates.gates.compile import run_compile
-from quality_gates.gates.coverage import run_coverage
-from quality_gates.gates.dry import run_dry
-from quality_gates.gates.format import run_format
-from quality_gates.gates.impact import run_impact
-from quality_gates.gates.lint import run_lint
-from quality_gates.gates.review import run_review
-from quality_gates.gates.security import run_security
-from quality_gates.gates.ui import run_ui
-from quality_gates.gates.version import apply_bump, run_version
+from quality_gates.decision import evaluate
+from quality_gates.detect import detect_languages
+from quality_gates.evidence import attach_evidence
+from quality_gates.gates.version import apply_bump
 from quality_gates.installers import (
     ensure_checkstyle,
     ensure_gitleaks,
@@ -34,6 +28,7 @@ from quality_gates.installers import (
 )
 from quality_gates.models import GateResult
 from quality_gates.paths import cache_dir, project_root
+from quality_gates.planner import build_plan, render_plan, write_plan
 from quality_gates.policy import apply_policy, maybe_comment_pr, write_baseline
 from quality_gates.registry import canonical_name
 from quality_gates.report import (
@@ -258,6 +253,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     run_p.add_argument(
         "--changed", action="store_true", help="only files changed vs --base"
     )
+    run_p.add_argument(
+        "--plan", action="store_true", help="show selected execution without running it"
+    )
     run_p.add_argument("--language", action="append", dest="languages")
     run_p.add_argument(
         "--full",
@@ -350,23 +348,25 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     languages = _resolve_languages(root, config, getattr(args, "languages", None), None)
     if args.command == "format":
-        result = run_format(root, config, languages, check=not args.write)
+        result = gate_runners.run_format(root, config, languages, check=not args.write)
         return _emit([result], root, config, args.json, ["format"])
     if args.command == "lint":
-        result = run_lint(root, config, languages)
+        result = gate_runners.run_lint(root, config, languages)
         return _emit([result], root, config, args.json, ["lint"])
     if args.command == "dry":
-        result = run_dry(root, config, languages)
+        result = gate_runners.run_dry(root, config, languages)
         return _emit([result], root, config, args.json, ["dry"])
     if args.command == "security":
-        result = run_security(root, config, languages)
+        result = gate_runners.run_security(root, config, languages)
         return _emit([result], root, config, args.json, ["security"])
     if args.command == "compile":
         security = None
         if not args.force and config.compile_require_security:
-            security = run_security(root, config, languages)
+            security = gate_runners.run_security(root, config, languages)
             results = [security]
-            compile_result = run_compile(root, config, languages, security=security)
+            compile_result = gate_runners.run_compile(
+                root, config, languages, security=security
+            )
             results.append(compile_result)
             return _emit(results, root, config, args.json, ["security", "compile"])
         from quality_gates.models import GateResult as GR
@@ -374,16 +374,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         fake = GR(
             name="security", status="pass", notes=["--force or require_security=false"]
         )
-        result = run_compile(root, config, languages, security=fake)
+        result = gate_runners.run_compile(root, config, languages, security=fake)
         return _emit([result], root, config, args.json, ["compile"])
     if args.command == "version":
-        result = run_version(root, config, base=args.base)
+        result = gate_runners.run_version(root, config, base=args.base)
         return _emit([result], root, config, args.json, ["version"])
     if args.command == "review":
-        result = run_review(root, config, languages, base=args.base, post=args.post)
+        result = gate_runners.run_review(
+            root, config, languages, base=args.base, post=args.post
+        )
         return _emit([result], root, config, args.json, ["review"])
     if args.command == "ui":
-        result = run_ui(
+        result = gate_runners.run_ui(
             root,
             config,
             base=args.base,
@@ -392,13 +394,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return _emit([result], root, config, args.json, ["ui"])
     if args.command == "impact":
-        result = run_impact(root, config, base=args.base)
+        result = gate_runners.run_impact(root, config, base=args.base)
         return _emit([result], root, config, args.json, ["impact"])
     if args.command == "coverage":
-        result = run_coverage(root, config)
+        result = gate_runners.run_coverage(root, config)
         return _emit([result], root, config, args.json, ["coverage"])
     if args.command == "audit":
-        result = run_audit(root, config)
+        result = gate_runners.run_audit(root, config)
         return _emit([result], root, config, args.json, ["audit"])
     if args.command == "run":
         only = _csv(args.only) or None
@@ -421,20 +423,45 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         if not args.only and not args.full:
             print(f"ci.mode={config.ci_mode} · gates: {', '.join(gates)}")
-        changed = git_changed_files(root, args.base) if args.changed else None
+        manifest = discover_changes(root, args.base) if args.changed else None
+        if manifest is not None and manifest.state == "unknown":
+            print(f"change discovery failed: {manifest.reason}", file=sys.stderr)
+            return 2
+        if manifest is not None:
+            manifest.write(root)
+            gates = select_change_gates(gates, manifest.paths)
+        changed = (
+            [
+                (root / path).resolve()
+                for path in manifest.paths
+                if (root / path).is_file()
+            ]
+            if manifest is not None
+            else None
+        )
+        plan = build_plan(gates, config, manifest)
+        write_plan(root, plan)
+        if args.plan:
+            if args.json:
+                print(json.dumps({"plan": [item.to_dict() for item in plan]}, indent=2))
+            else:
+                print(render_plan(plan))
+            return 0
         languages = _resolve_languages(root, config, args.languages, changed)
         results = []
         prior = []
         for gate in gates:
             started = time.perf_counter()
             if gate == "format":
-                item = run_format(root, config, languages, check=True)
+                item = gate_runners.run_format(
+                    root, config, languages, check=True, scope=changed
+                )
             elif gate == "lint":
-                item = run_lint(root, config, languages)
+                item = gate_runners.run_lint(root, config, languages, scope=changed)
             elif gate == "dry":
-                item = run_dry(root, config, languages)
+                item = gate_runners.run_dry(root, config, languages)
             elif gate == "security":
-                item = run_security(root, config, languages)
+                item = gate_runners.run_security(root, config, languages)
             elif gate == "compile":
                 security = next((row for row in prior if row.name == "security"), None)
                 if (
@@ -442,7 +469,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     and config.compile_require_security
                     and "security" not in gates
                 ):
-                    security = run_security(root, config, languages)
+                    security = gate_runners.run_security(root, config, languages)
                     security.duration_ms = max(
                         0, int((time.perf_counter() - started) * 1000)
                     )
@@ -453,43 +480,77 @@ def main(argv: Sequence[str] | None = None) -> int:
                     from quality_gates.models import GateResult as GR
 
                     security = GR(name="security", status="pass")
-                item = run_compile(root, config, languages, security=security)
+                item = gate_runners.run_compile(
+                    root, config, languages, security=security
+                )
+            elif gate == "contract":
+                item = gate_runners.run_contract(root, config, base=args.base)
             elif gate == "version":
-                item = run_version(root, config, base=args.base)
+                item = gate_runners.run_version(
+                    root, config, base=args.base, manifest=manifest
+                )
             elif gate == "impact":
-                item = run_impact(root, config, base=args.base)
+                item = gate_runners.run_impact(root, config, base=args.base)
+            elif gate == "test":
+                item = gate_runners.run_tests(root, config)
             elif gate == "coverage":
-                item = run_coverage(root, config)
+                item = gate_runners.run_coverage(
+                    root,
+                    config,
+                    manifest=manifest,
+                    selection=manifest.paths if manifest else None,
+                )
             elif gate == "audit":
-                item = run_audit(root, config)
+                item = gate_runners.run_audit(root, config)
             elif gate == "ui":
                 compile_prior = next(
                     (row for row in prior if row.name == "compile"), None
                 )
-                item = run_ui(
+                item = gate_runners.run_ui(
                     root,
                     config,
                     base=args.base,
                     compile_result=compile_prior,
+                    manifest=manifest,
                 )
             elif gate == "review":
                 post = args.post_review or (
                     is_pr_event() and config.ai_review != "never"
                 )
-                item = run_review(
+                item = gate_runners.run_review(
                     root,
                     config,
                     languages,
                     base=args.base,
                     post=post,
                     prior=prior,
+                    manifest=manifest,
+                )
+            elif gate in {
+                "migration",
+                "authorization",
+                "resilience",
+                "mutation",
+                "performance",
+            }:
+                item = gate_runners.run_advanced(
+                    root, config, gate, manifest.paths if manifest else []
                 )
             else:
                 continue
             item.duration_ms = max(0, int((time.perf_counter() - started) * 1000))
+            plan_item = next((entry for entry in plan if entry.name == gate), None)
+            selection = list(plan_item.inputs) if plan_item else []
+            attach_evidence(item, root, config, manifest=manifest, selection=selection)
             results.append(item)
             prior.append(item)
-        return _emit(results, root, config, args.json, config.fail_on)
+        return _emit(
+            results,
+            root,
+            config,
+            args.json,
+            [item.name for item in plan if item.required],
+        )
     parser.error("unknown command")
     return 2
 
@@ -588,6 +649,9 @@ def _emit(
     fail_on: list[str],
 ) -> int:
     results, policy = apply_policy(results, root, config)
+    for result in results:
+        if not result.evidence:
+            attach_evidence(result, root, config)
     maybe_comment_pr(results, root, config, policy)
     emit_annotations(results)
     digest = build_digest(
@@ -598,14 +662,10 @@ def _emit(
         print(json.dumps(digest.to_dict(), indent=2))
     else:
         print(render_console(digest))
-    failed = [
-        item
-        for item in results
-        if item.status == "fail"
-        and (item.name in fail_on or (item.name == "review" and "review" in fail_on))
-    ]
-    # skip does not fail
-    return 1 if failed else 0
+    # ``fail_on`` is the selected run's required contract for one-command and
+    # CI execution. The evaluator also rejects failed scanners without findings.
+    required = [item.name for item in results if item.name in fail_on]
+    return 0 if evaluate(results, required).approved else 1
 
 
 def _print_report(root: Path, *, fmt: str, as_json: bool) -> int:
@@ -795,7 +855,10 @@ def _baseline(root: Path, config: QualityConfig, *, ratchet: bool) -> int:
         print(
             "no .quality-reports/quality-report.json — running coverage + audit first"
         )
-        results = [run_coverage(root, config), run_audit(root, config)]
+        results = [
+            gate_runners.run_coverage(root, config),
+            gate_runners.run_audit(root, config),
+        ]
         write_reports(results, root / ".quality-reports")
     path = write_baseline(root, config, ratchet=ratchet)
     print(f"wrote {path.relative_to(root)}" + (" (ratchet)" if ratchet else ""))

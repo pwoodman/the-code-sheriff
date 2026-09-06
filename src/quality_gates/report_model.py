@@ -17,6 +17,8 @@ SUPPORTED_STATUSES = (
     "not-applicable",
     "unsupported",
     "tool-error",
+    "blocked",
+    "cancelled",
 )
 
 
@@ -84,7 +86,12 @@ class QualityDigest:
     @property
     def failed(self) -> list[str]:
         return [
-            item.name for item in self.results if item.status in {"fail", "tool-error"}
+            item.name
+            for item in self.results
+            if item.status
+            in {"fail", "tool-error", "blocked", "cancelled", "unsupported"}
+            or item.exit_state
+            in {"failed", "unsupported", "blocked", "errored", "cancelled"}
         ]
 
     @property

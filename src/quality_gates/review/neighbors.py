@@ -7,7 +7,7 @@ from pathlib import Path
 
 from quality_gates.config import QualityConfig
 from quality_gates.detect import iter_project_files
-from quality_gates.review.context import read_repo_file, safe_repo_path
+from quality_gates.review.context import new_side_lines, read_repo_file, safe_repo_path
 
 FUNC_START = re.compile(
     r"^(\s*)(def |async def |fn |func |function |class |pub fn |fn\s+"
@@ -95,27 +95,8 @@ def function_windows(
 
 
 def _changed_lines(diff: str) -> list[tuple[str, int]]:
-    current: str | None = None
-    new_line = 0
-    hits: list[tuple[str, int]] = []
-    for raw in diff.splitlines():
-        if raw.startswith("+++ b/"):
-            current = raw[6:].strip()
-            if current == "/dev/null":
-                current = None
-            continue
-        if raw.startswith("@@"):
-            match = re.search(r"\+(\d+)", raw)
-            new_line = int(match.group(1)) if match else 0
-            continue
-        if current is None:
-            continue
-        if raw.startswith("+") and not raw.startswith("+++"):
-            hits.append((current, new_line))
-            new_line += 1
-        elif raw.startswith(" "):
-            new_line += 1
-    return hits
+    lines = new_side_lines(diff)
+    return [(path, ln) for path, lns in lines.items() for ln in sorted(lns)]
 
 
 def _window_at(root: Path, rel: str, line_no: int) -> str | None:

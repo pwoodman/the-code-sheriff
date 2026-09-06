@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from quality_gates import GATES
+from quality_gates.change_manifest import ChangeManifest
 from quality_gates.config import QualityConfig, load_config
 from quality_gates.gates import run_impact
 from quality_gates.impact_graph import (
@@ -31,10 +32,8 @@ def _py_pkg(root: Path, *, with_test: bool = True) -> None:
 
 def test_impact_gate_skips_without_changes(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "quality_gates.gates.impact.git_changed_names", lambda *_a, **_k: None
-    )
-    monkeypatch.setattr(
-        "quality_gates.gates.impact.git_base_ref", lambda *_a, **_k: None
+        "quality_gates.gates.impact.discover_changes",
+        lambda *_a, **_k: ChangeManifest("empty", None, None, None, "digest", ()),
     )
     result = run_impact(tmp_path, QualityConfig())
     assert result.status == "skip"
@@ -63,6 +62,19 @@ def test_downstream_and_upstream_walk(tmp_path: Path) -> None:
     assert "pkg/core.py" in svc.upstream["pkg/service.py"]
 
 
+def test_impact_graph_persists_and_invalidates_changed_source(tmp_path: Path) -> None:
+    _py_pkg(tmp_path)
+    first = build_graph(tmp_path, QualityConfig())
+    cache = tmp_path / ".quality-reports" / "impact-graph.json"
+    assert cache.is_file()
+    (tmp_path / "pkg" / "service.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    second = build_graph(tmp_path, QualityConfig())
+
+    assert "pkg/core.py" in first.imports["pkg/service.py"]
+    assert "pkg/core.py" not in second.imports["pkg/service.py"]
+
+
 def test_unvalidated_downstream_without_tests(tmp_path: Path) -> None:
     _py_pkg(tmp_path, with_test=False)
     graph = build_graph(tmp_path, QualityConfig())
@@ -72,15 +84,29 @@ def test_unvalidated_downstream_without_tests(tmp_path: Path) -> None:
     assert "pkg/api.py" in consumers
 
 
-def test_updated_consumer_counts_as_validated(tmp_path: Path) -> None:
+def test_consumer_validation_requires_execution_evidence(tmp_path: Path) -> None:
     _py_pkg(tmp_path, with_test=False)
     graph = build_graph(tmp_path, QualityConfig())
+    # Editing a consumer alone does not count as validation
     impact = analyze(
         graph,
         ["pkg/core.py", "pkg/service.py", "pkg/api.py"],
         depth=4,
     )
-    assert impact.unvalidated_downstream == []
+    assert len(impact.unvalidated_downstream) > 0
+
+    # Fresh verified test or contract evidence validates consumers
+    verified = analyze(
+        graph,
+        ["pkg/core.py", "pkg/service.py", "pkg/api.py"],
+        depth=4,
+        verified_tests={
+            "tests/test_core.py",
+            "tests/test_service.py",
+            "tests/test_api.py",
+        },
+    )
+    assert verified.unvalidated_downstream == []
 
 
 def test_broken_local_upstream(tmp_path: Path) -> None:
@@ -188,3 +214,53 @@ test('login', async ({ page }) => {
     }
     assert "checkout.spec.ts" in names
     assert "login.spec.ts" not in names
+
+
+def test_deleted_module_triggers_consumer_checks(tmp_path: Path) -> None:
+    _py_pkg(tmp_path)
+    # First build to populate persistent graph
+    first = build_graph(tmp_path, QualityConfig())
+    assert "pkg/core.py" in first.imports["pkg/service.py"]
+
+    # Delete pkg/core.py
+    (tmp_path / "pkg" / "core.py").unlink()
+
+    # Rebuild graph incrementally
+    second = build_graph(tmp_path, QualityConfig())
+    # Deleted module was imported by pkg/service.py and pkg/api.py
+    assert "pkg/service.py" in second.imported_by.get("pkg/core.py", set())
+    impact = analyze(second, ["pkg/core.py"], depth=4)
+    assert "pkg/service.py" in impact.downstream.get("pkg/core.py", [])
+
+
+def test_impact_extends_to_symbols_callers_and_inheritance(tmp_path: Path) -> None:
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "base.py").write_text(
+        "class Model:\n    pass\n\ndef helper():\n    return 42\n", encoding="utf-8"
+    )
+    (pkg / "child.py").write_text(
+        "from .base import Model\nclass User(Model):\n    pass\n", encoding="utf-8"
+    )
+    (pkg / "caller.py").write_text(
+        "from .base import helper\ndef run():\n    return helper()\n", encoding="utf-8"
+    )
+    graph = build_graph(tmp_path, QualityConfig())
+    assert "Model" in graph.symbols["pkg/base.py"]
+    assert "helper" in graph.symbols["pkg/base.py"]
+    assert "helper" in graph.callers["pkg/caller.py"]
+
+    impact = analyze(graph, ["pkg/base.py"], depth=2)
+    assert "pkg/child.py" in impact.downstream["pkg/base.py"]
+    assert "pkg/caller.py" in impact.downstream["pkg/base.py"]
+
+
+def test_configuration_impact_maps_to_affected_targets(tmp_path: Path) -> None:
+    _py_pkg(tmp_path)
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname="demo"\n', encoding="utf-8"
+    )
+    graph = build_graph(tmp_path, QualityConfig())
+    impact = analyze(graph, ["pyproject.toml"], depth=2, root=tmp_path)
+    assert any("pkg/core.py" in t for t in impact.config_affected)

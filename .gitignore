@@ -45,6 +45,9 @@ obj/
 # zvec-grep local index
 .zvec-grep/
 
+# Graphify output
+graphify-out/
+
 # Editors / OS
 .idea/
 .vscode/

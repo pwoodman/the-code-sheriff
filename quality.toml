@@ -7,7 +7,7 @@ languages = ["auto"]
 
 # Gates that fail CI when they report errors. review never fails the
 # build unless you add it here — it posts findings as a PR comment.
-fail_on = ["format", "lint", "dry", "security", "compile", "impact", "coverage", "audit", "ui", "version"]
+fail_on = ["format", "lint", "dry", "security", "compile", "contract", "impact", "test", "coverage", "audit", "ui", "version"]
 
 # pr-only | always | never
 ai_review = "pr-only"
@@ -148,3 +148,10 @@ related_bytes = 24000
 validate = true
 inline_comments = true
 check_run = true
+
+# A workflow permission change is an authorization-sensitive change. Keep its
+# negative/permission regression suite explicit so selective runs have current
+# executable evidence rather than relying on review text alone.
+[quality.authorization]
+command = ["uv", "run", "pytest", "-q", "tests/test_security.py"]
+timeout = 600

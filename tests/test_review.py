@@ -52,6 +52,24 @@ def test_heuristic_review_flags_eval_and_missing_tests() -> None:
     assert "missing-tests" in rules
 
 
+def test_oracle_rejects_a_failed_gate_without_findings() -> None:
+    payload = remaining_from_results([GateResult(name="compile", status="fail")])
+
+    assert payload["green"] is False
+    assert payload["blocking"] == [
+        {"gate": "compile", "message": "required gate failed"}
+    ]
+
+
+def test_oracle_rejects_a_missing_required_result() -> None:
+    payload = remaining_from_results(
+        [GateResult(name="lint", status="pass")], required=["lint", "compile"]
+    )
+
+    assert payload["green"] is False
+    assert payload["missing_required"] == ["compile"]
+
+
 def test_heuristic_skips_detector_docs_and_fixtures() -> None:
     diff = """
 diff --git a/src/quality_gates/review/heuristic.py b/src/quality_gates/review/heuristic.py
@@ -315,6 +333,76 @@ def test_run_review_heuristic_writes_reports(tmp_path: Path, monkeypatch) -> Non
     assert payload["provider"] == "heuristic"
 
 
+def _patch_review_defaults(monkeypatch, diff: str = EVAL_DIFF) -> None:
+    monkeypatch.setattr(
+        "quality_gates.review.engine.collect_diff", lambda *_a, **_k: diff
+    )
+    monkeypatch.setattr(
+        "quality_gates.review.engine.resolve_client", lambda *_a, **_k: None
+    )
+    monkeypatch.setattr(
+        "quality_gates.review.engine.related_files", lambda *_a, **_k: []
+    )
+
+
+def test_configured_review_errors_block_the_gate(tmp_path: Path, monkeypatch) -> None:
+    _patch_review_defaults(monkeypatch)
+    config = QualityConfig(
+        review_provider="off",
+        review_mode="heuristic",
+        ai_review="always",
+        fail_on=["review"],
+    )
+
+    result = run_review(tmp_path, config, ["python"], base="HEAD", post=False)
+
+    assert result.status == "fail"
+    assert "configured review blocker" in result.notes[-1]
+
+
+def test_untrusted_review_does_not_load_repository_rules(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _patch_review_defaults(monkeypatch)
+    monkeypatch.setattr(
+        "quality_gates.review.engine.active_rules",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("must not load rules")),
+    )
+
+    result = run_review(
+        tmp_path,
+        QualityConfig(ai_review="always", trust="untrusted"),
+        ["python"],
+        base="HEAD",
+        post=False,
+    )
+
+    assert any("excluded" in note for note in result.notes)
+
+
+def test_truncated_review_is_partial_and_blocks_when_required(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        "quality_gates.review.engine.collect_diff",
+        lambda *_a, **_k: "+++ b/app.py\n[file truncated]\n",
+    )
+    monkeypatch.setattr(
+        "quality_gates.review.engine.related_files", lambda *_a, **_k: []
+    )
+
+    result = run_review(
+        tmp_path,
+        QualityConfig(ai_review="always", fail_on=["review"]),
+        ["python"],
+        base="HEAD",
+        post=False,
+    )
+
+    assert result.status == "fail"
+    assert any("partial" in note for note in result.notes)
+
+
 def test_agentic_loop_fulfills_need_then_submits(tmp_path: Path) -> None:
     (tmp_path / "mod.py").write_text("VALUE = 1\n", encoding="utf-8")
     client = ScriptedClient(
@@ -472,3 +560,68 @@ def test_oracle_cli_json(tmp_path: Path, capsys, monkeypatch) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert payload["green"] is False
     assert "oracle --run" in payload["next"]
+
+
+def test_partition_review_units_tracks_unreviewed_remainder() -> None:
+    from quality_gates.review.context import partition_review_units
+
+    diff = """diff --git a/a.py b/a.py
+--- a/a.py
++++ b/a.py
+@@ -1 +1 @@
++x = 1
+diff --git a/b.py b/b.py
+--- a/b.py
++++ b/b.py
+@@ -1 +1 @@
++y = 2
+"""
+    packed, reviewed, unreviewed = partition_review_units(diff, limit=60)
+    assert len(reviewed) >= 1
+    assert "a.py" in reviewed or "b.py" in reviewed
+    assert len(unreviewed) >= 1 or "[diff truncated" in packed
+
+
+def test_validate_findings_supplies_diff_context() -> None:
+    from quality_gates.models import Finding
+    from quality_gates.review.llm import validate_findings
+
+    seen_prompts: list[str] = []
+
+    class MockClient:
+        def complete(self, turns, **_kwargs):
+            seen_prompts.append(turns[-1].content)
+            return '{"action":"submit","summary":"ok","findings":[{"severity":"error","path":"app.py","line":1,"rule":"bug","message":"found"}]}'
+
+    finding = Finding(gate="review", rule="bug", path="app.py", line=1, message="found")
+    validated = validate_findings(
+        MockClient(),
+        [finding],
+        enabled=True,
+        diff="+++ b/app.py\n+bad_code = 1\n",
+    )
+    assert len(validated) == 1
+    assert "Changed diff context:" in seen_prompts[0]
+    assert "+bad_code = 1" in seen_prompts[0]
+
+
+def test_prompt_redacts_secrets_in_diff_and_related(tmp_path: Path) -> None:
+    from quality_gates.review.engine import _prompt
+
+    diff = "+++ b/app.py\n+api_key=SECRET_TOKEN_12345\n"
+    related = [("config.py", "password=SUPER_SECRET_VALUE")]
+    prompt = _prompt(
+        diff=diff,
+        languages=["python"],
+        heuristic=[],
+        prior=[],
+        root=tmp_path,
+        rules=[],
+        related=related,
+        specialists=["security"],
+    )
+    assert "SECRET_TOKEN_12345" not in prompt
+    assert "SUPER_SECRET_VALUE" not in prompt
+    assert "api_key=<redacted>" in prompt
+    assert "password=<redacted>" in prompt
+    assert "Authority & Isolation constraints:" in prompt

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -90,11 +91,20 @@ DEFAULT_FAIL_ON = [
     "dry",
     "security",
     "compile",
+    "contract",
     "impact",
+    "test",
     "coverage",
     "audit",
     "ui",
     "version",
+    "migration",
+    "authorization",
+    "resilience",
+    "mutation",
+    "performance",
+    "plugins",
+    "exceptions",
 ]
 DEFAULT_GITHUB_GATES = ["format", "lint", "impact", "audit", "version", "review"]
 POLICIES = ("observe", "adopt", "enforce")
@@ -109,15 +119,18 @@ QUALITY_KEYS = frozenset(
         "auto_install",
         "trust",
         "offline",
+        "execution_environment",
         "jobs",
         "cache",
         "required_tools",
         "ci",
         "compile",
+        "contract",
         "coverage",
         "audit",
         "ui",
         "impact",
+        "test",
         "version",
         "detect",
         "format",
@@ -125,6 +138,13 @@ QUALITY_KEYS = frozenset(
         "dry",
         "sql",
         "review",
+        "migration",
+        "authorization",
+        "resilience",
+        "mutation",
+        "performance",
+        "plugins",
+        "exceptions",
         "policy",
         "baseline",
         "comment_on_pr",
@@ -201,6 +221,8 @@ class QualityConfig:
     policy: str = "adopt"
     policy_baseline: str = ".quality-baseline.json"
     policy_comment: bool = True
+    policy_exceptions: list[dict[str, Any]] = field(default_factory=list)
+    execution_environment: str = "local"
     raw: dict[str, Any] = field(default_factory=dict)
 
     def language_filter(self) -> list[str] | None:
@@ -236,6 +258,7 @@ def load_config(project: Path) -> QualityConfig:
     data: dict[str, Any] = {}
     if path.is_file():
         data = tomllib.loads(path.read_text(encoding="utf-8"))
+    data = _apply_trusted_merge_policy(project, data)
     quality = _section(data, "quality")
     unknown = sorted(set(quality) - QUALITY_KEYS)
     if unknown:
@@ -382,6 +405,14 @@ def load_config(project: Path) -> QualityConfig:
         policy=policy,
         policy_baseline=str(quality.get("baseline") or ".quality-baseline.json"),
         policy_comment=_as_bool(quality.get("comment_on_pr"), True),
+        policy_exceptions=[
+            item
+            for item in _as_list(quality.get("exceptions"), [])
+            if isinstance(item, dict)
+        ],
+        execution_environment=str(
+            quality.get("execution_environment", "local")
+        ).lower(),
         raw=data,
     )
 
@@ -399,6 +430,71 @@ def is_pr_event() -> bool:
         return True
     ref = os.environ.get("GITHUB_REF", "")
     return bool(re.match(r"refs/pull/\d+", ref))
+
+
+def _apply_trusted_merge_policy(project: Path, data: dict[str, Any]) -> dict[str, Any]:
+    """Keep a PR from lowering the policy that decides that PR.
+
+    Hosted callers may pass an explicit immutable base through
+    ``QUALITY_TRUSTED_BASE``.  On GitHub we otherwise use the checked-out base
+    ref when available.  Local work deliberately retains its editable policy.
+    """
+    base = os.environ.get("QUALITY_TRUSTED_BASE")
+    if not base and is_pr_event():
+        base = os.environ.get("GITHUB_BASE_REF")
+        if base and not base.startswith("origin/"):
+            base = f"origin/{base}"
+    if not base:
+        return data
+    try:
+        verify = subprocess.run(
+            ["git", "rev-parse", "--verify", base],
+            cwd=project,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=3,
+        )
+        if verify.returncode != 0:
+            return data
+        raw = subprocess.run(
+            ["git", "show", f"{base}:quality.toml"],
+            cwd=project,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return data
+    if raw.returncode:
+        return data
+    try:
+        trusted = tomllib.loads(raw.stdout)
+    except tomllib.TOMLDecodeError:
+        return data
+    candidate = data.get("quality")
+    control = trusted.get("quality")
+    if not isinstance(candidate, dict) or not isinstance(control, dict):
+        return data
+    # These values authorise execution or decide merge, so only a trusted base
+    # (or organisational control plane) may define them for a pull request.
+    protected = {
+        "fail_on",
+        "trust",
+        "policy",
+        "baseline",
+        "exceptions",
+        "required_tools",
+        "ci",
+    }
+    merged = dict(candidate)
+    for key in protected:
+        if key in control:
+            merged[key] = control[key]
+    out = dict(data)
+    out["quality"] = merged
+    return out
 
 
 def _review_mode(value: Any) -> str:

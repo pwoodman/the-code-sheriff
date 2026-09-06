@@ -183,7 +183,7 @@ def _call_tool(
         return json.dumps(finding_from_reports(_root(), finding_id), indent=2)
     if name == "quality_apply_fix":
         from quality_gates.models import Finding
-        from quality_gates.review.apply import apply_finding
+        from quality_gates.review.apply import apply_and_verify
 
         packed = finding_from_reports(_root(), str(args.get("id") or "") or None)
         row = packed.get("finding")
@@ -199,11 +199,9 @@ def _call_tool(
             suggestion=row.get("suggestion"),
             verify=row.get("verify"),
         )
-        status = apply_finding(_root(), finding)
-        return json.dumps(
-            {"status": status, "id": row.get("id"), "next": packed.get("prompt")},
-            indent=2,
-        )
+        verified = apply_and_verify(_root(), finding)
+        verified["id"] = row.get("id")
+        return json.dumps(verified, indent=2)
     return f"unknown tool {name}"
 
 

@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 
+from quality_gates.change_manifest import ChangeManifest
 from quality_gates.ci_plan import on_github_actions, ui_allowed_on_github
 from quality_gates.config import QualityConfig
 from quality_gates.gates.common import fail_or_pass, findings_from_text, skip_result
@@ -29,7 +30,15 @@ def run_ui(
     compile_result: GateResult | None = None,
     force_all: bool = False,
     list_only: bool = False,
+    manifest: ChangeManifest | None = None,
 ) -> GateResult:
+    if manifest is not None and manifest.state == "unknown":
+        return GateResult(
+            name="ui",
+            status="blocked",
+            exit_state="blocked",
+            notes=[manifest.reason or "change discovery failed"],
+        )
     if on_github_actions() and not ui_allowed_on_github(config):
         return skip_result(
             "ui",
@@ -56,7 +65,11 @@ def run_ui(
         "true",
         "yes",
     }
-    changed = git_changed_names(root, git_base_ref(base))
+    changed = (
+        manifest.paths
+        if manifest is not None
+        else git_changed_names(root, git_base_ref(base))
+    )
     original = list(changed or [])
     if changed:
         changed = expand_downstream(root, config, changed)

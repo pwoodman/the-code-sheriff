@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
+from quality_gates import __version__
 from quality_gates.config import QualityConfig
 from quality_gates.models import Finding, GateResult
 from quality_gates.paths import cache_dir
@@ -33,24 +35,80 @@ def cache_key(
     digest = hashlib.sha256()
     metadata = {
         "cache_version": CACHE_VERSION,
+        "engine_version": __version__,
         "profile": profile,
         "capability": capability,
         "config": config.raw,
         "tool": tool,
         "tool_version": _version(root, config, tool),
+        "executable": _executable_identity(root, config, tool),
     }
     digest.update(json.dumps(metadata, sort_keys=True, separators=(",", ":")).encode())
     for path in sorted(files, key=lambda item: item.as_posix()):
-        try:
-            relative = path.resolve().relative_to(root.resolve()).as_posix()
-            content = path.read_bytes()
-        except (OSError, ValueError):
-            relative = path.as_posix()
-            content = b"<unreadable>"
-        digest.update(relative.encode("utf-8", errors="surrogateescape"))
-        digest.update(b"\0")
-        digest.update(hashlib.sha256(content).digest())
+        _digest_file(digest, root, path)
+    for path in _tool_inputs(root):
+        _digest_file(digest, root, path)
     return digest.hexdigest()
+
+
+def _digest_file(digest: Any, root: Path, path: Path) -> None:
+    try:
+        relative = path.resolve().relative_to(root.resolve()).as_posix()
+        content = path.read_bytes()
+    except (OSError, ValueError):
+        relative = path.as_posix()
+        content = b"<unreadable>"
+    digest.update(relative.encode("utf-8", errors="surrogateescape"))
+    digest.update(b"\0")
+    digest.update(hashlib.sha256(content).digest())
+
+
+def _tool_inputs(root: Path) -> list[Path]:
+    patterns = (
+        "quality.toml",
+        "pyproject.toml",
+        "package.json",
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        "uv.lock",
+        "poetry.lock",
+        "requirements.txt",
+        "go.mod",
+        "go.sum",
+        "Cargo.toml",
+        "Cargo.lock",
+        "pom.xml",
+        "build.gradle",
+        "build.gradle.kts",
+        "ruff.toml",
+        ".ruff.toml",
+        ".eslintrc*",
+        "eslint.config.*",
+        ".prettierrc*",
+        "*.plugin.json",
+        ".quality/plugins/*.json",
+    )
+    found: set[Path] = set()
+    for pattern in patterns:
+        found.update(path for path in root.glob(pattern) if path.is_file())
+    return sorted(found, key=lambda path: path.as_posix())
+
+
+def _executable_identity(
+    root: Path, config: QualityConfig, tool: str | None
+) -> str | None:
+    if not tool or tool.startswith("builtin-"):
+        return None
+    executable = which(tool, project=root, prefer_project=config.prefer_project_tools)
+    if not executable:
+        return None
+    path = Path(executable)
+    try:
+        stat = path.stat()
+        return f"{path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}"
+    except OSError:
+        return os.fspath(path)
 
 
 def cached_result(

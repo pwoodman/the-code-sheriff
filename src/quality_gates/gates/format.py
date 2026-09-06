@@ -32,12 +32,14 @@ def run_format(
     languages: list[str],
     *,
     check: bool = True,
+    scope: list[Path] | None = None,
 ) -> GateResult:
     unique = normalize_gate_languages(languages)
     parts = [
-        _format_language(root, config, language, check=check) for language in unique
+        _format_language(root, config, language, check=check, scope=scope)
+        for language in unique
     ]
-    project_files = iter_project_files(root, config)
+    project_files = _scoped(iter_project_files(root, config), scope)
     jobs: list[tuple[str, tuple[Path, ...]]] = []
     for profile in FILE_PROFILES:
         files = tuple(
@@ -61,9 +63,14 @@ def run_format(
 
 
 def _format_language(
-    root: Path, config: QualityConfig, language: str, *, check: bool
+    root: Path,
+    config: QualityConfig,
+    language: str,
+    *,
+    check: bool,
+    scope: list[Path] | None = None,
 ) -> GateResult:
-    files = source_files(root, config, language)
+    files = _scoped(source_files(root, config, language), scope)
     if not files and language != "javascript":
         return skip_result("format", f"no {language} files")
     handler = {
@@ -91,7 +98,7 @@ def _python(
     argv = [ruff, "format", *ruff_config(root)]
     if check:
         argv.append("--check")
-    argv.append(".")
+    argv.extend(relative(root, item) for item in files) if files else argv.append(".")
     result = run(argv, cwd=root)
     findings = []
     for line in result.stdout.splitlines():
@@ -109,6 +116,13 @@ def _python(
     if result.returncode != 0 and not findings:
         findings = findings_from_text("format", result, language="python")
     return fail_or_pass("format", findings)
+
+
+def _scoped(files: list[Path], scope: list[Path] | None) -> list[Path]:
+    if scope is None:
+        return files
+    wanted = {item.resolve() for item in scope if item.is_file()}
+    return [item for item in files if item.resolve() in wanted]
 
 
 def _node(

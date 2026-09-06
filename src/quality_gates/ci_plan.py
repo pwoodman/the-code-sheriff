@@ -4,6 +4,7 @@ import os
 
 from quality_gates import GATES
 from quality_gates.config import QualityConfig
+from quality_gates.risk import triggered_capabilities
 
 # Format and lint are cheap; they belong on GitHub even in local mode.
 HEAVY_GATES = (
@@ -67,3 +68,12 @@ def select_gates(
     else:
         chosen = list(GATES)
     return [gate for gate in GATES if gate in chosen and gate not in skip_set]
+
+
+def select_change_gates(gates: list[str], paths: list[str]) -> list[str]:
+    """Only include costly risk gates when their changed surface warrants them."""
+    selected = list(gates)
+    for capability in sorted(triggered_capabilities(paths)):
+        if capability not in selected:
+            selected.append(capability)
+    return [gate for gate in GATES if gate in selected]

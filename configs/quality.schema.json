@@ -16,6 +16,7 @@
         "auto_install": {"type": "boolean"},
         "trust": {"type": "string", "enum": ["trusted", "prompt", "untrusted"]},
         "offline": {"type": "boolean"},
+        "execution_environment": {"type": "string", "enum": ["local", "isolated"]},
         "jobs": {"type": "integer", "minimum": 1},
         "cache": {
           "type": "object",
@@ -63,7 +64,14 @@
             "verify_tests": {"type": "boolean"},
             "symbol_neighbors": {"type": "boolean"}
           }
-        }
+        },
+        "migration": {"type": "object"},
+        "authorization": {"type": "object"},
+        "resilience": {"type": "object"},
+        "mutation": {"type": "object"},
+        "performance": {"type": "object"},
+        "plugins": {"type": "object"},
+        "exceptions": {"type": "array", "items": {"type": "object"}}
       }
     }
   }

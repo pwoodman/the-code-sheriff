@@ -28,10 +28,16 @@ from quality_gates.registry import FILE_PROFILES, profiles_for_path
 from quality_gates.tools import prepend_path, run, which
 
 
-def run_lint(root: Path, config: QualityConfig, languages: list[str]) -> GateResult:
+def run_lint(
+    root: Path,
+    config: QualityConfig,
+    languages: list[str],
+    *,
+    scope: list[Path] | None = None,
+) -> GateResult:
     unique = normalize_gate_languages(languages)
-    parts = [_lint_language(root, config, language) for language in unique]
-    project_files = iter_project_files(root, config)
+    parts = [_lint_language(root, config, language, scope=scope) for language in unique]
+    project_files = _scoped(iter_project_files(root, config), scope)
     jobs: list[tuple[str, tuple[Path, ...]]] = []
     for profile in FILE_PROFILES:
         files = tuple(
@@ -54,8 +60,10 @@ def run_lint(root: Path, config: QualityConfig, languages: list[str]) -> GateRes
     return merge_results("lint", parts)
 
 
-def _lint_language(root: Path, config: QualityConfig, language: str) -> GateResult:
-    files = source_files(root, config, language)
+def _lint_language(
+    root: Path, config: QualityConfig, language: str, *, scope: list[Path] | None = None
+) -> GateResult:
+    files = _scoped(source_files(root, config, language), scope)
     if not files:
         return skip_result("lint", f"no {language} files")
     dispatch = {
@@ -77,7 +85,14 @@ def _python(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
     ruff = tool_or_skip("ruff", root, config.prefer_project_tools, "lint", "python")
     if isinstance(ruff, GateResult):
         return ruff
-    argv = [ruff, "check", "--output-format", "json", *ruff_config(root), "."]
+    argv = [
+        ruff,
+        "check",
+        "--output-format",
+        "json",
+        *ruff_config(root),
+        *(relative(root, item) for item in files),
+    ]
     result = run(argv, cwd=root)
     findings: list[Finding] = []
     try:
@@ -99,6 +114,13 @@ def _python(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
     except json.JSONDecodeError:
         findings = findings_from_text("lint", result, language="python", root=root)
     return fail_or_pass("lint", findings, root=root, run=result)
+
+
+def _scoped(files: list[Path], scope: list[Path] | None) -> list[Path]:
+    if scope is None:
+        return files
+    wanted = {item.resolve() for item in scope if item.is_file()}
+    return [item for item in files if item.resolve() in wanted]
 
 
 def _node(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:

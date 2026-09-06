@@ -14,6 +14,7 @@ from quality_gates.detect import (
 from quality_gates.diagnostics import enrich_findings
 from quality_gates.models import Finding, GateResult, RunResult
 from quality_gates.paths import bundled_file
+from quality_gates.redact import redact_secrets as _redact
 from quality_gates.registry import gate_language, source_suffixes
 from quality_gates.tools import which
 
@@ -53,7 +54,17 @@ def relative(root: Path, path: Path) -> str:
 
 def skip_result(name: str, reason: str, tool: str | None = None) -> GateResult:
     skipped = [tool] if tool else []
-    return GateResult(name=name, status="skip", notes=[reason], skipped_tools=skipped)
+    # Preserve the public ``skip`` status for report compatibility while making
+    # the reason machine-readable to the decision evaluator. A missing required
+    # executable is unsupported; an irrelevant gate is not applicable.
+    state = "unsupported" if tool else "not-applicable"
+    return GateResult(
+        name=name,
+        status="skip",
+        notes=[reason],
+        skipped_tools=skipped,
+        exit_state=state,
+    )
 
 
 def fail_or_pass(
@@ -69,6 +80,18 @@ def fail_or_pass(
         resolved = _result_root(run)
     findings = enrich_findings(findings, resolved, run)
     errors = [item for item in findings if item.severity == "error"]
+    # A tool can fail before it emits a parseable diagnostic. Its non-zero exit
+    # is still verification evidence and must not become a false green.
+    if run is not None and run.returncode not in {None, 0} and not errors:
+        findings.append(
+            Finding(
+                gate=name,
+                rule="execution-failed",
+                message=f"verification command exited {run.returncode}",
+                severity="error",
+            )
+        )
+        errors = [findings[-1]]
     status = "fail" if errors else "pass"
     extra = execution_details(run) if run else {}
     return GateResult(
@@ -81,6 +104,8 @@ def fail_or_pass(
 
 
 def merge_results(name: str, parts: Iterable[GateResult]) -> GateResult:
+    from quality_gates.decision import ExecutionState, execution_state
+
     collected = list(parts)
     findings: list[Finding] = []
     notes: list[str] = []
@@ -95,7 +120,7 @@ def merge_results(name: str, parts: Iterable[GateResult]) -> GateResult:
         notes.extend(part.notes)
         skipped.extend(part.skipped_tools)
         tool_errors.extend(part.tool_errors)
-        if part.status == "fail":
+        if part.status == "fail" or part.error_count() > 0:
             saw_fail = True
             if first_fail is None:
                 first_fail = part
@@ -103,25 +128,43 @@ def merge_results(name: str, parts: Iterable[GateResult]) -> GateResult:
             saw_pass = True
         if part.command and first_with_command is None:
             first_with_command = part
-    if saw_fail:
+
+    states = [execution_state(part) for part in collected]
+    if saw_fail or any(s == ExecutionState.FAILED for s in states):
         status = "fail"
-    elif saw_pass:
+        exit_state = "failed"
+    elif tool_errors or any(s == ExecutionState.ERRORED for s in states):
+        status = "fail"
+        exit_state = "errored"
+    elif any(s == ExecutionState.BLOCKED for s in states):
+        status = "blocked"
+        exit_state = "blocked"
+    elif any(s == ExecutionState.UNSUPPORTED for s in states):
+        status = "skip"
+        exit_state = "unsupported"
+    elif any(s == ExecutionState.CANCELLED for s in states):
+        status = "cancelled"
+        exit_state = "cancelled"
+    elif saw_pass or any(s == ExecutionState.PASSED for s in states):
         status = "pass"
+        exit_state = "passed"
     else:
         status = "skip"
+        exit_state = "not-applicable"
         if not notes:
             notes.append("no applicable tools ran")
+
     source = first_fail or first_with_command
     extra: dict[str, object] = {}
     if source is not None:
         extra = {
             "tool": source.tool,
-            "exit_state": source.exit_state,
             "command": source.command,
             "working_directory": source.working_directory,
             "return_code": source.return_code,
             "output_excerpt": source.output_excerpt,
         }
+    extra["exit_state"] = exit_state
     return GateResult(
         name=name,
         status=status,
@@ -262,7 +305,6 @@ _DIAGNOSTIC_LINE = re.compile(
     r"(?P<message>.*?)(?:\s+\((?P<rule>[^()]+)\))?$",
     re.IGNORECASE,
 )
-_SECRET_VALUE = re.compile(r"(?i)\b(token|password|passwd|secret|api[_-]?key)=([^\s]+)")
 
 
 def execution_details(result: RunResult) -> dict[str, object]:
@@ -309,10 +351,6 @@ def _parse_diagnostic_line(
 
 def _result_root(result: RunResult) -> Path | None:
     return Path(result.cwd) if result.cwd else None
-
-
-def _redact(value: str) -> str:
-    return _SECRET_VALUE.sub(lambda match: f"{match.group(1)}=<redacted>", value)
 
 
 def tool_or_skip(

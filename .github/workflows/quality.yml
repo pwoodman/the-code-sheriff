@@ -19,6 +19,7 @@ on:
       ANTHROPIC_API_KEY:
         required: false
   pull_request:
+  merge_group:
   push:
     branches: [main]
   workflow_dispatch:
@@ -134,7 +135,10 @@ jobs:
           print("full=", full)
           print("\n".join(f"{k}={v}" for k, v in results.items()))
           blocking = ["plan", "full"] if full else ["plan", "local"]
-          bad = [name for name in blocking if results[name] not in {"success", "skipped"}]
+          # The unselected branch is intentionally skipped. Every selected job
+          # is required to finish successfully; cancelled, skipped, missing, or
+          # failed work can never satisfy the durable summary check.
+          bad = [name for name in blocking if results[name] != "success"]
           if bad:
               print("failed gates:", ", ".join(bad))
               sys.exit(1)

@@ -43,21 +43,44 @@ def prepend_path(*dirs: Path) -> dict[str, str]:
     return env
 
 
+def isolated_env(base_env: dict[str, str] | None = None) -> dict[str, str]:
+    """Sanitize environment variables by stripping cloud keys and API tokens."""
+    env = (base_env or os.environ).copy()
+    sensitive_markers = (
+        "AWS_",
+        "GITHUB_TOKEN",
+        "ANTHROPIC_",
+        "OPENAI_",
+        "SSH_",
+        "API_KEY",
+        "SECRET",
+        "PASSWORD",
+        "PRIVATE_KEY",
+    )
+    for key in list(env.keys()):
+        upper = key.upper()
+        if any(marker in upper for marker in sensitive_markers):
+            env.pop(key, None)
+    return env
+
+
 def run(
     argv: Sequence[str],
     *,
     cwd: Path,
     timeout: int = 600,
     env: dict[str, str] | None = None,
+    isolated: bool = False,
 ) -> RunResult:
     argv_list = [str(part) for part in argv]
+    run_env = isolated_env(env) if isolated else env
     try:
         proc = subprocess.run(
             argv_list,
             cwd=cwd,
             capture_output=True,
             timeout=timeout,
-            env=env,
+            env=run_env,
             check=False,
         )
     except FileNotFoundError:
