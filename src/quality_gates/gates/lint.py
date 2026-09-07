@@ -173,13 +173,6 @@ def _scoped(files: list[Path], scope: list[Path] | None) -> list[Path]:
     return [item for item in files if item.resolve() in wanted]
 
 
-def _scoped(files: list[Path], scope: list[Path] | None) -> list[Path]:
-    if scope is None:
-        return files
-    wanted = {item.resolve() for item in scope if item.is_file()}
-    return [item for item in files if item.resolve() in wanted]
-
-
 def _node(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
     eslint = tool_or_skip(
         "eslint", root, config.prefer_project_tools, "lint", "javascript"
