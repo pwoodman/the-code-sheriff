@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
+  <rect width="1080" height="1350" fill="#f4ead9"/>
+
+  <g transform="translate(56,52)">
+    <circle cx="44" cy="44" r="42" fill="none" stroke="#161310" stroke-width="3"/>
+    <circle cx="44" cy="44" r="34" fill="none" stroke="#b08a3c" stroke-width="2"/>
+    <polygon points="44,14 50,34 71,34 54,46 60,67 44,54 28,67 34,46 17,34 38,34" fill="#161310"/>
+  </g>
+  <text x="168" y="96" font-family="Noto Serif, Palatino, Georgia, serif" font-size="46" font-weight="700" fill="#161310" letter-spacing="1.6">THE CODE SHERIFF</text>
+  <text x="168" y="128" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="18" fill="#6b6256">
+    <tspan x="168" dy="0">Polyglot quality gates. One command in the repo. Heavy work stays</tspan>
+    <tspan x="168" dy="24">on your machine. GitHub uses that repo's Actions minutes.</tspan>
+  </text>
+  <line x1="56" y1="172" x2="1024" y2="172" stroke="#161310" stroke-width="3"/>
+
+  <text x="56" y="220" font-family="Noto Serif, Palatino, Georgia, serif" font-size="13" font-weight="700" fill="#b08a3c" letter-spacing="2.2">THE WHOLE SETUP</text>
+  <text x="56" y="254" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="26" font-weight="700" fill="#161310">Run this in the repository</text>
+  <rect x="56" y="276" width="968" height="88" fill="#161310"/>
+  <text font-family="DejaVu Sans Mono, ui-monospace, monospace" font-size="18" fill="#f4ead9">
+    <tspan x="76" y="312">uvx --from git+https://github.com/pwoodman/poly-check.git \</tspan>
+    <tspan x="76" y="342">  quality setup</tspan>
+  </text>
+  <text font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="16" fill="#3c362e">
+    <tspan x="56" y="396">No uv?  pip install "git+https://github.com/pwoodman/poly-check.git"</tspan>
+    <tspan x="56" y="418">then  quality setup</tspan>
+  </text>
+
+  <text x="56" y="470" font-family="Noto Serif, Palatino, Georgia, serif" font-size="13" font-weight="700" fill="#b08a3c" letter-spacing="2.2">THAT COMMAND DOES</text>
+  <rect x="56" y="488" width="968" height="168" fill="#fff8ec" stroke="#d7cbb3"/>
+  <text font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="18" fill="#161310">
+    <tspan x="80" y="524">1. Writes default quality.toml, a pinned GitHub workflow, and git hooks</tspan>
+    <tspan x="80" y="556">2. Requires the status check named The Code Sheriff if gh is logged in</tspan>
+    <tspan x="80" y="588">3. Runs the first gates and writes .quality-baseline.json (adopt policy)</tspan>
+    <tspan x="80" y="620">Then commit those files. Pull requests are covered.</tspan>
+  </text>
+
+  <line x1="56" y1="688" x2="524" y2="688" stroke="#161310" stroke-width="3"/>
+  <text x="56" y="718" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="13" font-weight="700" fill="#161310" letter-spacing="2.4">ON YOUR DEVICE</text>
+  <text x="56" y="750" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="22" font-weight="700" fill="#161310">Commit and push</text>
+  <text font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="16" fill="#3c362e">
+    <tspan x="56" y="780">Format, lint, DRY, security, compile,</tspan>
+    <tspan x="56" y="802">coverage, audit, and UI tests. The slow</tspan>
+    <tspan x="56" y="824">gates never leave your machine unless</tspan>
+    <tspan x="56" y="846">you opt in.</tspan>
+  </text>
+
+  <line x1="556" y1="688" x2="1024" y2="688" stroke="#161310" stroke-width="3"/>
+  <text x="556" y="718" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="13" font-weight="700" fill="#161310" letter-spacing="2.4">ON GITHUB</text>
+  <text x="556" y="750" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="22" font-weight="700" fill="#161310">Pull requests</text>
+  <text font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="16" fill="#3c362e">
+    <tspan x="556" y="780">Cheap gates only: format, lint, impact,</tspan>
+    <tspan x="556" y="802">audit, version, review. Runs on that</tspan>
+    <tspan x="556" y="824">repo's minutes. No hosted worker.</tspan>
+    <tspan x="556" y="846">No telemetry.</tspan>
+  </text>
+
+  <text x="56" y="900" font-family="Noto Serif, Palatino, Georgia, serif" font-size="13" font-weight="700" fill="#b08a3c" letter-spacing="2.2">OPTIONAL</text>
+  <text x="56" y="932" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="18" fill="#161310">You do not need a GitHub App. Add one only if comments should come from the App bot:</text>
+  <rect x="56" y="952" width="968" height="52" fill="#161310"/>
+  <text x="76" y="984" font-family="DejaVu Sans Mono, ui-monospace, monospace" font-size="18" fill="#f4ead9">quality github-app register</text>
+
+  <g font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="14" fill="#161310">
+    <rect x="56" y="1040" width="168" height="36" fill="none" stroke="#161310"/>
+    <text x="68" y="1063">policy = adopt</text>
+    <rect x="236" y="1040" width="168" height="36" fill="none" stroke="#161310"/>
+    <text x="248" y="1063">ci.mode = local</text>
+    <rect x="416" y="1040" width="148" height="36" fill="none" stroke="#161310"/>
+    <text x="428" y="1063">webhook off</text>
+    <rect x="576" y="1040" width="212" height="36" fill="none" stroke="#161310"/>
+    <text x="588" y="1063">you pay your minutes</text>
+  </g>
+
+  <line x1="56" y1="1268" x2="1024" y2="1268" stroke="#161310" stroke-width="3"/>
+  <text x="56" y="1304" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="18" font-weight="700" fill="#161310">github.com/pwoodman/poly-check</text>
+  <text x="1024" y="1304" text-anchor="end" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="16" fill="#6b6256">Getting started - The Code Sheriff</text>
+</svg>
