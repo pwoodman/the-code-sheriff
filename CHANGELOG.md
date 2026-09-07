@@ -1,6 +1,14 @@
 # Changelog
 
 
+## 1.12.0
+
+- GitHub repository is **pwoodman/the-code-sheriff** to match The Code Sheriff.
+- Security gate now covers CodeAnt-class PR defense: Trivy IaC/secrets, optional
+  Checkov, CycloneDX/SPDX SBOM (`quality sbom`), OWASP/CWE, EPSS when present,
+  and steps of reproduction. Default `github_gates` include **security**.
+- Review `--post` writes the AI summary onto the pull request description.
+
 ## 1.11.0
 
 - Product name is **The Code Sheriff**. CLI remains `quality`; `codesheriff`

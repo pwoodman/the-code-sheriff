@@ -41,6 +41,10 @@ def finding_payload(finding: Finding) -> dict[str, Any]:
         "snippet",
         "patch",
         "confidence",
+        "cwe",
+        "owasp",
+        "epss",
+        "reproduce",
     ):
         value = getattr(finding, key)
         if value is not None and value != "":
@@ -65,6 +69,12 @@ def agent_prompt(finding: Finding) -> str:
         lines.append(f"Fix: {finding.suggestion}")
     if finding.patch:
         lines.append("Patch:\n" + finding.patch)
+    if finding.owasp:
+        lines.append(f"OWASP: {finding.owasp}")
+    if finding.cwe:
+        lines.append(f"CWE: {finding.cwe}")
+    if finding.reproduce:
+        lines.append("Steps of reproduction:\n" + finding.reproduce)
     if finding.documentation_url:
         lines.append(f"Docs: {finding.documentation_url}")
     return "\n".join(lines)

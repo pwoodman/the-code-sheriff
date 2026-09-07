@@ -17,14 +17,14 @@ PIN = "0123456789abcdef0123456789abcdef01234567"
 
 
 def test_resolve_source_defaults_to_this_repo() -> None:
-    assert resolve_source() == "pwoodman/poly-check"
-    assert resolve_source(org="REPLACE_ORG") == "pwoodman/poly-check"
-    assert resolve_source(org="acme") == "acme/poly-check"
+    assert resolve_source() == "pwoodman/the-code-sheriff"
+    assert resolve_source(org="REPLACE_ORG") == "pwoodman/the-code-sheriff"
+    assert resolve_source(org="acme") == "acme/the-code-sheriff"
     assert resolve_source(source="acme/gates") == "acme/gates"
 
 
 def test_resolve_pin_keeps_explicit_sha() -> None:
-    assert resolve_pin("pwoodman/poly-check", PIN) == PIN
+    assert resolve_pin("pwoodman/the-code-sheriff", PIN) == PIN
 
 
 def test_consumer_defaults_are_adopt_and_local() -> None:
@@ -32,6 +32,8 @@ def test_consumer_defaults_are_adopt_and_local() -> None:
     assert 'policy = "adopt"' in text
     assert 'mode = "local"' in text
     assert "The Code Sheriff" in text
+    assert "security" in text
+    assert 'github_gates = ["format", "lint", "security"' in text
 
 
 def test_init_writes_pinned_workflow(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -56,7 +58,7 @@ def test_init_rewrites_placeholder_workflow(tmp_path: Path, monkeypatch) -> None
     path = tmp_path / ".github" / "workflows" / "quality.yml"
     path.parent.mkdir(parents=True)
     path.write_text(
-        "uses: pwoodman/poly-check/.github/workflows/quality.yml@REPLACE_FULL_COMMIT_SHA\n",
+        "uses: pwoodman/the-code-sheriff/.github/workflows/quality.yml@REPLACE_FULL_COMMIT_SHA\n",
         encoding="utf-8",
     )
     assert main(["--root", str(tmp_path), "init"]) == 0
@@ -116,6 +118,6 @@ def test_init_does_not_write_hooks(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_workflow_yaml_names_the_check() -> None:
-    text = workflow_yaml("pwoodman/poly-check", PIN)
+    text = workflow_yaml("pwoodman/the-code-sheriff", PIN)
     assert f"name: {CHECK_NAME}" in text
     assert f"@{PIN}" in text

@@ -11,6 +11,7 @@ import urllib.request
 from pathlib import Path
 
 from quality_gates.github_app import CHECK_NAME, DEFAULT_HOME_REPO
+from quality_gates.identity import REPO_NAME
 
 DEFAULT_SOURCE = DEFAULT_HOME_REPO
 DEFAULT_REF = "main"
@@ -35,7 +36,7 @@ ai_review = "pr-only"
 
 [quality.ci]
 mode = "local"
-github_gates = ["format", "lint", "impact", "audit", "version", "review"]
+github_gates = ["format", "lint", "security", "impact", "audit", "version", "review"]
 
 [quality.compile]
 require_security = true
@@ -141,7 +142,7 @@ def resolve_source(org: str = "", source: str = "") -> str:
         return source.strip().removesuffix(".git")
     owner = org.strip()
     if owner and owner not in {"REPLACE_ORG", "YOUR_ORG"}:
-        return f"{owner}/poly-check"
+        return f"{owner}/{REPO_NAME}"
     return DEFAULT_SOURCE
 
 

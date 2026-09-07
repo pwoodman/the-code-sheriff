@@ -18,11 +18,11 @@
   <text x="56" y="254" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="26" font-weight="700" fill="#161310">Run this in the repository</text>
   <rect x="56" y="276" width="968" height="88" fill="#161310"/>
   <text font-family="DejaVu Sans Mono, ui-monospace, monospace" font-size="18" fill="#f4ead9">
-    <tspan x="76" y="312">uvx --from git+https://github.com/pwoodman/poly-check.git \</tspan>
+    <tspan x="76" y="312">uvx --from git+https://github.com/pwoodman/the-code-sheriff.git \</tspan>
     <tspan x="76" y="342">  quality setup</tspan>
   </text>
   <text font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="16" fill="#3c362e">
-    <tspan x="56" y="396">No uv?  pip install "git+https://github.com/pwoodman/poly-check.git"</tspan>
+    <tspan x="56" y="396">No uv?  pip install "git+https://github.com/pwoodman/the-code-sheriff.git"</tspan>
     <tspan x="56" y="418">then  quality setup</tspan>
   </text>
 
@@ -72,6 +72,6 @@
   </g>
 
   <line x1="56" y1="1268" x2="1024" y2="1268" stroke="#161310" stroke-width="3"/>
-  <text x="56" y="1304" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="18" font-weight="700" fill="#161310">github.com/pwoodman/poly-check</text>
+  <text x="56" y="1304" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="18" font-weight="700" fill="#161310">github.com/pwoodman/the-code-sheriff</text>
   <text x="1024" y="1304" text-anchor="end" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="16" fill="#6b6256">Getting started - The Code Sheriff</text>
 </svg>

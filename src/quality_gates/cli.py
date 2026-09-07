@@ -64,12 +64,12 @@ def _add_onboard_args(
     parser.add_argument(
         "--org",
         default="",
-        help="GitHub owner of a poly-check fork (default: pwoodman)",
+        help="GitHub owner of a The Code Sheriff fork (default: pwoodman)",
     )
     parser.add_argument(
         "--source",
         default="",
-        help="owner/repo that hosts the reusable workflow (default: pwoodman/poly-check)",
+        help="owner/repo that hosts the reusable workflow (default: pwoodman/the-code-sheriff)",
     )
     parser.add_argument(
         "--pin",
@@ -154,7 +154,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     lint.add_argument("--language", action="append", dest="languages")
 
     sub.add_parser("dry", help="copy-paste / duplication scan")
-    sub.add_parser("security", help="secrets, dependency CVEs, SAST")
+    sub.add_parser(
+        "security",
+        help="secrets, SCA, SAST, IaC misconfig, SBOM (gitleaks/osv/semgrep/trivy/checkov)",
+    )
+    sbom_p = sub.add_parser(
+        "sbom",
+        help="write CycloneDX and SPDX SBOMs under .quality-reports",
+    )
+    sbom_p.add_argument(
+        "--format",
+        dest="sbom_format",
+        choices=["all", "cyclonedx", "spdx"],
+        default="all",
+    )
     compile_p = sub.add_parser(
         "compile",
         help="build compiled languages (only after a clean security gate)",
@@ -456,6 +469,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "dry":
         result = gate_runners.run_dry(root, config, languages)
         return _emit([result], root, config, args.json, ["dry"])
+    if args.command == "sbom":
+        from quality_gates.sbom import write_sbom
+
+        payload = write_sbom(root, fmt=args.sbom_format)
+        if args.json:
+            print(json.dumps(payload, indent=2))
+        else:
+            files = payload.get("files") or {}
+            if files:
+                print("wrote " + ", ".join(files.values()))
+            for note in payload.get("notes") or []:
+                print(note)
+            print(f"components: {payload.get('components', 0)}")
+        return 0
     if args.command == "security":
         result = gate_runners.run_security(root, config, languages)
         return _emit([result], root, config, args.json, ["security"])

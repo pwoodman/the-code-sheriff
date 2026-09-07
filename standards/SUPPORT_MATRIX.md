@@ -14,6 +14,7 @@ tool is emitted explicitly and cannot satisfy a required gate.
 | cargo-clippy | lint | rust | linux, darwin, windows | no — Install the clippy component through rustup | skip/unsupported ≠ pass; see tests/fixtures/conformance |
 | cc | compile | c | linux, darwin, windows | no — Install a C compiler separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
 | checkmake | validate | makefile | linux, darwin, windows | no — Install checkmake explicitly | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| checkov | security | terraform, kubernetes, helm, dockerfile, cloudformation | linux, darwin, windows | no — Install Checkov explicitly; used when present for IaC | skip/unsupported ≠ pass; see tests/fixtures/conformance |
 | checkstyle | lint | java | linux, darwin, windows | no — No verified upstream SHA-256 is bundled; install the jar explicitly | skip/unsupported ≠ pass; see tests/fixtures/conformance |
 | clang-format | format | c, cpp | linux, darwin, windows | no — Install LLVM separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
 | clang-tidy | lint | c, cpp | linux, darwin, windows | no — Install LLVM separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
@@ -73,7 +74,7 @@ tool is emitted explicitly and cannot satisfy a required gate.
 | terraform | validate | terraform | linux, darwin, windows | no — Install Terraform or OpenTofu separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
 | tflint | lint | terraform | linux, darwin, windows | no — Install tflint explicitly | skip/unsupported ≠ pass; see tests/fixtures/conformance |
 | tombi | format, lint | toml | linux, darwin, windows | no — Install Tombi separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
-| trivy | security | all/project | linux, darwin, windows | no — Install Trivy explicitly; used when present | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| trivy | security | all/project | linux, darwin, windows | no — Install Trivy explicitly; used when present for CVE, IaC, secrets, and SBOM | skip/unsupported ≠ pass; see tests/fixtures/conformance |
 | tsc | compile | typescript | linux, darwin, windows | no — Install TypeScript in the project | skip/unsupported ≠ pass; see tests/fixtures/conformance |
 | xmllint | validate | xml | linux, darwin, windows | no — Install libxml2 tools | skip/unsupported ≠ pass; see tests/fixtures/conformance |
 | yamllint | lint | yaml | linux, darwin, windows | no — Install yamllint explicitly | skip/unsupported ≠ pass; see tests/fixtures/conformance |

@@ -8,6 +8,7 @@ import zipfile
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+from quality_gates.identity import HOMEPAGE
 from quality_gates.paths import bin_dir, cache_dir, tooling_js_dir
 from quality_gates.tool_manifest import (
     artifact_for_install,
@@ -17,7 +18,7 @@ from quality_gates.tool_manifest import (
 )
 from quality_gates.tools import run, which
 
-USER_AGENT = "quality-gates/1.7.2 (+https://github.com/pwoodman/poly-check)"
+USER_AGENT = f"quality-gates/1.12.0 (+{HOMEPAGE})"
 
 GITLEAKS_VERSION = "8.24.3"
 OSV_VERSION = "2.0.2"

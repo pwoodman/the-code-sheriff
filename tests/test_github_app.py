@@ -33,7 +33,7 @@ def _settings(**kwargs: object) -> AppSettings:
     values = {
         "webhook_secret": SECRET,
         "dispatch_token": "dispatch-token",
-        "home_repo": "pwoodman/poly-check",
+        "home_repo": "pwoodman/the-code-sheriff",
         "skip_home": True,
     }
     values.update(kwargs)
@@ -159,10 +159,10 @@ def test_handle_webhook_skips_home_repo(monkeypatch) -> None:
     body_obj = {
         "action": "opened",
         "installation": {"id": 44},
-        "repository": {"full_name": "pwoodman/poly-check"},
+        "repository": {"full_name": "pwoodman/the-code-sheriff"},
         "pull_request": {
             "number": 1,
-            "head": {"sha": "abc", "repo": {"full_name": "pwoodman/poly-check"}},
+            "head": {"sha": "abc", "repo": {"full_name": "pwoodman/the-code-sheriff"}},
             "base": {"ref": "main"},
         },
     }

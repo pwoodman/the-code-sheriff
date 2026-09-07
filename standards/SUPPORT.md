@@ -2,7 +2,7 @@
 
 Python 3.11–3.14 is tested. Linux, macOS, and Windows run unit CI; scheduled
 fixtures exercise representative Python, Node.js, Go, Rust, .NET, Java, PHP, and Ruby toolchains.
-The current and previous minor poly-check releases receive bug and security
+The current and previous minor The Code Sheriff releases receive bug and security
 fixes.
 
 The built-in Python, JavaScript/TypeScript, Go, Rust, Java, C#, and SQL handlers

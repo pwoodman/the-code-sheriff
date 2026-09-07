@@ -1,9 +1,9 @@
 # How to consume this toolkit from another repository
 
-After this repo lives on GitHub as `pwoodman/poly-check`, pick one path.
+After this repo lives on GitHub as `pwoodman/the-code-sheriff`, pick one path.
 
 Heavy gates (DRY, security, compile, coverage, UI) default to **developer
-machines**. GitHub Actions always runs format, lint, impact, audit, version,
+machines**. GitHub Actions always runs format, lint, security, impact, audit, version,
 and PR review. Set `ci.mode` to `github` or `both` for the rest.
 
 ## Path A — CLI (recommended)
@@ -14,7 +14,7 @@ See [`consumer-cli.yml`](consumer-cli.yml). On Actions, `quality run` is cheap.
 On your machine:
 
 ```bash
-uvx --from git+https://github.com/pwoodman/poly-check.git quality setup
+uvx --from git+https://github.com/pwoodman/the-code-sheriff.git quality setup
 ```
 
 Coding agents can loop on `quality oracle --run` (or `quality mcp`) until the

@@ -45,7 +45,7 @@ export default {
     if (job.kind === "installed") {
       return json({ ok: true, installed: job.account || "" });
     }
-    const home = env.HOME_REPO || "pwoodman/poly-check";
+    const home = env.HOME_REPO || "pwoodman/the-code-sheriff";
     const handleHome = ["1", "true", "yes"].includes(
       String(env.QUALITY_APP_HANDLE_HOME || "").toLowerCase(),
     );

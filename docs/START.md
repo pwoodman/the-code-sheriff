@@ -3,14 +3,14 @@
 One command, in the repo you want scanned:
 
 ```bash
-uvx --from git+https://github.com/pwoodman/poly-check.git quality setup
+uvx --from git+https://github.com/pwoodman/the-code-sheriff.git quality setup
 ```
 
 That writes defaults, pins the GitHub workflow, installs git hooks, requires
 **The Code Sheriff** if `gh` is logged in, and records a baseline. Commit the
 new files. You do not need a GitHub App.
 
-No `uv`? `pip install "git+https://github.com/pwoodman/poly-check.git"` then
+No `uv`? `pip install "git+https://github.com/pwoodman/the-code-sheriff.git"` then
 `quality setup`.
 
 Share this poster: [getting-started.png](getting-started.png)

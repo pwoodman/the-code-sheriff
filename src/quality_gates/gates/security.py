@@ -9,6 +9,8 @@ from quality_gates.config import QualityConfig
 from quality_gates.gates.common import fail_or_pass
 from quality_gates.models import Finding, GateResult
 from quality_gates.paths import bundled_file
+from quality_gates.sbom import write_sbom
+from quality_gates.taxonomy import classify_findings
 from quality_gates.tools import run, which
 
 # Compatibility names remain patchable, but gate execution never invokes installers.
@@ -29,10 +31,16 @@ def run_security(root: Path, config: QualityConfig, languages: list[str]) -> Gat
     findings.extend(_osv(root, skipped, notes))
     findings.extend(_semgrep(root, languages, skipped, notes))
     findings.extend(_trivy(root, skipped, notes))
+    findings.extend(_checkov(root, skipped, notes))
     findings.extend(_license(root, config, notes))
     findings.extend(_workflow_pins(root, config))
     findings.extend(_zizmor(root, skipped, notes))
     findings.extend(_heuristic_secrets(root, config))
+    sbom = write_sbom(root)
+    for path in sbom.get("files", {}).values():
+        notes.append(f"sbom: {path}")
+    notes.extend(str(item) for item in sbom.get("notes", []) if item)
+    findings = classify_findings(findings)
 
     if languages:
         notes.append("languages in scope: " + ", ".join(languages))
@@ -63,9 +71,11 @@ def _trivy(root: Path, skipped: list[str], notes: list[str]) -> list[Finding]:
             binary,
             "fs",
             "--scanners",
-            "vuln",
+            "vuln,misconfig,secret",
             "--format",
             "json",
+            "--skip-dirs",
+            ".git,.quality-reports,node_modules,.venv,vendor",
             "--quiet",
             str(root),
         ],
@@ -80,11 +90,20 @@ def _trivy(root: Path, skipped: list[str], notes: list[str]) -> list[Finding]:
     except json.JSONDecodeError:
         notes.append("trivy did not return JSON")
         return []
+    findings = findings_from_trivy(payload)
+    if not findings:
+        notes.append("trivy: no known filesystem vulnerabilities, IaC issues, or secrets")
+    return findings
+
+
+def findings_from_trivy(payload: dict) -> list[Finding]:
+    """Parse Trivy filesystem JSON (vuln + misconfig + secret)."""
     findings: list[Finding] = []
     for res in payload.get("Results") or []:
         target = res.get("Target") or "filesystem"
         for vuln in res.get("Vulnerabilities") or []:
             sev = str(vuln.get("Severity") or "HIGH").lower()
+            epss = _epss(vuln)
             findings.append(
                 Finding(
                     gate="security",
@@ -96,10 +115,146 @@ def _trivy(root: Path, skipped: list[str], notes: list[str]) -> list[Finding]:
                     ),
                     severity="error" if sev in {"high", "critical"} else "warning",
                     tool="trivy",
+                    epss=epss,
+                    documentation_url=_first_url(vuln),
                 )
             )
+        for item in res.get("Misconfigurations") or []:
+            sev = str(item.get("Severity") or "HIGH").lower()
+            start = (item.get("CauseMetadata") or {}).get("StartLine")
+            findings.append(
+                Finding(
+                    gate="security",
+                    rule=item.get("AVDID") or item.get("ID") or "trivy-misconfig",
+                    path=target,
+                    line=int(start) if start else None,
+                    message=(
+                        item.get("Title")
+                        or item.get("Description")
+                        or "IaC misconfiguration"
+                    ),
+                    severity="error" if sev in {"high", "critical"} else "warning",
+                    tool="trivy",
+                    suggestion=item.get("Resolution") or item.get("Message"),
+                    documentation_url=item.get("PrimaryURL") or _first_url(item),
+                    reason=item.get("Description"),
+                )
+            )
+        for item in res.get("Secrets") or []:
+            start = item.get("StartLine")
+            findings.append(
+                Finding(
+                    gate="security",
+                    rule=item.get("RuleID") or "trivy-secret",
+                    path=item.get("File") or target,
+                    line=int(start) if start else None,
+                    message=item.get("Title") or "secret detected",
+                    severity="error",
+                    tool="trivy",
+                )
+            )
+    return findings
+
+
+def _epss(vuln: dict) -> str | None:
+    block = vuln.get("EPSS") or vuln.get("epss") or {}
+    if isinstance(block, dict):
+        score = block.get("Score") or block.get("score")
+        if score is not None:
+            return str(score)
+    return None
+
+
+def _first_url(item: dict) -> str | None:
+    for key in ("PrimaryURL", "DataSource"):
+        value = item.get(key)
+        if isinstance(value, str) and value.startswith("http"):
+            return value
+        if isinstance(value, dict):
+            url = value.get("URL") or value.get("url")
+            if isinstance(url, str) and url.startswith("http"):
+                return url
+    refs = item.get("References") or item.get("references") or []
+    if isinstance(refs, list):
+        for ref in refs:
+            if isinstance(ref, str) and ref.startswith("http"):
+                return ref
+    return None
+
+
+def _checkov(root: Path, skipped: list[str], notes: list[str]) -> list[Finding]:
+    binary = which("checkov")
+    if not binary:
+        skipped.append("checkov")
+        return []
+    result = run(
+        [
+            binary,
+            "-d",
+            str(root),
+            "-o",
+            "json",
+            "--compact",
+            "--quiet",
+            "--skip-path",
+            ".git",
+            "--skip-path",
+            ".quality-reports",
+            "--skip-path",
+            "node_modules",
+        ],
+        cwd=root,
+        timeout=300,
+    )
+    if result.skipped:
+        skipped.append("checkov")
+        return []
+    try:
+        payload = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        if result.returncode not in {0, 1}:
+            notes.append("checkov did not return JSON")
+        return []
+    findings = findings_from_checkov(payload)
     if not findings:
-        notes.append("trivy: no known filesystem vulnerabilities")
+        notes.append("checkov: no IaC failed checks")
+    return findings
+
+
+def findings_from_checkov(payload: object) -> list[Finding]:
+    """Parse Checkov JSON (`failed_checks` across one or more reports)."""
+    reports: list[dict]
+    if isinstance(payload, list):
+        reports = [item for item in payload if isinstance(item, dict)]
+    elif isinstance(payload, dict):
+        reports = [payload]
+    else:
+        reports = []
+    findings: list[Finding] = []
+    for report in reports:
+        results = report.get("results") or {}
+        failed = results.get("failed_checks") or []
+        if not isinstance(failed, list):
+            continue
+        for item in failed:
+            if not isinstance(item, dict):
+                continue
+            lines = item.get("file_line_range") or []
+            line = lines[0] if isinstance(lines, list) and lines else None
+            sev = str(item.get("severity") or "HIGH").lower()
+            findings.append(
+                Finding(
+                    gate="security",
+                    rule=item.get("check_id") or "checkov",
+                    path=item.get("file_path") or item.get("repo_file_path"),
+                    line=int(line) if line else None,
+                    message=item.get("check_name") or "IaC failed check",
+                    severity="error" if sev in {"high", "critical"} else "warning",
+                    tool="checkov",
+                    documentation_url=item.get("guideline"),
+                    suggestion=item.get("fixed_definition") or item.get("guideline"),
+                )
+            )
     return findings
 
 
@@ -202,6 +357,7 @@ def _gitleaks(root: Path, skipped: list[str]) -> list[Finding]:
                 line=item.get("StartLine"),
                 message=item.get("Description") or "secret detected",
                 severity="error",
+                tool="gitleaks",
             )
         )
     return findings
@@ -241,6 +397,7 @@ def _osv(root: Path, skipped: list[str], notes: list[str]) -> list[Finding]:
                             f"{name}: {vuln.get('summary') or vuln.get('id') or 'vulnerable dependency'}"
                         ),
                         severity="error",
+                        tool="osv-scanner",
                     )
                 )
     if not findings:
@@ -321,6 +478,7 @@ def _semgrep(
                 line=(item.get("start") or {}).get("line"),
                 message=extra.get("message") or "semgrep finding",
                 severity=severity if severity != "error" else "error",
+                tool="semgrep",
             )
         )
     return findings
@@ -484,6 +642,7 @@ def _heuristic_secrets(root: Path, config: QualityConfig) -> list[Finding]:
                         line=index,
                         message="possible hardcoded credential",
                         severity="warning",
+                        tool="heuristic",
                     )
                 )
     return findings

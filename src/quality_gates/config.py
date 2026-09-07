@@ -106,7 +106,15 @@ DEFAULT_FAIL_ON = [
     "plugins",
     "exceptions",
 ]
-DEFAULT_GITHUB_GATES = ["format", "lint", "impact", "audit", "version", "review"]
+DEFAULT_GITHUB_GATES = [
+    "format",
+    "lint",
+    "security",
+    "impact",
+    "audit",
+    "version",
+    "review",
+]
 POLICIES = ("observe", "adopt", "enforce")
 TRUST_POLICIES = ("trusted", "prompt", "untrusted")
 CONFIG_VERSION = 1

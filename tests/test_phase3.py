@@ -170,7 +170,7 @@ def test_release_metadata_schemas_and_wheel_includes() -> None:
     assert callable(run_dry)
     root = Path(__file__).parents[1]
     pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
-    assert "https://github.com/pwoodman/poly-check" in pyproject
+    assert "https://github.com/pwoodman/the-code-sheriff" in pyproject
     assert '"tooling/js/package-lock.json"' in pyproject
     assert (root / ".github/workflows/release.yml").is_file()
     assert (root / ".github/workflows/sbom.yml").is_file()

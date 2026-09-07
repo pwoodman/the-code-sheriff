@@ -22,15 +22,17 @@ from pathlib import Path
 from typing import Any
 
 from quality_gates.github_comment import API_VERSION, pr_head_sha
+from quality_gates.identity import (
+    CHECK_NAME,
+    DEFAULT_APP_NAME,
+    DEFAULT_HOME_REPO,
+    DISPATCH_EVENT,
+    HOMEPAGE,
+    PRODUCT,
+    USER_AGENT,
+)
 from quality_gates.paths import repo_root
 
-HOMEPAGE = "https://github.com/pwoodman/poly-check"
-DEFAULT_HOME_REPO = "pwoodman/poly-check"
-PRODUCT = "The Code Sheriff"
-DEFAULT_APP_NAME = "The Code Sheriff"
-CHECK_NAME = "The Code Sheriff"
-DISPATCH_EVENT = "the-codesheriff"
-USER_AGENT = "the-codesheriff"
 PULL_ACTIONS = {"opened", "synchronize", "reopened", "ready_for_review"}
 CREDENTIALS_DIRNAME = ".quality-app"
 
@@ -57,8 +59,9 @@ def default_manifest(
         "name": name,
         "url": HOMEPAGE,
         "description": (
-            "The Code Sheriff runs change-aware quality gates: format, lint, security, "
-            "compile, impact, coverage, audit, and review as one required check."
+            f"{PRODUCT} runs change-aware quality gates: format, lint, security "
+            "(SAST, secrets, SCA, IaC, SBOM), compile, impact, coverage, audit, and "
+            "review as one required check."
         ),
         "public": public,
         "redirect_url": redirect_url,

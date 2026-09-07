@@ -48,7 +48,8 @@ Return JSON only, no markdown:
       "reason": "why it matters",
       "suggestion": "how to fix",
       "patch": "replacement lines or a tiny unified diff",
-      "verify": "command that proves the fix"
+      "verify": "command that proves the fix",
+      "reproduce": "numbered steps a reviewer can follow to confirm the issue"
     }
   ],
   "files": ["optional extra files to read when action=need"],

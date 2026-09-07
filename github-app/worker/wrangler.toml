@@ -4,5 +4,5 @@ compatibility_date = "2026-09-06"
 workers_dev = true
 
 [vars]
-HOME_REPO = "pwoodman/poly-check"
+HOME_REPO = "pwoodman/the-code-sheriff"
 DISPATCH_REF = "main"

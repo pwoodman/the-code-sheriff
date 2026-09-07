@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/pwoodman/poly-check/schemas/audit-v1.json",
+  "$id": "https://github.com/pwoodman/the-code-sheriff/schemas/audit-v1.json",
   "title": "quality-gates audit report",
   "type": "object",
   "required": ["schema_version", "surfaces", "counts", "checks", "findings"],
