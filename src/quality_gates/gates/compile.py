@@ -67,6 +67,8 @@ def run_compile(
             parts.append(_c_family(root, config, language))
         elif language in {"php", "ruby", "dart", "lua", "powershell", "shell", "r"}:
             parts.append(_syntax_check(root, config, language))
+        elif language == "elixir":
+            parts.append(_elixir(root, config))
         elif language == "swift":
             parts.append(_swift(root, config))
         elif language == "kotlin":
@@ -120,6 +122,80 @@ def run_compile(
 
 
 def _c_family(root: Path, config: QualityConfig, language: str) -> GateResult:
+    if (root / "CMakeLists.txt").is_file():
+        cmake = which("cmake", project=root, prefer_project=config.prefer_project_tools)
+        if cmake and config.trust == "trusted":
+            build = root / ".quality-reports" / "cmake-build"
+            configure = run(
+                [cmake, "-S", str(root), "-B", str(build)], cwd=root, timeout=300
+            )
+            if configure.returncode != 0:
+                return fail_or_pass(
+                    "compile",
+                    findings_from_text(
+                        "compile",
+                        configure,
+                        language=language,
+                        default_message="cmake configure failed",
+                    ),
+                    ["cmake configure"],
+                )
+            result = run([cmake, "--build", str(build)], cwd=root, timeout=600)
+            return fail_or_pass(
+                "compile",
+                findings_from_text(
+                    "compile",
+                    result,
+                    language=language,
+                    default_message="cmake --build failed",
+                ),
+                ["cmake --build"],
+            )
+        if not cmake:
+            return skip_result(
+                "compile",
+                "CMakeLists.txt present but cmake is not installed",
+                tool="cmake",
+            )
+    if (root / "meson.build").is_file():
+        meson = which("meson", project=root, prefer_project=config.prefer_project_tools)
+        if meson and config.trust == "trusted":
+            build = root / ".quality-reports" / "meson-build"
+            setup = run(
+                [meson, "setup", "--reconfigure", str(build), str(root)]
+                if build.is_dir()
+                else [meson, "setup", str(build), str(root)],
+                cwd=root,
+                timeout=300,
+            )
+            if setup.returncode != 0:
+                return fail_or_pass(
+                    "compile",
+                    findings_from_text(
+                        "compile",
+                        setup,
+                        language=language,
+                        default_message="meson setup failed",
+                    ),
+                    ["meson setup"],
+                )
+            result = run([meson, "compile", "-C", str(build)], cwd=root, timeout=600)
+            return fail_or_pass(
+                "compile",
+                findings_from_text(
+                    "compile",
+                    result,
+                    language=language,
+                    default_message="meson compile failed",
+                ),
+                ["meson compile"],
+            )
+        if not meson:
+            return skip_result(
+                "compile",
+                "meson.build present but meson is not installed",
+                tool="meson",
+            )
     command = "cc" if language == "c" else "c++"
     compiler = which(command, project=root, prefer_project=config.prefer_project_tools)
     if not compiler:
@@ -143,6 +219,22 @@ def _c_family(root: Path, config: QualityConfig, language: str) -> GateResult:
         "compile",
         findings_from_text("compile", result, language=language),
         [f"{command} -fsyntax-only ({len(files)} file(s))"],
+    )
+
+
+def _elixir(root: Path, config: QualityConfig) -> GateResult:
+    mix = which("mix", project=root, prefer_project=config.prefer_project_tools)
+    if not mix:
+        return skip_result("compile", "mix is not installed", tool="mix")
+    if not (root / "mix.exs").is_file():
+        return skip_result("compile", "Elixir files present but no mix.exs")
+    result = run([mix, "compile", "--warnings-as-errors"], cwd=root, timeout=300)
+    return fail_or_pass(
+        "compile",
+        findings_from_text(
+            "compile", result, language="elixir", default_message="mix compile failed"
+        ),
+        ["mix compile"],
     )
 
 
@@ -266,6 +358,28 @@ def _swift(root: Path, config: QualityConfig) -> GateResult:
 
 
 def _kotlin(root: Path, config: QualityConfig) -> GateResult:
+    gradle = root / "gradlew"
+    gradle_bin = str(gradle) if gradle.is_file() else which("gradle", project=root)
+    if gradle_bin and (
+        (root / "build.gradle").is_file() or (root / "build.gradle.kts").is_file()
+    ):
+        if config.trust != "trusted":
+            return skip_result(
+                "compile",
+                "Gradle Kotlin compile requires trusted mode",
+                tool="gradle",
+            )
+        result = run([gradle_bin, "-q", "compileKotlin"], cwd=root, timeout=600)
+        return fail_or_pass(
+            "compile",
+            findings_from_text(
+                "compile",
+                result,
+                language="kotlin",
+                default_message="gradle compileKotlin failed",
+            ),
+            ["gradle compileKotlin"],
+        )
     if config.trust != "trusted":
         return skip_result(
             "compile",

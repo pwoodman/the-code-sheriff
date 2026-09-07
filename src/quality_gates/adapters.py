@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import configparser
 import json
+import os
 import re
 import tomllib
 import xml.etree.ElementTree as ET
@@ -109,6 +110,26 @@ def run_adapter_safe(
     """Isolate plugin failures from crashing the orchestrator."""
     meta = getattr(adapter, "metadata", None)
     name = getattr(meta, "tools", ("plugin",))[0] if meta and meta.tools else "plugin"
+    if os.environ.get("QUALITY_PLUGIN_SUBPROCESS") == "1":
+        from quality_gates.plugin_worker import run_in_subprocess
+
+        try:
+            return run_in_subprocess(adapter, context)
+        except Exception as exc:
+            return GateResult(
+                name=name,
+                status="fail",
+                exit_state="errored",
+                findings=[
+                    Finding(
+                        gate=name,
+                        rule="plugin-exception",
+                        message=f"plugin subprocess failed: {exc}",
+                        severity="error",
+                    )
+                ],
+                notes=[f"plugin subprocess: {type(exc).__name__}: {exc}"],
+            )
     try:
         return adapter.run(context)
     except Exception as exc:
@@ -153,7 +174,7 @@ FORMAT_COMMANDS: dict[str, CommandTemplate] = {
     "scala": CommandTemplate("scalafmt", ("--test",), ()),
     "lua": CommandTemplate("stylua", ("--check",), ()),
     "r": CommandTemplate("air", ("format", "--check"), ("format",)),
-    "matlab": CommandTemplate("mh_style", (), ("--fix",)),
+    "elixir": CommandTemplate("mix", ("format", "--check-formatted"), ("format",)),
     "shell": CommandTemplate("shfmt", ("-d",), ("-w",)),
     "fish": CommandTemplate("fish_indent", ("--check",), ("--write",)),
     "toml": CommandTemplate("tombi", ("format", "--check"), ("format",)),
@@ -182,7 +203,10 @@ LINT_COMMANDS: dict[str, CommandTemplate] = {
     "r": CommandTemplate(
         "R", ("--slave", "-e", "lintr::lint_dir('.')"), files_at_end=False
     ),
-    "matlab": CommandTemplate("mh_lint", ()),
+    "elixir": CommandTemplate("mix", ("credo", "--strict"), files_at_end=False),
+    "terraform": CommandTemplate("tflint", ()),
+    "kubernetes": CommandTemplate("kubeconform", ("-strict",)),
+    "helm": CommandTemplate("helm", ("lint", "."), files_at_end=False),
     "shell": CommandTemplate("shellcheck", ("--format", "gcc")),
     "zsh": CommandTemplate("zsh", ("-n",)),
     "fish": CommandTemplate("fish", ("-n",)),
@@ -379,6 +403,12 @@ def _validate_file(profile_id: str, validator: str, path: Path) -> list[Finding]
             return _validate_properties(path, text)
         elif validator == "builtin-batch":
             return _validate_batch(path, text)
+        elif validator == "builtin-terraform":
+            return _validate_balanced(path, text, "terraform")
+        elif validator == "builtin-protobuf":
+            return _validate_protobuf(path, text)
+        elif validator == "builtin-graphql":
+            return _validate_balanced(path, text, "graphql")
     except (
         OSError,
         UnicodeError,
@@ -516,6 +546,31 @@ def _validate_batch(path: Path, text: str) -> list[Finding]:
                     severity="warning",
                 )
             )
+    return findings
+
+
+def _validate_balanced(path: Path, text: str, kind: str) -> list[Finding]:
+    depth = 0
+    for line_no, line in enumerate(text.splitlines(), 1):
+        depth += line.count("{") - line.count("}")
+        if depth < 0:
+            return [_validation_finding(kind, path, "unbalanced braces", kind, line_no)]
+    if depth:
+        return [_validation_finding(kind, path, "unbalanced braces", kind)]
+    return []
+
+
+def _validate_protobuf(path: Path, text: str) -> list[Finding]:
+    findings = _validate_balanced(path, text, "protobuf")
+    if not re.search(r"\b(syntax|message|service|enum)\b", text):
+        findings.append(
+            _validation_finding(
+                "protobuf",
+                path,
+                "no message, service, enum, or syntax declaration",
+                "protobuf",
+            )
+        )
     return findings
 
 

@@ -1,7 +1,7 @@
 # Support and compatibility
 
 Python 3.11–3.14 is tested. Linux, macOS, and Windows run unit CI; scheduled
-fixtures exercise representative Python, Node.js, Go, Rust, and .NET toolchains.
+fixtures exercise representative Python, Node.js, Go, Rust, .NET, Java, PHP, and Ruby toolchains.
 The current and previous minor poly-check releases receive bug and security
 fixes.
 

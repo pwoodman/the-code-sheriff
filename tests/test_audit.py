@@ -254,7 +254,7 @@ def test_module_level_import_cycle_is_reported(tmp_path: Path) -> None:
         ("app.scala", "def unfinished = {}\n"),
         ("app.lua", "function unfinished()\nend\n"),
         ("app.r", "unfinished <- function() {}\n"),
-        ("app.m", "function unfinished()\nend\n"),
+        ("app.ex", "def unfinished do\nend\n"),
         ("app.sh", "unfinished() { :; }\n"),
         ("app.ps1", "function Invoke-Unfinished {}\n"),
     ],
@@ -306,7 +306,7 @@ def test_code_quality_capabilities_are_explicit() -> None:
         "scala",
         "lua",
         "r",
-        "matlab",
+        "elixir",
         "shell",
         "powershell",
     }

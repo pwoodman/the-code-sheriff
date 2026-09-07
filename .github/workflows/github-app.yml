@@ -1,0 +1,103 @@
+# Optional hosted receiver. Preferred path: each installed repo runs
+# `.github/workflows/quality.yml` on *its* Actions minutes (The Code Sheriff check).
+
+name: The Code Sheriff
+
+on:
+  repository_dispatch:
+    types: [the-codesheriff]
+  workflow_dispatch:
+    inputs:
+      payload:
+        description: JSON client_payload (repository, sha, pr, installation_id, base, fork, sig)
+        required: true
+
+concurrency:
+  group: the-codesheriff-${{ github.event.client_payload.repository || github.run_id }}-${{ github.event.client_payload.pr || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: App gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/bootstrap
+        with:
+          install-binaries: "false"
+      - name: Verify dispatch
+        id: job
+        env:
+          QUALITY_APP_WEBHOOK_SECRET: ${{ secrets.QUALITY_APP_WEBHOOK_SECRET }}
+          QUALITY_APP_PAYLOAD: ${{ github.event.inputs.payload }}
+        run: quality github-app prepare
+      - name: Mint installation token
+        id: token
+        env:
+          QUALITY_APP_ID: ${{ secrets.QUALITY_APP_ID }}
+          QUALITY_APP_PRIVATE_KEY: ${{ secrets.QUALITY_APP_PRIVATE_KEY }}
+        run: |
+          token=$(quality github-app token --installation-id "${{ steps.job.outputs.installation_id }}")
+          echo "::add-mask::$token"
+          {
+            echo "token<<EOF"
+            echo "$token"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      - name: Checkout target repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: ${{ steps.job.outputs.repository }}
+          ref: refs/pull/${{ steps.job.outputs.pr }}/head
+          token: ${{ steps.token.outputs.token }}
+          path: target
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch base ref
+        working-directory: target
+        run: >
+          git fetch --no-tags origin
+          "${{ steps.job.outputs.base }}:refs/remotes/origin/${{ steps.job.outputs.base }}"
+      - name: The Code Sheriff (in progress)
+        env:
+          GITHUB_TOKEN: ${{ steps.token.outputs.token }}
+          GITHUB_REPOSITORY: ${{ steps.job.outputs.repository }}
+          QUALITY_HEAD_SHA: ${{ steps.job.outputs.sha }}
+        run: >
+          quality github-app check --status in_progress
+          --title "Running quality gates"
+      - name: Run quality gates
+        id: gates
+        working-directory: target
+        env:
+          GITHUB_TOKEN: ${{ steps.token.outputs.token }}
+          GITHUB_REPOSITORY: ${{ steps.job.outputs.repository }}
+          GITHUB_SHA: ${{ steps.job.outputs.sha }}
+          QUALITY_HEAD_SHA: ${{ steps.job.outputs.sha }}
+          QUALITY_PR_NUMBER: ${{ steps.job.outputs.pr }}
+          GITHUB_EVENT_NAME: pull_request
+          GITHUB_REF: refs/pull/${{ steps.job.outputs.pr }}/head
+          GITHUB_BASE_REF: ${{ steps.job.outputs.base }}
+          QUALITY_TRUSTED_BASE: origin/${{ steps.job.outputs.base }}
+          QUALITY_TRUST: ${{ steps.job.outputs.fork == 'true' && 'untrusted' || '' }}
+          OPENAI_API_KEY: ${{ steps.job.outputs.fork != 'true' && secrets.OPENAI_API_KEY || '' }}
+          ANTHROPIC_API_KEY: ${{ steps.job.outputs.fork != 'true' && secrets.ANTHROPIC_API_KEY || '' }}
+        run: quality run --base "origin/${{ steps.job.outputs.base }}"
+      - name: The Code Sheriff (complete)
+        if: always() && steps.job.outputs.sha != ''
+        env:
+          GITHUB_TOKEN: ${{ steps.token.outputs.token }}
+          GITHUB_REPOSITORY: ${{ steps.job.outputs.repository }}
+          QUALITY_HEAD_SHA: ${{ steps.job.outputs.sha }}
+        run: |
+          if [ "${{ steps.gates.outcome }}" = "success" ]; then
+            quality github-app check --status completed --conclusion success --title "The Code Sheriff passed"
+          else
+            quality github-app check --status completed --conclusion failure --title "The Code Sheriff failed"
+          fi

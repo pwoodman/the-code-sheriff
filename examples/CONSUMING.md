@@ -1,6 +1,6 @@
 # How to consume this toolkit from another repository
 
-After this repo lives on GitHub as `YOUR_ORG/quality-gates`, pick one path.
+After this repo lives on GitHub as `pwoodman/poly-check`, pick one path.
 
 Heavy gates (DRY, security, compile, coverage, UI) default to **developer
 machines**. GitHub Actions always runs format, lint, impact, audit, version,
@@ -11,20 +11,16 @@ and PR review. Set `ci.mode` to `github` or `both` for the rest.
 Copy `quality.toml` (keep `ci.mode = "local"`). Add this workflow:
 
 See [`consumer-cli.yml`](consumer-cli.yml). On Actions, `quality run` is cheap.
-On laptops:
+On your machine:
 
 ```bash
-pip install "git+https://github.com/YOUR_ORG/quality-gates.git@v1"
-quality init --org YOUR_ORG --policy adopt
-quality run --skip review
-quality baseline
-pre-commit install --hook-type pre-commit --hook-type pre-push
+uvx --from git+https://github.com/pwoodman/poly-check.git quality setup
 ```
 
 Coding agents can loop on `quality oracle --run` (or `quality mcp`) until the
 oracle reports green.
 
-Existing/legacy repos should stay on **adopt** and commit `.quality-baseline.json` so
+Existing/legacy repos should stay on **adopt** (`quality setup` default) and commit `.quality-baseline.json` so
 PRs are not blocked by yesterday's backlog. New repos can use `--policy enforce`.
 See [`standards/POLICY.md`](../standards/POLICY.md).
 

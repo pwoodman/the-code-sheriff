@@ -45,7 +45,7 @@ def test_registry_has_phase_one_languages_and_aliases() -> None:
         "scala",
         "lua",
         "r",
-        "matlab",
+        "elixir",
         "shell",
         "powershell",
         "sql",
@@ -74,19 +74,14 @@ def test_exact_path_and_shebang_precedence(tmp_path: Path) -> None:
     assert "javascript" not in info["languages"]
 
 
-def test_ambiguous_c_headers_and_m_files_are_reported(tmp_path: Path) -> None:
+def test_ambiguous_c_headers_are_reported(tmp_path: Path) -> None:
     (tmp_path / "shared.h").write_text("int value;\n", encoding="utf-8")
-    (tmp_path / "calculate.m").write_text(
-        "function y = calculate()\nend\n", encoding="utf-8"
-    )
+    (tmp_path / "lib.ex").write_text("defmodule Lib do\nend\n", encoding="utf-8")
     info = detect_languages(tmp_path, QualityConfig())
     assert "c" in info["languages"]
     assert "cpp" in info["languages"]
-    assert "matlab" in info["languages"]
-    assert info["ambiguities"] == [
-        "calculate.m: matlab or objective-c",
-        "shared.h: c or cpp",
-    ]
+    assert "elixir" in info["languages"]
+    assert info["ambiguities"] == ["shared.h: c or cpp"]
 
 
 def test_config_validation_and_bundled_schema(tmp_path: Path) -> None:
@@ -147,11 +142,11 @@ def test_manifest_loader_has_explicit_install_and_checksum_metadata() -> None:
     manifest = load_tool_manifest()
     assert manifest.version == 1
     gitleaks = manifest.by_id()["gitleaks"]
-    assert gitleaks.install_supported is False
+    assert gitleaks.install_supported is True
     assert gitleaks.version == "8.24.3"
     assert gitleaks.artifacts[0].url.startswith("https://")
-    assert gitleaks.artifacts[0].sha256 is None
-    assert "SHA-256" in (gitleaks.install_reason or "")
+    assert gitleaks.artifacts[0].sha256
+    assert len(gitleaks.artifacts[0].sha256) == 64
     assert manifest.by_id()["python3"].install_supported is False
 
 

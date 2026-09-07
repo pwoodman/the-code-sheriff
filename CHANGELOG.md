@@ -1,6 +1,22 @@
 # Changelog
 
 
+## 1.11.0
+
+- Product name is **The Code Sheriff**. CLI remains `quality`; `codesheriff`
+  is an alias. The durable required check is **The Code Sheriff**. Compute
+  runs on each installed repo's Actions minutes.
+- `quality setup` is the whole install: default config, pinned workflow, git
+  hooks, required check via `gh`, and a first baseline. The GitHub App is
+  optional (`quality github-app register`).
+
+## 1.10.0
+
+- MATLAB removed; Elixir (`mix` / Credo) added as the replacement language profile.
+- Conformance fixtures, weekly Java/PHP/Ruby fixture jobs, and IaC/contract file kinds (Terraform, Kubernetes, Helm, protobuf, GraphQL).
+- Typecheck (mypy/pyright when a project config exists), extra test runners, CMake/Meson compile, proto/GraphQL contract diffs, Trivy + optional license allow-list.
+- Report history / `quality report --diff`, HTML filters, `quality watch`, Ollama review, ReviewBench cases, editor diagnostics, GitHub App-lite docs, and optional bwrap / plugin subprocess isolation.
+
 ## 1.9.0
 
 - Delivery of the 50-task quality platform roadmap across 5 phases.

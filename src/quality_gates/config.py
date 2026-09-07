@@ -145,6 +145,7 @@ QUALITY_KEYS = frozenset(
         "performance",
         "plugins",
         "exceptions",
+        "license",
         "policy",
         "baseline",
         "comment_on_pr",
@@ -271,7 +272,11 @@ def load_config(project: Path) -> QualityConfig:
             f"Unsupported quality.config_version {config_version}; expected {CONFIG_VERSION}"
         )
     default_trust = "untrusted" if is_pr_event() else "trusted"
-    trust = str(quality.get("trust", default_trust)).lower()
+    env_trust = os.environ.get("QUALITY_TRUST", "").strip().lower()
+    if env_trust in TRUST_POLICIES:
+        trust = env_trust
+    else:
+        trust = str(quality.get("trust", default_trust)).lower()
     if trust not in TRUST_POLICIES:
         raise ValueError("quality.trust must be one of: " + ", ".join(TRUST_POLICIES))
     detect = _section(data, "quality", "detect")

@@ -7,69 +7,74 @@ tool is emitted explicitly and cannot satisfy a required gate.
 
 | Tool | Capabilities | Languages/file kinds | Platforms | Auto-install | Certification |
 | --- | --- | --- | --- | --- | --- |
-| actionlint | validate | github_actions | linux, darwin, windows | no — Install actionlint explicitly | declared adapter; verify with conformance fixture |
-| air | format | r | linux, darwin, windows | no — Install Air separately | declared adapter; verify with conformance fixture |
-| c++ | compile | cpp | linux, darwin, windows | no — Install a C++ compiler separately | declared adapter; verify with conformance fixture |
-| cargo | compile, lint | rust | linux, darwin, windows | no — Install through rustup | declared adapter; verify with conformance fixture |
-| cargo-clippy | lint | rust | linux, darwin, windows | no — Install the clippy component through rustup | declared adapter; verify with conformance fixture |
-| cc | compile | c | linux, darwin, windows | no — Install a C compiler separately | declared adapter; verify with conformance fixture |
-| checkmake | validate | makefile | linux, darwin, windows | no — Install checkmake explicitly | declared adapter; verify with conformance fixture |
-| checkstyle | lint | java | linux, darwin, windows | no — No verified upstream SHA-256 is bundled; install the jar explicitly | declared adapter; verify with conformance fixture |
-| clang-format | format | c, cpp | linux, darwin, windows | no — Install LLVM separately | declared adapter; verify with conformance fixture |
-| clang-tidy | lint | c, cpp | linux, darwin, windows | no — Install LLVM separately | declared adapter; verify with conformance fixture |
-| csharpier | format | csharp | linux, darwin, windows | no — Install explicitly with dotnet tool | declared adapter; verify with conformance fixture |
-| dart | format, lint, validate | dart | linux, darwin, windows | no — Install the Dart SDK separately | declared adapter; verify with conformance fixture |
-| detekt | lint | kotlin | linux, darwin, windows | no — Install detekt separately | declared adapter; verify with conformance fixture |
-| dotenv-linter | validate | dotenv | linux, darwin, windows | no — Install dotenv-linter explicitly | declared adapter; verify with conformance fixture |
-| dotnet | compile, lint | csharp | linux, darwin, windows | no — Install the .NET SDK separately | declared adapter; verify with conformance fixture |
-| eslint | lint | javascript, typescript, react | linux, darwin, windows | yes | declared adapter; verify with conformance fixture |
-| fish_indent | format | fish | linux, darwin | no — Provided by fish | declared adapter; verify with conformance fixture |
-| gitleaks | security | all/project | linux | no — No verified upstream SHA-256 is bundled; install gitleaks explicitly | declared adapter; verify with conformance fixture |
-| go | compile, lint | go | linux, darwin, windows | no — Install the Go toolchain separately | declared adapter; verify with conformance fixture |
-| gofmt | format | go | linux, darwin, windows | no — Provided by the Go toolchain | declared adapter; verify with conformance fixture |
-| golangci-lint | lint | go | linux | no — No verified upstream SHA-256 is bundled; install golangci-lint explicitly | declared adapter; verify with conformance fixture |
-| google-java-format | format | java | linux, darwin, windows | no — No verified upstream SHA-256 is bundled; install the jar explicitly | declared adapter; verify with conformance fixture |
-| hadolint | lint | dockerfile | linux, darwin, windows | no — Install hadolint explicitly | declared adapter; verify with conformance fixture |
-| java | toolchain | java | linux, darwin, windows | no — Install a JDK separately | declared adapter; verify with conformance fixture |
-| javac | compile | java | linux, darwin, windows | no — Provided by a JDK | declared adapter; verify with conformance fixture |
-| jscpd | dry | all/project | linux, darwin, windows | yes | declared adapter; verify with conformance fixture |
-| kotlinc | compile | kotlin | linux, darwin, windows | no — Install Kotlin separately | declared adapter; verify with conformance fixture |
-| ktlint | format | kotlin | linux, darwin, windows | no — Install ktlint separately | declared adapter; verify with conformance fixture |
-| luac | validate | lua | linux, darwin, windows | no — Install Lua separately | declared adapter; verify with conformance fixture |
-| luacheck | lint | lua | linux, darwin, windows | no — Install Luacheck separately | declared adapter; verify with conformance fixture |
-| markdownlint-cli2 | lint | markdown | linux, darwin, windows | no — Install markdownlint-cli2 explicitly | declared adapter; verify with conformance fixture |
-| matlab | test | matlab | linux, darwin, windows | no — Install MATLAB through MathWorks | declared adapter; verify with conformance fixture |
-| miss_hit | format, lint | matlab | linux, darwin, windows | no — Install MISS_HIT explicitly | declared adapter; verify with conformance fixture |
-| node | toolchain | javascript | linux, darwin, windows | no — Install Node.js separately | declared adapter; verify with conformance fixture |
-| npm | toolchain | javascript, typescript, react | linux, darwin, windows | no — Provided by Node.js | declared adapter; verify with conformance fixture |
-| osv-scanner | security | all/project | linux | no — No verified upstream SHA-256 is bundled; install osv-scanner explicitly | declared adapter; verify with conformance fixture |
-| php | validate | php | linux, darwin, windows | no — Install PHP separately | declared adapter; verify with conformance fixture |
-| php-cs-fixer | format | php | linux, darwin, windows | no — Install in the project with Composer | declared adapter; verify with conformance fixture |
-| phpstan | lint | php | linux, darwin, windows | no — Install in the project with Composer | declared adapter; verify with conformance fixture |
-| prettier | format | javascript, typescript, react, yaml, markdown, xml, json, jsonc, json5, html, css, scss, less | linux, darwin, windows | yes | declared adapter; verify with conformance fixture |
-| pwsh | format, lint, validate | powershell | linux, darwin, windows | no — Install PowerShell separately | declared adapter; verify with conformance fixture |
-| python3 | validate | python | linux, darwin, windows | no — Install the Python runtime with the platform package manager | declared adapter; verify with conformance fixture |
-| R | lint | r | linux, darwin, windows | no — Install R separately | declared adapter; verify with conformance fixture |
-| Rscript | validate | r | linux, darwin, windows | no — Provided by R | declared adapter; verify with conformance fixture |
-| rubocop | format, lint | ruby | linux, darwin, windows | no — Install in the project bundle | declared adapter; verify with conformance fixture |
-| ruby | validate | ruby | linux, darwin, windows | no — Install Ruby separately | declared adapter; verify with conformance fixture |
-| ruff | format, lint | python | linux, darwin, windows | no — Install ruff explicitly; hash-verified Python package installation is not bundled | declared adapter; verify with conformance fixture |
-| rustfmt | format | rust | linux, darwin, windows | no — Install through rustup | declared adapter; verify with conformance fixture |
-| scalac | compile | scala | linux, darwin, windows | no — Install Scala separately | declared adapter; verify with conformance fixture |
-| scalafix | lint | scala | linux, darwin, windows | no — Install scalafix in the project | declared adapter; verify with conformance fixture |
-| scalafmt | format | scala | linux, darwin, windows | no — Install scalafmt in the project | declared adapter; verify with conformance fixture |
-| semgrep | security | all/project | linux, darwin, windows | no — Install explicitly with pip or pipx | declared adapter; verify with conformance fixture |
-| sh | validate | shell | linux, darwin | no — Provided by the operating system | declared adapter; verify with conformance fixture |
-| shellcheck | lint | shell | linux, darwin, windows | no — Install with the platform package manager | declared adapter; verify with conformance fixture |
-| shfmt | format | shell, zsh | linux, darwin, windows | no — Install with the platform package manager | declared adapter; verify with conformance fixture |
-| sqlfluff | format, lint | sql | linux, darwin, windows | no — Install SQLFluff explicitly; hash-verified Python package installation is not bundled | declared adapter; verify with conformance fixture |
-| stylelint | lint | css, scss, less | linux, darwin, windows | no — Install stylelint in the project | declared adapter; verify with conformance fixture |
-| stylua | format | lua | linux, darwin, windows | no — Install StyLua separately | declared adapter; verify with conformance fixture |
-| swift-format | format | swift | linux, darwin | no — Install with the Swift toolchain | declared adapter; verify with conformance fixture |
-| swiftc | compile | swift | linux, darwin | no — Install the Swift toolchain separately | declared adapter; verify with conformance fixture |
-| swiftlint | lint | swift | linux, darwin | no — Install SwiftLint separately | declared adapter; verify with conformance fixture |
-| tombi | format, lint | toml | linux, darwin, windows | no — Install Tombi separately | declared adapter; verify with conformance fixture |
-| tsc | compile | typescript | linux, darwin, windows | no — Install TypeScript in the project | declared adapter; verify with conformance fixture |
-| xmllint | validate | xml | linux, darwin, windows | no — Install libxml2 tools | declared adapter; verify with conformance fixture |
-| yamllint | lint | yaml | linux, darwin, windows | no — Install yamllint explicitly | declared adapter; verify with conformance fixture |
-| zizmor | security | github_actions | linux, darwin, windows | no — Install zizmor explicitly | declared adapter; verify with conformance fixture |
+| actionlint | validate | github_actions | linux, darwin, windows | no — Install actionlint explicitly | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| air | format | r | linux, darwin, windows | no — Install Air separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| c++ | compile | cpp | linux, darwin, windows | no — Install a C++ compiler separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| cargo | compile, lint | rust | linux, darwin, windows | no — Install through rustup | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| cargo-clippy | lint | rust | linux, darwin, windows | no — Install the clippy component through rustup | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| cc | compile | c | linux, darwin, windows | no — Install a C compiler separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| checkmake | validate | makefile | linux, darwin, windows | no — Install checkmake explicitly | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| checkstyle | lint | java | linux, darwin, windows | no — No verified upstream SHA-256 is bundled; install the jar explicitly | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| clang-format | format | c, cpp | linux, darwin, windows | no — Install LLVM separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| clang-tidy | lint | c, cpp | linux, darwin, windows | no — Install LLVM separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| credo | lint | elixir | linux, darwin, windows | no — Add credo to the Mix project | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| csharpier | format | csharp | linux, darwin, windows | no — Install explicitly with dotnet tool | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| dart | format, lint, validate | dart | linux, darwin, windows | no — Install the Dart SDK separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| detekt | lint | kotlin | linux, darwin, windows | no — Install detekt separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| dotenv-linter | validate | dotenv | linux, darwin, windows | no — Install dotenv-linter explicitly | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| dotnet | compile, lint | csharp | linux, darwin, windows | no — Install the .NET SDK separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| eslint | lint | javascript, typescript, react | linux, darwin, windows | yes | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| fish_indent | format | fish | linux, darwin | no — Provided by fish | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| gitleaks | security | all/project | linux, darwin, windows | yes | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| go | compile, lint | go | linux, darwin, windows | no — Install the Go toolchain separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| gofmt | format | go | linux, darwin, windows | no — Provided by the Go toolchain | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| golangci-lint | lint | go | linux, darwin, windows | yes | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| google-java-format | format | java | linux, darwin, windows | no — No verified upstream SHA-256 is bundled; install the jar explicitly | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| hadolint | lint | dockerfile | linux, darwin, windows | no — Install hadolint explicitly | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| helm | validate | helm | linux, darwin, windows | no — Install Helm separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| java | toolchain | java | linux, darwin, windows | no — Install a JDK separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| javac | compile | java | linux, darwin, windows | no — Provided by a JDK | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| jscpd | dry | all/project | linux, darwin, windows | yes | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| kotlinc | compile | kotlin | linux, darwin, windows | no — Install Kotlin separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| ktlint | format | kotlin | linux, darwin, windows | no — Install ktlint separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| kubeconform | validate | kubernetes | linux, darwin, windows | no — Install kubeconform explicitly | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| luac | validate | lua | linux, darwin, windows | no — Install Lua separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| luacheck | lint | lua | linux, darwin, windows | no — Install Luacheck separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| markdownlint-cli2 | lint | markdown | linux, darwin, windows | no — Install markdownlint-cli2 explicitly | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| mix | format, compile, test | elixir | linux, darwin, windows | no — Install Elixir and Mix separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| node | toolchain | javascript | linux, darwin, windows | no — Install Node.js separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| npm | toolchain | javascript, typescript, react | linux, darwin, windows | no — Provided by Node.js | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| osv-scanner | security | all/project | linux, darwin, windows | yes | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| php | validate | php | linux, darwin, windows | no — Install PHP separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| php-cs-fixer | format | php | linux, darwin, windows | no — Install in the project with Composer | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| phpstan | lint | php | linux, darwin, windows | no — Install in the project with Composer | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| prettier | format | javascript, typescript, react, yaml, markdown, xml, json, jsonc, json5, html, css, scss, less | linux, darwin, windows | yes | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| pwsh | format, lint, validate | powershell | linux, darwin, windows | no — Install PowerShell separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| python3 | validate | python | linux, darwin, windows | no — Install the Python runtime with the platform package manager | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| R | lint | r | linux, darwin, windows | no — Install R separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| Rscript | validate | r | linux, darwin, windows | no — Provided by R | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| rubocop | format, lint | ruby | linux, darwin, windows | no — Install in the project bundle | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| ruby | validate | ruby | linux, darwin, windows | no — Install Ruby separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| ruff | format, lint | python | linux, darwin, windows | no — Install ruff explicitly; hash-verified Python package installation is not bundled | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| rustfmt | format | rust | linux, darwin, windows | no — Install through rustup | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| scalac | compile | scala | linux, darwin, windows | no — Install Scala separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| scalafix | lint | scala | linux, darwin, windows | no — Install scalafix in the project | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| scalafmt | format | scala | linux, darwin, windows | no — Install scalafmt in the project | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| semgrep | security | all/project | linux, darwin, windows | no — Install explicitly with pip or pipx | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| sh | validate | shell | linux, darwin | no — Provided by the operating system | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| shellcheck | lint | shell | linux, darwin, windows | no — Install with the platform package manager | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| shfmt | format | shell, zsh | linux, darwin, windows | no — Install with the platform package manager | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| sqlfluff | format, lint | sql | linux, darwin, windows | no — Install SQLFluff explicitly; hash-verified Python package installation is not bundled | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| stylelint | lint | css, scss, less | linux, darwin, windows | no — Install stylelint in the project | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| stylua | format | lua | linux, darwin, windows | no — Install StyLua separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| swift-format | format | swift | linux, darwin | no — Install with the Swift toolchain | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| swiftc | compile | swift | linux, darwin | no — Install the Swift toolchain separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| swiftlint | lint | swift | linux, darwin | no — Install SwiftLint separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| terraform | validate | terraform | linux, darwin, windows | no — Install Terraform or OpenTofu separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| tflint | lint | terraform | linux, darwin, windows | no — Install tflint explicitly | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| tombi | format, lint | toml | linux, darwin, windows | no — Install Tombi separately | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| trivy | security | all/project | linux, darwin, windows | no — Install Trivy explicitly; used when present | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| tsc | compile | typescript | linux, darwin, windows | no — Install TypeScript in the project | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| xmllint | validate | xml | linux, darwin, windows | no — Install libxml2 tools | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| yamllint | lint | yaml | linux, darwin, windows | no — Install yamllint explicitly | skip/unsupported ≠ pass; see tests/fixtures/conformance |
+| zizmor | security | github_actions | linux, darwin, windows | no — Install zizmor explicitly | skip/unsupported ≠ pass; see tests/fixtures/conformance |

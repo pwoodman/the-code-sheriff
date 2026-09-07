@@ -33,10 +33,23 @@ def run_advanced(
     section = config.raw.get("quality", {}).get(capability, {})
     if not isinstance(section, dict):
         section = {}
+    findings: list[Finding] = []
+    if capability == "migration":
+        findings.extend(_migration_findings(root, paths, section))
+    elif capability == "authorization":
+        findings.extend(_authorization_findings(root, paths))
+    elif capability == "resilience":
+        findings.extend(_resilience_findings(root, paths))
     command = section.get("command")
     if not isinstance(command, list) or not all(
         isinstance(item, str) for item in command
     ):
+        if findings:
+            return fail_or_pass(
+                gate,
+                findings,
+                [f"static {capability} analysis (no command configured)"],
+            )
         return GateResult(
             name=gate,
             status="unsupported",
@@ -61,9 +74,6 @@ def run_advanced(
     if auth_reason:
         return blocked_gate_result(gate, auth_reason)
     result = run(command, cwd=root, timeout=int(section.get("timeout", 600)))
-    findings: list[Finding] = []
-    if capability == "migration":
-        findings.extend(_migration_findings(root, paths, section))
     return fail_or_pass(
         gate,
         findings,
@@ -98,6 +108,54 @@ def _migration_findings(
                     path=rel,
                     message="destructive migration requires an explicit recovery strategy",
                     severity="error",
+                )
+            )
+    return out
+
+
+def _authorization_findings(root: Path, paths: list[str]) -> list[Finding]:
+    out: list[Finding] = []
+    deny = re.compile(
+        r"\b(forbidden|denied|unauthorized|permission_denied|403|is_admin)\b",
+        re.I,
+    )
+    for rel in paths:
+        try:
+            text = (root / rel).read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if not deny.search(text) and re.search(
+            r"\b(allow|permit|authorize)\b", text, re.I
+        ):
+            out.append(
+                Finding(
+                    gate="authorization",
+                    rule="missing-negative-auth",
+                    path=rel,
+                    message="authorization change has no denied/forbidden assertion nearby",
+                    severity="warning",
+                )
+            )
+    return out
+
+
+def _resilience_findings(root: Path, paths: list[str]) -> list[Finding]:
+    out: list[Finding] = []
+    retry = re.compile(r"\b(retry|retries|backoff)\b", re.I)
+    bound = re.compile(r"\b(max_retries|timeout|deadline|idempoten)\b", re.I)
+    for rel in paths:
+        try:
+            text = (root / rel).read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if retry.search(text) and not bound.search(text):
+            out.append(
+                Finding(
+                    gate="resilience",
+                    rule="unbounded-retry",
+                    path=rel,
+                    message="retry path has no timeout, max_retries, or idempotency marker",
+                    severity="warning",
                 )
             )
     return out

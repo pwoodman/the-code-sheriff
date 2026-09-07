@@ -1,0 +1,19 @@
+{
+  "name": "The Code Sheriff",
+  "url": "https://github.com/pwoodman/poly-check",
+  "description": "The Code Sheriff runs change-aware quality gates: format, lint, security, compile, impact, coverage, audit, and review as one required check.",
+  "public": false,
+  "hook_attributes": {
+    "url": "https://example.invalid/webhook",
+    "active": false
+  },
+  "redirect_url": "http://127.0.0.1:8787/callback",
+  "default_events": ["pull_request", "check_run"],
+  "default_permissions": {
+    "checks": "write",
+    "contents": "read",
+    "metadata": "read",
+    "pull_requests": "write",
+    "security_events": "write"
+  }
+}

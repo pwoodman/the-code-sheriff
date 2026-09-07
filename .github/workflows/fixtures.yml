@@ -19,6 +19,9 @@ jobs:
           - {os: ubuntu-latest, language: python}
           - {os: ubuntu-latest, language: javascript}
           - {os: ubuntu-latest, language: go}
+          - {os: ubuntu-latest, language: java}
+          - {os: ubuntu-latest, language: php}
+          - {os: ubuntu-latest, language: ruby}
           - {os: macos-latest, language: rust}
           - {os: windows-latest, language: csharp}
     steps:

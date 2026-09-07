@@ -1,0 +1,21 @@
+{
+  "id": "rust_unwrap",
+  "kind": "positive",
+  "languages": [
+    "rust"
+  ],
+  "heuristic": true,
+  "must_rules": [
+    "unsafe-api"
+  ],
+  "must_not_rules": [
+    "format",
+    "lint"
+  ],
+  "max_findings": 6,
+  "needles": [
+    "unwrap()"
+  ],
+  "rationale": "Rust unwrap panics on Err/None",
+  "diff": "rust_unwrap.diff"
+}

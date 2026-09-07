@@ -33,7 +33,7 @@ def main() -> None:
             ", ".join(scopes) or "all/project",
             ", ".join(tool.get("platforms", [])) or "—",
             support,
-            "declared adapter; verify with conformance fixture",
+            "skip/unsupported ≠ pass; see tests/fixtures/conformance",
         )
         lines.append(
             "| " + " | ".join(cell.replace("|", "\\|") for cell in cells) + " |"

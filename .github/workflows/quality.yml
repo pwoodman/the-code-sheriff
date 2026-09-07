@@ -37,6 +37,7 @@ permissions:
   contents: read
   pull-requests: write
   checks: write
+  security-events: write
 
 jobs:
   plan:
@@ -104,6 +105,43 @@ jobs:
             .quality-reports/quality-report.html
             .quality-reports/quality-report.md
             .quality-reports/quality-report.json
+            .quality-reports/quality-report.sarif
+            .quality-reports/diagnostics.json
+      - name: Publish SARIF to code scanning
+        if: always() && hashFiles('.quality-reports/quality-report.sarif') != ''
+        continue-on-error: true
+        run: |
+          # Prefer the GitHub code-scanning API so we do not pin a moving
+          # codeql-action SHA here. Forks without security-events still keep
+          # the artifact above.
+          if [ -n "${GITHUB_TOKEN:-}" ] && [ -f .quality-reports/quality-report.sarif ]; then
+            gzip -c .quality-reports/quality-report.sarif | base64 -w0 > /tmp/quality.sarif.b64
+            python3 - <<'PY'
+          import json, os, urllib.request
+          sarif = open("/tmp/quality.sarif.b64", encoding="utf-8").read()
+          req = urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/code-scanning/sarifs",
+              data=json.dumps({
+                  "commit_sha": os.environ.get("GITHUB_SHA"),
+                  "ref": os.environ.get("GITHUB_REF"),
+                  "sarif": sarif,
+                  "tool_name": "quality-gates",
+              }).encode(),
+              headers={
+                  "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
+                  "Accept": "application/vnd.github+json",
+              },
+              method="POST",
+          )
+          try:
+              urllib.request.urlopen(req, timeout=30)
+              print("uploaded SARIF")
+          except Exception as exc:
+              print(f"SARIF upload skipped: {exc}")
+          PY
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   full:
     name: Full suite
@@ -117,7 +155,7 @@ jobs:
       checks: write
 
   summary:
-    name: Quality summary
+    name: The Code Sheriff
     needs: [plan, local, full]
     if: always()
     runs-on: ubuntu-latest

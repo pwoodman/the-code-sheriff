@@ -99,6 +99,7 @@ exclude = [
   ".zvec-grep",
   ".cursor",
   ".idea",
+  "github-app",
 ]
 
 [quality.format]
@@ -127,6 +128,7 @@ ignore = [
   "**/tooling/**",
   "**/configs/**",
   "**/.github/workflows/**",
+  "**/github-app/**",
 ]
 
 [quality.sql]

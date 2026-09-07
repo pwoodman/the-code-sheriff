@@ -65,12 +65,64 @@ def run_tests(root: Path, config: QualityConfig) -> GateResult:
         cargo_bin = which("cargo", project=root)
         if cargo_bin:
             runners.append(("cargo", [cargo_bin, "test"]))
+    if (root / "pom.xml").is_file():
+        mvn = which("mvn", project=root)
+        if mvn:
+            runners.append(("maven", [mvn, "-q", "test"]))
+    gradle = root / "gradlew"
+    gradle_bin = str(gradle) if gradle.is_file() else which("gradle", project=root)
+    if gradle_bin and (
+        (root / "build.gradle").is_file() or (root / "build.gradle.kts").is_file()
+    ):
+        runners.append(("gradle", [gradle_bin, "-q", "test"]))
+    projects = [
+        path
+        for path in list(root.glob("*.sln")) + list(root.glob("**/*.csproj"))
+        if "tests/fixtures" not in path.as_posix() and "obj" not in path.parts
+    ]
+    if projects:
+        dotnet = which("dotnet", project=root)
+        if dotnet:
+            runners.append(("dotnet", [dotnet, "test", "--nologo", "-v", "q"]))
+    phpunit = which("phpunit", project=root) or (
+        str(root / "vendor" / "bin" / "phpunit")
+        if (root / "vendor" / "bin" / "phpunit").is_file()
+        else None
+    )
+    if phpunit and (
+        (root / "phpunit.xml").is_file()
+        or (root / "phpunit.xml.dist").is_file()
+        or (root / "tests").is_dir()
+    ):
+        runners.append(("phpunit", [phpunit]))
+    if (root / "spec").is_dir() or (root / "Gemfile").is_file():
+        rspec = which("rspec", project=root)
+        if rspec:
+            runners.append(("rspec", [rspec]))
+    if (root / "mix.exs").is_file():
+        mix = which("mix", project=root)
+        if mix:
+            runners.append(("mix", [mix, "test"]))
     if not runners:
         source = [
             path
             for path in iter_project_files(root, config)
             if path.suffix.lower()
-            in {".py", ".js", ".ts", ".tsx", ".go", ".rs", ".java", ".cs"}
+            in {
+                ".py",
+                ".js",
+                ".ts",
+                ".tsx",
+                ".go",
+                ".rs",
+                ".java",
+                ".cs",
+                ".php",
+                ".rb",
+                ".kt",
+                ".ex",
+                ".exs",
+            }
         ]
         if source:
             suggestion = _onboarding_suggestion(root, source)
@@ -158,6 +210,16 @@ def propose_onboarding_patch(root: Path, source: list[Path]) -> str:
             '+import "testing"\n'
             "+func TestSmoke(t *testing.T) {}\n"
         )
+    if {".java"} & suffixes:
+        return "add a JUnit test and run `mvn test` or `gradle test`"
+    if {".cs"} & suffixes:
+        return "add a .NET test project and run `dotnet test`"
+    if {".php"} & suffixes:
+        return "add phpunit.xml and a smoke test, then run `phpunit`"
+    if {".rb"} & suffixes:
+        return "add spec/smoke_spec.rb and run `rspec`"
+    if {".ex", ".exs"} & suffixes:
+        return "add test/smoke_test.exs and run `mix test`"
     return (
         "--- /dev/null\n"
         "+++ b/tests/test_smoke.py\n"
@@ -200,4 +262,16 @@ def _onboarding_suggestion(root: Path, source: list[Path]) -> str:
         return "add Vitest or Jest and one smoke spec, then run `quality test`"
     if ".go" in suffixes:
         return "add a *_test.go smoke test, then run `quality test`"
+    if {".java"} & suffixes:
+        return "add Maven/Gradle tests, then run `quality test`"
+    if {".cs"} & suffixes:
+        return "add `dotnet test` coverage, then run `quality test`"
+    if {".php"} & suffixes:
+        return "add PHPUnit, then run `quality test`"
+    if {".rb"} & suffixes:
+        return "add RSpec, then run `quality test`"
+    if {".kt"} & suffixes:
+        return "add Gradle tests, then run `quality test`"
+    if {".ex", ".exs"} & suffixes:
+        return "add mix test, then run `quality test`"
     return "configure a supported test runner and add a smoke test"

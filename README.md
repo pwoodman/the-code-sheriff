@@ -1,15 +1,21 @@
-# Quality gates
+# The Code Sheriff
 
 Project home: https://github.com/pwoodman/poly-check
 
-A reusable **format → lint → DRY → security → compile → impact → coverage → audit → UI → version → AI review**
-pipeline. Heavy work defaults to **your PC**. GitHub Actions stays cheap unless
-you opt in.
+Polyglot **format → lint → DRY → security → compile → impact → coverage → audit → UI → version → AI review**
+gates. CLI: `quality` (alias: `codesheriff`). Heavy work defaults to **your machine**. GitHub Actions stays cheap unless
+you opt in. One command on a new repo:
+
+```bash
+uvx --from git+https://github.com/pwoodman/poly-check.git quality setup
+```
+
+The GitHub App is optional; see [`docs/GITHUB_APP.md`](docs/GITHUB_APP.md).
 
 | When | What | Where |
 | --- | --- | --- |
-| `git commit` | format, lint, version | laptop |
-| `git push` | DRY, security, compile, impact, coverage, audit, selective UI | laptop |
+| `git commit` | format, lint, version | your device |
+| `git push` | DRY, security, compile, impact, coverage, audit, selective UI | your device |
 | Push / PR on GitHub | format, lint, impact, audit, version, PR review | Actions (seconds) |
 | Optional | full suite on Actions | `ci.mode = "both"` / `"github"`, or workflow **full_suite** |
 | Optional | Playwright/Cypress on Actions | `[quality.ui] on_github = true` |
@@ -36,7 +42,7 @@ GitHub even in `github`/`both` mode unless you turn them on.
 
 Languages and structured file kinds are auto-detected from a declarative
 capability registry. C#, JavaScript/TypeScript, Java, C/C++, Go, Rust, Python,
-PHP, Ruby, Swift, Kotlin, Dart, Scala, Lua, R, MATLAB, Shell, PowerShell, and SQL
+PHP, Ruby, Swift, Kotlin, Dart, Scala, Lua, R, Elixir, Shell, PowerShell, and SQL
 have registry-driven tool adapters. The original Python, JS/TS, Go, Rust, Java,
 C#, and SQL handlers remain the mature, fully tested tier. Other language
 adapters are **experimental/best-effort**: they use established project or PATH
@@ -108,7 +114,7 @@ Unit tests run on Linux, macOS, and Windows across Python 3.11–3.14 in
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Scheduled toolchain
 fixtures cover representative ecosystem setup without adding that cost to PRs.
 
-Consumers: [`examples/CONSUMING.md`](examples/CONSUMING.md).
+Consumers: [`examples/CONSUMING.md`](examples/CONSUMING.md). Golden paths: [`docs/START.md`](docs/START.md). Required-check setup: [`docs/GITHUB_APP.md`](docs/GITHUB_APP.md).
 
 ## Configuration
 
@@ -197,9 +203,13 @@ quality oracle [--run] [--prompt]
 quality eval [--suite reviewbench|martian|macroscope|all] [--download] [--llm]
 quality mcp
 quality run [--only security,compile,impact,coverage,audit,ui] [--skip review] [--full]
-quality report [--format console|markdown|html|json|sarif|junit]
+quality report [--format console|markdown|html|json|sarif|junit] [--diff]
+quality watch [--interval 1.5]
 quality cache [status|clean]
-quality init --org YOUR_ORG [--policy adopt]
+quality setup
+quality init [--policy adopt]
+quality github-app register|serve|manifest
+codesheriff github-app register|serve|manifest
 quality --policy observe run --skip review
 ```
 
@@ -208,6 +218,8 @@ After `quality run`, `.quality-reports/` holds a scorecard you can print or shar
 - `quality-report.md` — performance, issues, and recommended next commands
 - `quality-report.html` — same report, print-friendly in a browser
 - `quality-report.json` — machine-readable digest
+- `diagnostics.json` — editor problem-matcher list
+- `history.json` — last 20 run verdicts (`quality report --diff` vs previous)
 
 `quality report` reprints the last run without re-executing gates. Every run
 writes JSON, Markdown, HTML, SARIF 2.1.0, and JUnit XML. JSON report, audit,

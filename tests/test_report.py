@@ -101,6 +101,7 @@ def test_digest_includes_performance_issues_and_recs() -> None:
     assert "<details" in page
     assert "pill fail" in page
     assert "skip means not applicable" in page
+    assert "filter-gate" in page
     assert "aria-label='line coverage" in page or "line coverage" in page
     assert "class='bar'" in page or 'class="bar"' in page
 

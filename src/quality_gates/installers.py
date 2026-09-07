@@ -91,9 +91,10 @@ def ensure_gitleaks() -> Path | None:
         return target
     artifact = _manifest_artifact("gitleaks")
     url = artifact.url
-    archive = cache_dir() / "downloads" / f"gitleaks_{GITLEAKS_VERSION}.tar.gz"
+    suffix = ".zip" if url.endswith(".zip") else ".tar.gz"
+    archive = cache_dir() / "downloads" / f"gitleaks_{GITLEAKS_VERSION}{suffix}"
     _download(url, archive, sha256=artifact.sha256)
-    _extract_named(archive, "gitleaks", target)
+    _extract_named(archive, "gitleaks.exe" if suffix == ".zip" else "gitleaks", target)
     return target
 
 
@@ -119,9 +120,11 @@ def ensure_golangci_lint() -> Path | None:
         return target
     artifact = _manifest_artifact("golangci-lint")
     url = artifact.url
-    archive = cache_dir() / "downloads" / f"golangci-lint-{GOLANGCI_VERSION}.tar.gz"
+    suffix = ".zip" if url.endswith(".zip") else ".tar.gz"
+    archive = cache_dir() / "downloads" / f"golangci-lint-{GOLANGCI_VERSION}{suffix}"
     _download(url, archive, sha256=artifact.sha256)
-    _extract_named(archive, "golangci-lint", target)
+    member = "golangci-lint.exe" if suffix == ".zip" else "golangci-lint"
+    _extract_named(archive, member, target)
     return target
 
 

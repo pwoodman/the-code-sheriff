@@ -276,7 +276,7 @@ jobs:
           quality run --only impact,audit,review --base "$BASE" --post-review
 
   summary:
-    name: Quality summary
+    name: The Code Sheriff
     needs: [plan, format, lint, dry, security, compile, impact, coverage, ui, version, review]
     if: always()
     runs-on: ubuntu-latest

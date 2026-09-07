@@ -1,0 +1,8 @@
+name = "the-codesheriff"
+main = "src/index.js"
+compatibility_date = "2026-09-06"
+workers_dev = true
+
+[vars]
+HOME_REPO = "pwoodman/poly-check"
+DISPATCH_REF = "main"

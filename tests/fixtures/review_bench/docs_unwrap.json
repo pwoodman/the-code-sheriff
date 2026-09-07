@@ -1,0 +1,16 @@
+{
+  "id": "docs_unwrap",
+  "kind": "hard_negative",
+  "languages": [
+    "rust"
+  ],
+  "heuristic": true,
+  "must_rules": [],
+  "must_not_rules": [
+    "unsafe-api"
+  ],
+  "max_findings": 2,
+  "needles": [],
+  "rationale": "docs mention unwrap without calling it",
+  "diff": "docs_unwrap.diff"
+}

@@ -28,6 +28,8 @@ def run_security(root: Path, config: QualityConfig, languages: list[str]) -> Gat
     findings.extend(_gitleaks(root, skipped))
     findings.extend(_osv(root, skipped, notes))
     findings.extend(_semgrep(root, languages, skipped, notes))
+    findings.extend(_trivy(root, skipped, notes))
+    findings.extend(_license(root, config, notes))
     findings.extend(_workflow_pins(root, config))
     findings.extend(_zizmor(root, skipped, notes))
     findings.extend(_heuristic_secrets(root, config))
@@ -49,6 +51,116 @@ def run_security(root: Path, config: QualityConfig, languages: list[str]) -> Gat
     result = fail_or_pass("security", findings, notes)
     result.skipped_tools = skipped
     return result
+
+
+def _trivy(root: Path, skipped: list[str], notes: list[str]) -> list[Finding]:
+    binary = which("trivy")
+    if not binary:
+        skipped.append("trivy")
+        return []
+    result = run(
+        [
+            binary,
+            "fs",
+            "--scanners",
+            "vuln",
+            "--format",
+            "json",
+            "--quiet",
+            str(root),
+        ],
+        cwd=root,
+        timeout=300,
+    )
+    if result.skipped:
+        skipped.append("trivy")
+        return []
+    try:
+        payload = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        notes.append("trivy did not return JSON")
+        return []
+    findings: list[Finding] = []
+    for res in payload.get("Results") or []:
+        target = res.get("Target") or "filesystem"
+        for vuln in res.get("Vulnerabilities") or []:
+            sev = str(vuln.get("Severity") or "HIGH").lower()
+            findings.append(
+                Finding(
+                    gate="security",
+                    rule=vuln.get("VulnerabilityID") or "trivy",
+                    path=target,
+                    message=(
+                        f"{vuln.get('PkgName') or 'package'}: "
+                        f"{vuln.get('Title') or vuln.get('VulnerabilityID') or 'CVE'}"
+                    ),
+                    severity="error" if sev in {"high", "critical"} else "warning",
+                    tool="trivy",
+                )
+            )
+    if not findings:
+        notes.append("trivy: no known filesystem vulnerabilities")
+    return findings
+
+
+def _license(root: Path, config: QualityConfig, notes: list[str]) -> list[Finding]:
+    section = config.raw.get("quality", {}).get("license", {})
+    if not isinstance(section, dict):
+        section = {}
+    allow = section.get("allow") or []
+    if not isinstance(allow, list) or not allow:
+        notes.append("license allow-list unset; SPDX scan skipped")
+        return []
+    allowed = {str(item).lower() for item in allow}
+    findings: list[Finding] = []
+    needle = re.compile(r"SPDX-License-Identifier:\s*([A-Za-z0-9.+-]+)")
+    for name in ("LICENSE", "LICENSE.md", "COPYING", "NOTICE"):
+        path = root / name
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        found = {match.group(1).lower() for match in needle.finditer(text)}
+        if not found:
+            lowered = text.lower()
+            if "mit" in lowered:
+                found.add("mit")
+            if "apache" in lowered:
+                found.add("apache-2.0")
+            if "gpl" in lowered:
+                found.add("gpl-3.0")
+        for ident in sorted(found):
+            if ident not in allowed:
+                findings.append(
+                    Finding(
+                        gate="security",
+                        rule="license-not-allowed",
+                        path=name,
+                        message=f"license {ident} is outside quality.license.allow",
+                        severity="error",
+                    )
+                )
+    package = root / "package.json"
+    if package.is_file():
+        try:
+            license_id = str(
+                json.loads(package.read_text(encoding="utf-8")).get("license") or ""
+            ).lower()
+        except (OSError, json.JSONDecodeError):
+            license_id = ""
+        if license_id and license_id not in allowed:
+            findings.append(
+                Finding(
+                    gate="security",
+                    rule="license-not-allowed",
+                    path="package.json",
+                    message=f"package.json license {license_id} is outside quality.license.allow",
+                    severity="error",
+                )
+            )
+    return findings
 
 
 def _gitleaks(root: Path, skipped: list[str]) -> list[Finding]:
@@ -328,7 +440,8 @@ def _heuristic_secrets(root: Path, config: QualityConfig) -> list[Finding]:
             ".lua",
             ".r",
             ".rmd",
-            ".m",
+            ".ex",
+            ".exs",
             ".sh",
             ".bash",
             ".zsh",
