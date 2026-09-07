@@ -106,9 +106,10 @@ hosted scanner. Force the rest with `quality run --full`,
 (full suite)**. Playwright/Cypress still skip on GitHub unless `on_github = true`
 or `QUALITY_UI_ON_GITHUB=1`.
 
-This toolkit’s own `quality.toml` uses `mode = "both"` so detect / format / lint /
-DRY / security / compile / coverage actually run on GitHub instead of looking
-skipped. Compile still reports skip on a Python-only tree (there is nothing to
+This toolkit’s own PRs run that same **The Code Sheriff** check via
+[`.github/workflows/sheriff.yml`](.github/workflows/sheriff.yml). `quality.toml`
+uses `mode = "both"` so detect / format / lint / DRY / security / compile /
+coverage actually run on GitHub instead of looking skipped. Compile still reports skip on a Python-only tree (there is nothing to
 build). UI still reports skip when there is no Playwright/Cypress project.
 
 Unit tests run on Linux, macOS, and Windows across Python 3.11–3.14 in

@@ -1,6 +1,5 @@
-# Heavy gate matrix. Not attached to pull_request — default PRs use quality.yml
-# (cheap path) so GitHub does not list Format/Lint/… as skipped. Called when
-# quality.yml decides ci.mode is github/both, or dispatched by hand.
+# Heavy gate matrix. Not attached to pull_request — sheriff.yml / quality.yml
+# call this when ci.mode is github/both. Dispatch by hand to run it alone.
 
 name: Quality gates (full suite)
 

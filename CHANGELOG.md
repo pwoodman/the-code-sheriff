@@ -8,6 +8,8 @@
   Checkov, CycloneDX/SPDX SBOM (`quality sbom`), OWASP/CWE, EPSS when present,
   and steps of reproduction. Default `github_gates` include **security**.
 - Review `--post` writes the AI summary onto the pull request description.
+- This repository dogfoods the same **The Code Sheriff** check consumers get
+  (`sheriff.yml` calls the reusable `quality.yml`).
 
 ## 1.11.0
 

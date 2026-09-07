@@ -37,8 +37,10 @@ or re-run the workflow with **full_suite**, or `QUALITY_CI_FULL=1 quality run --
 
 Vendor `.github/workflows/quality.yml`, `.github/workflows/quality-full.yml`,
 and `.github/actions/` if you want the Detect → Format → … UI matrix.
-With `ci.mode = "local"` that matrix is not scheduled, so PRs do not show
-ten skipped heavy jobs.
+`quality.yml` is `workflow_call` only — add a caller named **The Code Sheriff**
+(this repo’s [`sheriff.yml`](../.github/workflows/sheriff.yml), or `quality setup`)
+so the check actually runs. With `ci.mode = "local"` the heavy matrix is not
+scheduled, so PRs do not show ten skipped jobs.
 
 ## Path C — hooks only
 

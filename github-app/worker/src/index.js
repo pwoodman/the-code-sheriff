@@ -50,7 +50,7 @@ export default {
       String(env.QUALITY_APP_HANDLE_HOME || "").toLowerCase(),
     );
     if (!handleHome && job.repository === home) {
-      return json({ ok: true, skipped: "home repository uses its own workflow" }, 202);
+      return json({ ok: true, skipped: "home repository runs sheriff.yml" }, 202);
     }
     const token = env.DISPATCH_TOKEN || env.QUALITY_APP_DISPATCH_TOKEN || "";
     if (!token) {

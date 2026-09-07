@@ -1,7 +1,8 @@
 # Optional hosted receiver. Preferred path: each installed repo runs
-# `.github/workflows/quality.yml` on *its* Actions minutes (The Code Sheriff check).
+# The Code Sheriff check on *its* Actions minutes via sheriff.yml / quality setup.
+# This workflow only runs when a webhook dispatches work for another repository.
 
-name: The Code Sheriff
+name: The Code Sheriff App
 
 on:
   repository_dispatch:

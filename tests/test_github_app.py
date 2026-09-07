@@ -173,7 +173,7 @@ def test_handle_webhook_skips_home_repo(monkeypatch) -> None:
         _settings(),
     )
     assert status == 202
-    assert "skipped" in result
+    assert "sheriff.yml" in result["skipped"]
 
 
 def test_handle_webhook_rejects_bad_signature() -> None:

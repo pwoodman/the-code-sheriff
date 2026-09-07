@@ -262,7 +262,10 @@ def handle_webhook(
     if job["kind"] == "installed":
         return 200, {"ok": True, "installed": job.get("account")}
     if settings.skip_home and job["repository"] == settings.home_repo:
-        return 202, {"ok": True, "skipped": "home repository uses its own workflow"}
+        return 202, {
+            "ok": True,
+            "skipped": "home repository runs .github/workflows/sheriff.yml",
+        }
     token = resolve_dispatch_token(settings)
     if not token:
         return 503, {

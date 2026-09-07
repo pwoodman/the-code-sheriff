@@ -121,3 +121,18 @@ def test_workflow_yaml_names_the_check() -> None:
     text = workflow_yaml("pwoodman/the-code-sheriff", PIN)
     assert f"name: {CHECK_NAME}" in text
     assert f"@{PIN}" in text
+
+
+def test_this_repo_dogfoods_the_code_sheriff() -> None:
+    root = Path(__file__).resolve().parents[1]
+    sheriff = (root / ".github" / "workflows" / "sheriff.yml").read_text(
+        encoding="utf-8"
+    )
+    quality = (root / ".github" / "workflows" / "quality.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "name: The Code Sheriff" in sheriff
+    assert "uses: ./.github/workflows/quality.yml" in sheriff
+    assert "pull_request:" in sheriff
+    assert "on:\n  workflow_call:" in quality
+    assert "\n  pull_request:\n" not in quality

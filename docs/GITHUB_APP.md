@@ -2,8 +2,10 @@
 
 Install **The Code Sheriff** on a repository, add the workflow, and require
 **The Code Sheriff** as a status check. Gates run on **that repo’s** GitHub
-Actions minutes. This project does not host a worker and does not pay for
-other people’s runs.
+Actions minutes. This project dogfoods the same check via
+[`.github/workflows/sheriff.yml`](../.github/workflows/sheriff.yml). The GitHub
+App does not need a hosted webhook; it skips this home repo so Actions here
+are the source of truth.
 
 GitHub slugifies the App name (typically `the-code-sheriff`). Checks and
 branch protection still use **The Code Sheriff**. CLI is `quality` or
