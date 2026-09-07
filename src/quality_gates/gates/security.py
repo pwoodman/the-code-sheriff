@@ -92,7 +92,9 @@ def _trivy(root: Path, skipped: list[str], notes: list[str]) -> list[Finding]:
         return []
     findings = findings_from_trivy(payload)
     if not findings:
-        notes.append("trivy: no known filesystem vulnerabilities, IaC issues, or secrets")
+        notes.append(
+            "trivy: no known filesystem vulnerabilities, IaC issues, or secrets"
+        )
     return findings
 
 

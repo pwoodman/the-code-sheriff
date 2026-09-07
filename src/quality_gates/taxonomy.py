@@ -17,7 +17,12 @@ _RULES: tuple[tuple[tuple[str, ...], str, str, str], ...] = (
         "4. Re-run `{verify}`.",
     ),
     (
-        ("python.subprocess-shell", "java.runtime-exec", "csharp.process-shell", "shell=true"),
+        (
+            "python.subprocess-shell",
+            "java.runtime-exec",
+            "csharp.process-shell",
+            "shell=true",
+        ),
         "A03:2021 Injection",
         "CWE-78",
         "1. Open `{path}` at line {line}.\n"

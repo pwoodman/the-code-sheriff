@@ -114,9 +114,7 @@ def _trivy_sbom(
     return files, notes
 
 
-def _from_inventory(
-    root: Path, components: list[dict[str, str]]
-) -> dict[str, Any]:
+def _from_inventory(root: Path, components: list[dict[str, str]]) -> dict[str, Any]:
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     name = root.name or PRODUCT
     cdx_components = [
@@ -232,10 +230,14 @@ def _pypi_names(items: list[str]) -> list[dict[str, str]]:
         item = raw.strip(" ,\"'")
         if not item or item.startswith("#"):
             continue
-        name = item.split("[")[0].split(">")[0].split("<")[0].split("=")[0].split("~")[0]
+        name = (
+            item.split("[")[0].split(">")[0].split("<")[0].split("=")[0].split("~")[0]
+        )
         name = name.strip()
         if name:
-            rows.append({"name": name, "version": "unknown", "purl": f"pkg:pypi/{name}"})
+            rows.append(
+                {"name": name, "version": "unknown", "purl": f"pkg:pypi/{name}"}
+            )
     return rows
 
 
@@ -249,7 +251,9 @@ def _gomod_components(path: Path) -> list[dict[str, str]]:
         stripped = line.strip()
         if stripped.startswith("module "):
             name = stripped.split()[1]
-            rows.append({"name": name, "version": "unknown", "purl": f"pkg:golang/{name}"})
+            rows.append(
+                {"name": name, "version": "unknown", "purl": f"pkg:golang/{name}"}
+            )
         elif stripped.startswith("require "):
             parts = stripped.split()
             if len(parts) >= 3:
