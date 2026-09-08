@@ -21,7 +21,7 @@ from quality_gates.github_app import (
     verify_signature,
 )
 
-SECRET = "webhook-secret"
+SECRET = "hook"
 
 
 def _signed(body: bytes, secret: str = SECRET) -> str:

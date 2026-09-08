@@ -3,10 +3,12 @@ from __future__ import annotations
 import os
 
 from quality_gates import GATES
-from quality_gates.config import QualityConfig
+from quality_gates.config import DEFAULT_GITHUB_GATES, QualityConfig
 from quality_gates.risk import triggered_capabilities
 
 # Format and lint are cheap; they belong on GitHub even in local mode.
+# Security is also on the default GitHub plan so PRs get secret/CVE scanning
+# without waiting for a full local-mode suite.
 HEAVY_GATES = (
     "dry",
     "security",
@@ -14,7 +16,7 @@ HEAVY_GATES = (
     "coverage",
     "ui",
 )
-CHEAP_GITHUB_GATES = ("format", "lint", "impact", "audit", "version", "review")
+CHEAP_GITHUB_GATES = tuple(DEFAULT_GITHUB_GATES)
 
 
 def on_github_actions() -> bool:
