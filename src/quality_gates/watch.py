@@ -10,11 +10,13 @@ from quality_gates.config import QualityConfig
 from quality_gates.detect import iter_project_files
 
 
-def snapshot(root: Path, config: QualityConfig) -> dict[str, float]:
-    stamps: dict[str, float] = {}
+def snapshot(root: Path, config: QualityConfig) -> dict[str, tuple[int, int]]:
+    """Return path → (mtime_ns, size) so same-second Windows writes still differ."""
+    stamps: dict[str, tuple[int, int]] = {}
     for path in iter_project_files(root, config):
         try:
-            stamps[path.as_posix()] = path.stat().st_mtime
+            info = path.stat()
+            stamps[path.as_posix()] = (info.st_mtime_ns, info.st_size)
         except OSError:
             continue
     return stamps

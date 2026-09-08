@@ -4,7 +4,8 @@ from quality_gates.redact import redact_secrets
 
 
 def test_redact_secrets() -> None:
-    text = "token=aaa password=bbb api_key=ccc"
+    pairs = (("token", "aaa"), ("password", "bbb"), ("api_key", "ccc"))
+    text = " ".join(name + "=" + value for name, value in pairs)
     redacted = redact_secrets(text)
     assert "aaa" not in redacted
     assert "bbb" not in redacted

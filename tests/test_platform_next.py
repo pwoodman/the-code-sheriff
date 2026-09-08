@@ -90,7 +90,9 @@ def test_watch_snapshot_changes_with_mtime(tmp_path: Path) -> None:
     path = tmp_path / "app.py"
     path.write_text("VALUE = 1\n", encoding="utf-8")
     before = snapshot(tmp_path, QualityConfig())
-    path.write_text("VALUE = 2\n", encoding="utf-8")
+    # Different length so Windows filesystems that keep the same mtime still
+    # change the snapshot via size.
+    path.write_text("VALUE = 2\n# changed\n", encoding="utf-8")
     after = snapshot(tmp_path, QualityConfig())
     assert before != after
 

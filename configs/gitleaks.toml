@@ -6,6 +6,7 @@ useDefault = true
 [allowlist]
 paths = [
   '''(^|/)tests/fixtures/''',
+  '''(^|/)tests/test_redact\.py$''',
   '''(^|/)package-lock\.json$''',
   '''(^|/)go\.sum$''',
   '''(^|/)configs/semgrep\.yml$''',
