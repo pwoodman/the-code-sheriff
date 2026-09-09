@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.13.0
+
+- Cheap AI review by default: skip LLM on lockfiles/docs/generated, Haiku/GPT-4.1-mini
+  on typical PRs, Sonnet only on risky diffs. Incremental hunk review on later commits.
+- Regex gate (`quality regex`) with built-in unsafe-API rules plus `[[quality.regex.rules]]`.
+- Package gate (`quality packages`): known-risky imports/deps (typosquats, malware
+  incidents, abandoned crypto) and undeclared third-party imports, for languages
+  that actually import packages. CVE lockfiles stay with osv-scanner.
+- Source changes require a test file (`[quality.test] require_for_source`); ignore with
+  `# quality:ignore` or `quality ignore add`.
+- Last-run findings persist in `.quality-reports/findings-last.json` and reopen if the
+  snippet is still in the tree.
+- Test timing: compare touched tests to the last recorded duration (default 15% slower)
+  and accept a new baseline with `quality timing accept`.
+
 
 ## 1.12.0
 

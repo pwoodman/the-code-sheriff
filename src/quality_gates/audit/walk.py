@@ -287,7 +287,14 @@ def _is_auditor_source(hit: FileHit) -> bool:
     ):
         return True
     return posix.endswith(
-        ("gates/security.py", "gates/review.py", "review/heuristic.py")
+        (
+            "gates/security.py",
+            "gates/review.py",
+            "gates/packages.py",
+            "gates/regex.py",
+            "review/heuristic.py",
+            "review/routing.py",
+        )
     )
 
 

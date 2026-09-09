@@ -62,7 +62,45 @@
             "inline_comments": {"type": "boolean"},
             "check_run": {"type": "boolean"},
             "verify_tests": {"type": "boolean"},
-            "symbol_neighbors": {"type": "boolean"}
+            "symbol_neighbors": {"type": "boolean"},
+            "incremental": {"type": "boolean"},
+            "risk": {
+              "type": "string",
+              "enum": ["auto", "skip", "cheap", "full", "heuristic"]
+            },
+            "cheap_model": {"type": "string"},
+            "full_model": {"type": "string"},
+            "skip_globs": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "regex": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "include_defaults": {"type": "boolean"},
+            "rules": {"type": "array", "items": {"type": "object"}}
+          }
+        },
+        "packages": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "include_defaults": {"type": "boolean"},
+            "require_declared": {"type": "boolean"},
+            "allow": {"type": "array", "items": {"type": "string"}},
+            "deny": {"type": "array", "items": {"type": "object"}}
+          }
+        },
+        "test": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "require_for_source": {"type": "boolean"},
+            "timing": {"type": "boolean"},
+            "timing_regression_pct": {"type": "number"},
+            "timing_min_delta_ms": {"type": "number"}
           }
         },
         "migration": {"type": "object"},

@@ -220,6 +220,9 @@ def write_baseline(
 def apply_policy(
     results: list[GateResult], root: Path, config: QualityConfig
 ) -> tuple[list[GateResult], str]:
+    from quality_gates.ignore import apply_ignores
+
+    apply_ignores(results, root)
     _apply_exceptions(results, config)
     policy = effective_policy(config)
     if policy == "enforce" or not results:

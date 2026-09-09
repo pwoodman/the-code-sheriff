@@ -153,6 +153,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     lint = sub.add_parser("lint", help="run linters")
     lint.add_argument("--language", action="append", dest="languages")
 
+    regex_p = sub.add_parser("regex", help="regex checker over the change set")
+    regex_p.add_argument("--base", default=None)
+    packages_p = sub.add_parser(
+        "packages",
+        help="risky/undeclared packages from imports and new dependencies",
+    )
+    packages_p.add_argument("--base", default=None)
+
     sub.add_parser("dry", help="copy-paste / duplication scan")
     sub.add_parser(
         "security",
@@ -267,6 +275,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         "coverage",
         help="test coverage vs configurable floor (default 80%% lines)",
     )
+    test_p = sub.add_parser(
+        "test", help="run unit tests, require tests for source, track timing"
+    )
+    test_p.add_argument("--base", default=None)
+
+    ignore_p = sub.add_parser(
+        "ignore", help="override a finding (writes .quality/ignore.toml)"
+    )
+    ignore_p.add_argument("action", choices=["add"])
+    ignore_p.add_argument("--rule", required=True)
+    ignore_p.add_argument("--path", default=None)
+    ignore_p.add_argument("--gate", default=None)
+    ignore_p.add_argument("--reason", required=True)
+    ignore_p.add_argument("--owner", default="")
+    ignore_p.add_argument("--days", type=int, default=90)
+
+    timing_p = sub.add_parser(
+        "timing", help="accept a test duration baseline after a regression alert"
+    )
+    timing_p.add_argument("action", choices=["accept"])
+    timing_p.add_argument("--test", action="append", dest="tests")
+    timing_p.add_argument(
+        "--all-regressed",
+        action="store_true",
+        help="accept every currently flagged timing regression",
+    )
+
     sub.add_parser(
         "audit",
         help="120-point evidence-backed repo inspection (security, API, architecture)",
@@ -459,6 +494,38 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"  {path.relative_to(root)}")
         return 0
 
+    if args.command == "ignore":
+        from quality_gates.ignore import append_ignore
+
+        path = append_ignore(
+            root,
+            rule=args.rule,
+            path=args.path,
+            gate=args.gate,
+            reason=args.reason,
+            owner=args.owner,
+            days=args.days,
+        )
+        print(f"wrote {path.relative_to(root)}")
+        return 0
+    if args.command == "timing":
+        from quality_gates.timing import accept_timings
+
+        if not args.tests and not args.all_regressed:
+            print("pass --test NODEID or --all-regressed", file=sys.stderr)
+            return 2
+        payload = accept_timings(
+            root, nodeids=args.tests, all_regressed=args.all_regressed
+        )
+        if args.json:
+            print(json.dumps(payload, indent=2))
+        else:
+            accepted = payload.get("accepted") or []
+            print(f"accepted {len(accepted)} timing baseline(s)")
+            for item in accepted:
+                print(f"  {item}")
+        return 0 if payload.get("accepted") else 1
+
     languages = _resolve_languages(root, config, getattr(args, "languages", None), None)
     if args.command == "format":
         result = gate_runners.run_format(root, config, languages, check=not args.write)
@@ -466,6 +533,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "lint":
         result = gate_runners.run_lint(root, config, languages)
         return _emit([result], root, config, args.json, ["lint"])
+    if args.command == "regex":
+        result = gate_runners.run_regex(root, config, base=args.base)
+        return _emit([result], root, config, args.json, ["regex"])
+    if args.command == "packages":
+        result = gate_runners.run_packages(root, config, languages, base=args.base)
+        return _emit([result], root, config, args.json, ["packages"])
     if args.command == "dry":
         result = gate_runners.run_dry(root, config, languages)
         return _emit([result], root, config, args.json, ["dry"])
@@ -526,6 +599,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "coverage":
         result = gate_runners.run_coverage(root, config)
         return _emit([result], root, config, args.json, ["coverage"])
+    if args.command == "test":
+        result = gate_runners.run_tests(root, config)
+        return _emit([result], root, config, args.json, ["test"])
     if args.command == "audit":
         result = gate_runners.run_audit(root, config)
         return _emit([result], root, config, args.json, ["audit"])
@@ -585,6 +661,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             elif gate == "lint":
                 item = gate_runners.run_lint(root, config, languages, scope=changed)
+            elif gate == "regex":
+                item = gate_runners.run_regex(
+                    root,
+                    config,
+                    base=args.base,
+                    diff=manifest.diff if manifest else None,
+                )
+            elif gate == "packages":
+                item = gate_runners.run_packages(
+                    root,
+                    config,
+                    languages,
+                    base=args.base,
+                    diff=manifest.diff if manifest else None,
+                )
             elif gate == "dry":
                 item = gate_runners.run_dry(root, config, languages)
             elif gate == "security":
@@ -732,12 +823,45 @@ def _eval(root: Path, args: argparse.Namespace) -> int:
             "reason": "set QUALITY_REVIEW_EVAL=1 and ANTHROPIC_API_KEY or OPENAI_API_KEY",
         }
     print(json.dumps(payload, indent=2))
+    dest = root / ".quality-reports" / "eval" / "SCORECARD.md"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(_eval_markdown(payload), encoding="utf-8")
     bench = payload.get("reviewbench")
     if isinstance(bench, dict) and bench.get("failed"):
         return 1
     if args.llm and not llm_eval_enabled():
         return 2
     return 0
+
+
+def _eval_markdown(payload: dict[str, object]) -> str:
+    lines = ["# Review eval scorecard", ""]
+    bench = payload.get("reviewbench")
+    if isinstance(bench, dict):
+        lines += [
+            "## ReviewBench (heuristic)",
+            "",
+            f"- cases: {bench.get('cases')}",
+            f"- recall: {bench.get('recall')}",
+            f"- hard-negative pass: {bench.get('hard_negative_pass')}",
+            f"- failed: {', '.join(bench.get('failed') or []) or 'none'}",
+            "",
+        ]
+    martian = payload.get("martian")
+    if isinstance(martian, dict):
+        lines += [
+            "## Martian CRB",
+            "",
+            f"- {martian.get('citation') or martian.get('url') or ''}",
+            f"- PRs: {martian.get('prs', martian.get('skipped', ''))}",
+            "",
+        ]
+    macro = payload.get("macroscope")
+    if isinstance(macro, dict):
+        lines += ["## Macroscope reconstructed sample", "", f"- {macro.get('id')}", ""]
+    lines.append("Source: `quality eval`. Settings are the heuristic suite defaults.")
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _csv(value: str | None) -> list[str]:
@@ -775,7 +899,17 @@ def _emit(
     as_json: bool,
     fail_on: list[str],
 ) -> int:
+    from quality_gates.findings_artifact import (
+        reconcile_last_findings,
+        rotate_and_persist,
+    )
+    from quality_gates.ignore import apply_ignores
+
     results, policy = apply_policy(results, root, config)
+    leftover = reconcile_last_findings(root, results)
+    if leftover:
+        apply_ignores(results, root)
+    rotate_and_persist(root, results)
     for result in results:
         if not result.evidence:
             attach_evidence(result, root, config)

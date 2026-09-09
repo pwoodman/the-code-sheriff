@@ -6,10 +6,13 @@ import json
 from pathlib import Path
 
 from quality_gates.authorization import blocked_gate_result, check_authorization
+from quality_gates.change_manifest import discover_changes
 from quality_gates.config import QualityConfig
 from quality_gates.detect import iter_project_files
 from quality_gates.gates.common import fail_or_pass, merge_results, skip_result
+from quality_gates.impact_graph import is_source, is_test
 from quality_gates.models import Finding, GateResult
+from quality_gates.timing import compare_timings, parse_junit
 from quality_gates.tools import run, which
 
 
@@ -22,7 +25,14 @@ def run_tests(root: Path, config: QualityConfig) -> GateResult:
     if (root / "tests").is_dir() or list(root.glob("test_*.py")):
         pytest = which("pytest", project=root) or which("py.test", project=root)
         if pytest:
-            runners.append(("pytest", [pytest, "-q", "--tb=line", *selected]))
+            junit = root / ".quality-reports" / "pytest-junit.xml"
+            junit.parent.mkdir(parents=True, exist_ok=True)
+            runners.append(
+                (
+                    "pytest",
+                    [pytest, "-q", "--tb=line", f"--junitxml={junit}", *selected],
+                )
+            )
         else:
             return skip_result(
                 "test", "pytest is required for discovered Python tests", tool="pytest"
@@ -178,6 +188,28 @@ def run_tests(root: Path, config: QualityConfig) -> GateResult:
                 "test", findings, [f"ran {name}", selection_note], root=root, run=result
             )
         )
+    extra = _require_source_tests(root, config)
+    if extra:
+        parts.append(fail_or_pass("test", extra, ["source-change test requirement"]))
+    if config.test_timing_enabled:
+        timed = parse_junit(root / ".quality-reports" / "pytest-junit.xml")
+        if timed:
+            touched = set(selected)
+            if not touched:
+                manifest = discover_changes(root, None)
+                if manifest.state == "available":
+                    touched = {path for path in manifest.paths if is_test(path)}
+            timing_findings, _payload = compare_timings(
+                root, config, current=timed, touched=touched
+            )
+            if timing_findings:
+                parts.append(
+                    fail_or_pass(
+                        "test",
+                        timing_findings,
+                        ["compared test durations vs last touched run"],
+                    )
+                )
     return merge_results("test", parts)
 
 
@@ -227,6 +259,32 @@ def propose_onboarding_patch(root: Path, source: list[Path]) -> str:
         "+def test_smoke():\n"
         "+    pass\n"
     )
+
+
+def _require_source_tests(root: Path, config: QualityConfig) -> list[Finding]:
+    if not config.test_require_for_source:
+        return []
+    manifest = discover_changes(root, None)
+    if manifest.state != "available":
+        return []
+    sources = [path for path in manifest.paths if is_source(path)]
+    tests = [path for path in manifest.paths if is_test(path)]
+    if sources and not tests:
+        return [
+            Finding(
+                gate="test",
+                rule="missing-tests",
+                path=sources[0],
+                severity="error",
+                message=(
+                    "source changed without an accompanying test file — add coverage "
+                    "for the new behavior, or ignore with "
+                    "`# quality:ignore-file missing-tests` / "
+                    "`quality ignore add --rule missing-tests`"
+                ),
+            )
+        ]
+    return []
 
 
 def _selected_tests(root: Path) -> tuple[list[str], str]:

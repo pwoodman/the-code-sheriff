@@ -12,6 +12,7 @@ from quality_gates.detect import iter_project_files
 from quality_gates.gitutil import git_base_ref, git_changed_names
 from quality_gates.impact_graph import build_graph, is_source
 from quality_gates.models import GateResult
+from quality_gates.review.diffscan import iter_new_file_lines
 from quality_gates.review.rules import ReviewRule, load_review_rules, rules_for_paths
 from quality_gates.tools import run
 
@@ -104,27 +105,8 @@ def changed_paths(diff: str) -> list[str]:
 
 def new_side_lines(diff: str) -> dict[str, set[int]]:
     lines: dict[str, set[int]] = {}
-    current: str | None = None
-    new_line = 0
-    for raw in diff.splitlines():
-        if raw.startswith("+++ b/"):
-            current = raw[6:].strip()
-            if current == "/dev/null":
-                current = None
-            continue
-        if raw.startswith("@@"):
-            match = re.search(r"\+(\d+)", raw)
-            new_line = int(match.group(1)) if match else 0
-            continue
-        if current is None:
-            continue
-        added = raw.startswith("+") and not raw.startswith("+++")
-        context = raw.startswith(" ")
-        if added or context:
-            lines.setdefault(current, set()).add(new_line)
-            new_line += 1
-        elif raw.startswith("-") and not raw.startswith("---"):
-            continue
+    for path, new_line, _kind, _text in iter_new_file_lines(diff):
+        lines.setdefault(path, set()).add(new_line)
     return lines
 
 

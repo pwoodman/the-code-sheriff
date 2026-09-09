@@ -102,13 +102,13 @@ def _python(
     result = run(argv, cwd=root)
     findings = []
     for line in result.stdout.splitlines():
-        line = line.strip()
-        if line.endswith("would be reformatted") or line.endswith("reformatted"):
+        path = _ruff_unformatted_path(line.strip())
+        if path:
             findings.append(
                 Finding(
                     gate="format",
                     language="python",
-                    path=line.split(" ")[0],
+                    path=path,
                     message="file is not formatted with ruff (line length 88, double quotes, LF)",
                     rule="ruff-format",
                 )
@@ -116,6 +116,29 @@ def _python(
     if result.returncode != 0 and not findings:
         findings = findings_from_text("format", result, language="python")
     return fail_or_pass("format", findings)
+
+
+def _ruff_unformatted_path(line: str) -> str | None:
+    """Parse ruff format --check stdout into a file path."""
+    if not line:
+        return None
+    body = line
+    lowered = body.lower()
+    for prefix in ("unformatted:", "would reformat:"):
+        if lowered.startswith(prefix):
+            body = body.split(":", 1)[1].strip()
+            lowered = body.lower()
+            break
+    if "would be reformatted" in lowered:
+        body = body.split("would be reformatted", 1)[0].strip()
+    elif lowered.endswith("reformatted"):
+        body = body[: -len("reformatted")].strip()
+    else:
+        return None
+    path = body.split()[0] if body else ""
+    if not path or path.lower().rstrip(":") in {"would", "unformatted"}:
+        return None
+    return path
 
 
 def _scoped(files: list[Path], scope: list[Path] | None) -> list[Path]:

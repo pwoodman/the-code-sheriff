@@ -33,7 +33,9 @@ def test_consumer_defaults_are_adopt_and_local() -> None:
     assert 'mode = "local"' in text
     assert "The Code Sheriff" in text
     assert "security" in text
-    assert 'github_gates = ["format", "lint", "security"' in text
+    assert 'github_gates = ["format", "lint", "regex", "packages", "security"' in text
+    assert "require_for_source = true" in text
+    assert "timing_regression_pct = 15" in text
 
 
 def test_init_writes_pinned_workflow(tmp_path: Path, monkeypatch, capsys) -> None:

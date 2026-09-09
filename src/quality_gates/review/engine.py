@@ -23,11 +23,24 @@ from quality_gates.review.context import (
 from quality_gates.review.contract import finding_payload
 from quality_gates.review.evidence import collect_test_evidence
 from quality_gates.review.heuristic import heuristic_review
+from quality_gates.review.incremental import (
+    added_hunks,
+    load_state,
+    new_hunks,
+    restrict_diff,
+    save_state,
+    unposted_findings,
+)
 from quality_gates.review.ledger import update_ledger
 from quality_gates.review.llm import resolve_client, run_llm_review, validate_findings
 from quality_gates.review.neighbors import function_windows
-from quality_gates.review.parse import drop_style_nits, merge_findings
+from quality_gates.review.parse import drop_style_nits, fingerprint, merge_findings
 from quality_gates.review.resolve import resolution_stats, rotate_previous
+from quality_gates.review.routing import (
+    classify_review_risk,
+    filter_diff,
+    select_review_model,
+)
 
 STANDARDS_BRIEF = """
 Mechanical gates already own format, lint, and copy-paste. Do not mention style.
@@ -73,6 +86,32 @@ def run_review(
             notes=["no diff against the review base"],
         )
 
+    skip_globs = config.review_skip_globs
+    diff, skipped_paths = filter_diff(diff, skip_globs)
+    if not diff.strip():
+        return GateResult(
+            name="review",
+            status="skip",
+            notes=[
+                "diff is only lockfiles, generated, or vendored paths; LLM skipped",
+                f"skipped_paths: {len(skipped_paths)}",
+            ],
+        )
+
+    state = (
+        load_state(root)
+        if config.review_incremental
+        else {"hunks": {}, "commented": []}
+    )
+    current_hunks = added_hunks(diff)
+    fresh = (
+        new_hunks(current_hunks, state.get("hunks") or {})
+        if config.review_incremental
+        else current_hunks
+    )
+    llm_diff = restrict_diff(diff, set(fresh)) if config.review_incremental else diff
+    incremental_skip = bool(config.review_incremental and current_hunks and not fresh)
+
     partial = (
         bool(unreviewed_units)
         or "[diff truncated]" in diff
@@ -82,6 +121,15 @@ def run_review(
     paths = changed_paths(diff)
     specialists = _specialists(paths, diff)
     heuristic = heuristic_review(diff, languages, prior)
+    if config.test_require_for_source:
+        for item in heuristic:
+            if item.rule == "missing-tests":
+                item.severity = "error"
+                item.suggestion = (
+                    item.suggestion
+                    or "add a test, or `quality:ignore-file missing-tests` / "
+                    "`quality ignore add --rule missing-tests`"
+                )
     # PR-controlled rules are evidence, never authority, until the repository
     # is trusted. This prevents a change from weakening its own review policy.
     rules = active_rules(root, config, paths) if config.trust == "trusted" else []
@@ -91,7 +139,7 @@ def run_review(
         related = related + function_windows(root, diff, config, already=already)
     allowed = set(paths) | {path for path, _text in related}
     prompt = _prompt(
-        diff=diff,
+        diff=llm_diff or diff,
         languages=languages,
         heuristic=heuristic,
         prior=prior,
@@ -101,8 +149,13 @@ def run_review(
         specialists=specialists,
     )
 
+    tier = classify_review_risk(paths, diff, prior, config)
     mode = (config.review_mode or "auto").lower()
-    client = None if mode == "heuristic" else resolve_client(config)
+    model = ""
+    client = None
+    if mode != "heuristic" and tier != "skip" and not incremental_skip:
+        model = select_review_model(config, tier)
+        client = resolve_client(config, model=model)
     provider = "heuristic"
     llm_summary = ""
     llm_findings: list[Finding] = []
@@ -113,7 +166,7 @@ def run_review(
             mode=mode,
             config=config,
             root=root,
-            diff=diff,
+            diff=llm_diff or diff,
         )
         llm_findings = validate_findings(
             client,
@@ -139,6 +192,10 @@ def run_review(
         "schema_version": "1.0.0",
         "provider": provider,
         "mode": mode if client else "heuristic",
+        "risk": tier,
+        "model": model or getattr(client, "model", "") or "",
+        "incremental": bool(config.review_incremental),
+        "skipped_paths": skipped_paths,
         "summary": llm_summary,
         "languages": languages,
         "rules": [rule.source for rule in rules],
@@ -168,11 +225,21 @@ def run_review(
     notes = [
         f"provider: {provider}",
         f"mode: {mode if client else 'heuristic'}",
+        f"risk: {tier}",
         f"rules: {len(rules)}",
         f"related_files: {len(related)}",
         "specialists: " + (", ".join(specialists) or "none"),
         "wrote .quality-reports/review.json and review.md",
     ]
+    if skipped_paths:
+        notes.append(f"skipped generated/lockfile paths: {len(skipped_paths)}")
+    if incremental_skip:
+        notes.append("incremental review: no new hunks since last review-state")
+    elif config.review_incremental and fresh:
+        n_new = sum(len(items) for items in fresh.values())
+        notes.append(f"incremental review: {n_new} new hunk line(s)")
+    if model:
+        notes.append(f"model: {model}")
     if config.trust != "trusted":
         notes.append("untrusted repository rules were excluded from review authority")
     if partial:
@@ -184,13 +251,16 @@ def run_review(
             f"resolution: {resolution['resolved']}/{resolution['previous']} "
             f"({resolution['rate']})"
         )
+    posted = findings
+    commented = list(state.get("commented") or [])
     if post:
         from quality_gates.github_comment import post_review, sync_pr_summary
 
+        posted = unposted_findings(findings, commented)
         notes.extend(
             post_review(
                 body,
-                findings,
+                posted,
                 diff_lines=new_side_lines(diff),
                 inline=config.review_inline,
                 check_run=config.review_check_run,
@@ -198,6 +268,10 @@ def run_review(
             )
         )
         notes.append(sync_pr_summary(llm_summary or body))
+        commented.extend(
+            fingerprint(item, bucket=1) for item in posted if item.rule != "languages"
+        )
+    save_state(root, hunks=current_hunks, commented=commented)
 
     blocking = "review" in config.fail_on and (
         any(item.severity == "error" for item in findings) or partial

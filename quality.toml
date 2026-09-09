@@ -7,7 +7,7 @@ languages = ["auto"]
 
 # Gates that fail CI when they report errors. review never fails the
 # build unless you add it here — it posts findings as a PR comment.
-fail_on = ["format", "lint", "dry", "security", "compile", "contract", "impact", "test", "coverage", "audit", "ui", "version"]
+fail_on = ["format", "lint", "regex", "packages", "dry", "security", "compile", "contract", "impact", "test", "coverage", "audit", "ui", "version"]
 
 # pr-only | always | never
 ai_review = "pr-only"
@@ -32,7 +32,7 @@ trust = "trusted"
 # both   = local hooks AND the full Actions suite.
 [quality.ci]
 mode = "both"
-github_gates = ["format", "lint", "security", "impact", "audit", "version", "review"]
+github_gates = ["format", "lint", "regex", "packages", "security", "impact", "audit", "version", "review"]
 
 [quality.compile]
 # Never compile if secrets/CVEs/SAST errors are present, or if scanners skipped.
@@ -150,6 +150,17 @@ related_bytes = 24000
 validate = true
 inline_comments = true
 check_run = true
+incremental = true
+risk = "auto"
+
+[quality.test]
+require_for_source = true
+timing = true
+timing_regression_pct = 15
+timing_min_delta_ms = 50
+
+[quality.packages]
+require_declared = true
 
 # A workflow permission change is an authorization-sensitive change. Keep its
 # negative/permission regression suite explicit so selective runs have current

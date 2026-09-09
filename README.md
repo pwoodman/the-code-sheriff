@@ -16,12 +16,12 @@ The GitHub App is optional; see [`docs/GITHUB_APP.md`](docs/GITHUB_APP.md).
 | --- | --- | --- |
 | `git commit` | format, lint, version | your device |
 | `git push` | DRY, security, compile, impact, coverage, audit, selective UI | your device |
-| Push / PR on GitHub | format, lint, security, impact, audit, version, PR review | Actions |
+| Push / PR on GitHub | format, lint, regex, packages, security, impact, audit, version, PR review | Actions |
 | Optional | full suite on Actions | `ci.mode = "both"` / `"github"`, or workflow **full_suite** |
 | Optional | Playwright/Cypress on Actions | `[quality.ui] on_github = true` |
 
 That split saves runner minutes. Hooks are the contract; Actions in `local` mode
-runs the cheap PR gates (format, lint, security, impact, audit, version, review).
+runs the cheap PR gates (format, lint, regex, packages, security, impact, audit, version, review).
 Browser UI tests stay off GitHub even in `github`/`both` mode unless you turn them on.
 
 ## What is enforced
@@ -34,11 +34,14 @@ Browser UI tests stay off GitHub even in `github`/`both` mode unless you turn th
 | **Security** | gitleaks, osv-scanner, Trivy, optional semgrep/Checkov | secrets + SCA + SAST + IaC + SBOM |
 | **Compile** | `dotnet build`, `cargo build`, `go build`, `mvn`/`javac`, `tsc --noEmit` | **only after security passes**; build plugins and package scripts may execute |
 | **Impact** | import graph | upstream deps + downstream consumers; fail if callers weren’t updated or tested |
+| **Test** | pytest / Jest / Vitest / go test / … | source diffs need a test file; touched tests >15% slower must be accepted |
 | **Coverage** | pytest-cov / Jest / Go cover / LCOV | default **80% line** floor (industry baseline); skip if no tests |
 | **Audit** | 120-point static inspection | HIGH-confidence evidence only; fail on P0; N/A when no API/UI |
 | **UI** | Playwright / Cypress | **only specs whose touch set hits the diff** (plus downstream files) |
 | **Version** | semver files + changelog | bump required when source changes |
-| **AI review** | heuristic + optional LLM (impact/audit context, custom rules) | PRs; inline comments; does not fail the build |
+| **AI review** | heuristic + optional LLM (impact/audit context, custom rules) | PRs; risk-routed cheap/full models; incremental hunks; inline comments; does not fail the build |
+| **Regex** | configurable + default unsafe-API patterns | change set; `# quality:ignore` / `.quality/ignore.toml` |
+| **Packages** | import + manifest names vs a local risk catalog | typosquats/malware/abandoned libs; undeclared third-party imports |
 
 Languages and structured file kinds are auto-detected from a declarative
 capability registry. C#, JavaScript/TypeScript, Java, C/C++, Go, Rust, Python,
@@ -91,7 +94,7 @@ quality report                     # scorecard, performance, issues, recommendat
 mode = "local"                     # default: cheap Actions
 # mode = "github"                  # full suite on runners
 # mode = "both"                    # hooks + full Actions
-github_gates = ["format", "lint", "security", "impact", "audit", "version", "review"]
+github_gates = ["format", "lint", "regex", "packages", "security", "impact", "audit", "version", "review"]
 
 [quality.ui]
 select = "changed"                 # only specs that touch added/changed files
@@ -99,7 +102,7 @@ on_github = false                  # keep browsers off Actions
 ```
 
 `quality run` on Actions with `mode = "local"` only runs `github_gates`
-(format, lint, security, impact, audit, version, review). Format, lint, and
+(format, lint, regex, packages, security, impact, audit, version, review). Format, lint, and
 security belong on PRs so secrets, CVEs, SAST, and IaC do not wait for a
 hosted scanner. Force the rest with `quality run --full`,
 `QUALITY_CI_FULL=1`, `[quality.ci] mode = "both"`, or Actions → **Quality gates
@@ -175,13 +178,14 @@ tools; installation is only performed by an explicit `quality doctor --install`.
 ### AI review keys
 
 Heuristic review always runs. For JSON findings on the PR: `ANTHROPIC_API_KEY`
-or `OPENAI_API_KEY`. GitHub Models was retired in July 2026; `GITHUB_TOKEN` is
-only used to post review comments. Review packs impact/audit
-context and `.quality/rules/*.md`; it posts inline comments and a check run.
-`quality oracle` / `quality mcp` loop coding agents until gates are green.
-Findings include why / fix / verify; GitHub comments can carry apply-able
-suggestion patches. `quality eval` scores ReviewBench and can download Martian's
-MIT golden comments. See [`standards/AI_REVIEW.md`](standards/AI_REVIEW.md).
+or `OPENAI_API_KEY`. Docs, lockfiles, and generated paths skip the LLM. Typical
+PRs use a cheap model (Haiku / GPT-4.1-mini); auth/SQL/high-fan-out diffs use
+Sonnet. Later commits on the same PR only review new hunks. Custom rules live
+in `.quality/rules/*.md`. Inline `# quality:ignore eval` or
+`.quality/ignore.toml` (via `quality ignore add`) suppress a hit. Last findings
+are stored in `.quality-reports/findings-last.json` and reopen if the snippet
+is still in the tree. `quality eval` writes `.quality-reports/eval/SCORECARD.md`.
+See [`standards/AI_REVIEW.md`](standards/AI_REVIEW.md).
 
 ## CLI
 
@@ -190,18 +194,23 @@ quality detect
 quality doctor [--install]
 quality format [--check | --write]
 quality lint
+quality regex [--base origin/main]
+quality packages [--base origin/main]
 quality dry
 quality security
 quality sbom [--format all|cyclonedx|spdx]
 quality compile [--force]
 quality impact [--base origin/main]
 quality coverage
+quality test
 quality audit
 quality baseline [--ratchet]
 quality ui [--list] [--all] [--base origin/main]
 quality version [--base origin/main]
 quality bump auto|major|minor|patch
 quality review [--base origin/main] [--post]
+quality ignore add --rule eval --path src/app.py --reason "demo" --owner you
+quality timing accept --test tests/test_app.py::test_ok
 quality oracle [--run] [--prompt]
 quality eval [--suite reviewbench|martian|macroscope|all] [--download] [--llm]
 quality mcp
