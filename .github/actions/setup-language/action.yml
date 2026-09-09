@@ -3,7 +3,7 @@ description: Install the compiler/runtime needed to format and lint one language
 inputs:
   language:
     required: true
-    description: csharp | javascript | rust | go | python | java | sql
+    description: csharp | javascript | rust | go | python | java | sql | php | ruby
 runs:
   using: composite
   steps:
@@ -52,3 +52,13 @@ runs:
       if: inputs.language == 'csharp'
       shell: bash
       run: dotnet tool install -g csharpier || dotnet tool update -g csharpier
+
+    - name: PHP
+      if: inputs.language == 'php'
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y php-cli
+
+    - name: Ruby
+      if: inputs.language == 'ruby'
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y ruby-full

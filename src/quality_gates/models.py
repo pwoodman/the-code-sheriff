@@ -25,6 +25,10 @@ class Finding:
     patch: str | None = None
     verify: str | None = None
     confidence: str | None = None
+    cwe: str | None = None
+    owasp: str | None = None
+    epss: str | None = None
+    reproduce: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in asdict(self).items() if v is not None}

@@ -18,7 +18,7 @@ jobs:
         with:
           path: .
           format: spdx-json
-          output-file: poly-check.spdx.json
+          output-file: the-code-sheriff.spdx.json
       - name: Generate tool license inventory
         run: |
           python -c "import json,pathlib; d=json.load(open('configs/tool-manifest.json')); rows=['# Tool license inventory',''] + [f'- {x[\"id\"]}: {x[\"license\"]}' for x in sorted(d['tools'],key=lambda x:x['id'])]; pathlib.Path('tool-licenses.md').write_text('\n'.join(rows)+'\n')"
@@ -26,5 +26,5 @@ jobs:
         with:
           name: sbom-and-licenses
           path: |
-            poly-check.spdx.json
+            the-code-sheriff.spdx.json
             tool-licenses.md

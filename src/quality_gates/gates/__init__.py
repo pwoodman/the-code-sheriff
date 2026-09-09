@@ -1,16 +1,7 @@
-from quality_gates.gates.audit import run_audit
-from quality_gates.gates.compile import run_compile
-from quality_gates.gates.contract import run_contract
-from quality_gates.gates.coverage import run_coverage
-from quality_gates.gates.dry import run_dry
-from quality_gates.gates.format import run_format
-from quality_gates.gates.impact import run_impact
-from quality_gates.gates.lint import run_lint
-from quality_gates.gates.review import run_review
-from quality_gates.gates.security import run_security
-from quality_gates.gates.test import run_tests
-from quality_gates.gates.ui import run_ui
-from quality_gates.gates.version import run_version
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any
 
 __all__ = [
     "run_audit",
@@ -27,3 +18,30 @@ __all__ = [
     "run_ui",
     "run_version",
 ]
+
+_MODULES = {
+    "run_audit": "quality_gates.gates.audit",
+    "run_compile": "quality_gates.gates.compile",
+    "run_contract": "quality_gates.gates.contract",
+    "run_coverage": "quality_gates.gates.coverage",
+    "run_dry": "quality_gates.gates.dry",
+    "run_format": "quality_gates.gates.format",
+    "run_impact": "quality_gates.gates.impact",
+    "run_lint": "quality_gates.gates.lint",
+    "run_review": "quality_gates.gates.review",
+    "run_security": "quality_gates.gates.security",
+    "run_tests": "quality_gates.gates.test",
+    "run_ui": "quality_gates.gates.ui",
+    "run_version": "quality_gates.gates.version",
+}
+
+
+def __getattr__(name: str) -> Any:
+    module = _MODULES.get(name)
+    if module is None:
+        raise AttributeError(name)
+    return getattr(import_module(module), name)
+
+
+def __dir__() -> list[str]:
+    return sorted(__all__)

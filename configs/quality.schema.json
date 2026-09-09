@@ -45,7 +45,7 @@
           "properties": {
             "provider": {
               "type": "string",
-              "enum": ["auto", "openai", "anthropic", "github-models", "off"]
+              "enum": ["auto", "openai", "anthropic", "ollama", "github-models", "off"]
             },
             "model": {"type": "string"},
             "max_diff_bytes": {"type": "integer", "minimum": 1000},
@@ -71,7 +71,14 @@
         "mutation": {"type": "object"},
         "performance": {"type": "object"},
         "plugins": {"type": "object"},
-        "exceptions": {"type": "array", "items": {"type": "object"}}
+        "exceptions": {"type": "array", "items": {"type": "object"}},
+        "license": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "allow": {"type": "array", "items": {"type": "string"}}
+          }
+        }
       }
     }
   }

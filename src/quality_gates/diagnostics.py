@@ -7,6 +7,7 @@ from pathlib import Path
 
 from quality_gates.diagnostics_help import RULE_HELP, docs_for_rule
 from quality_gates.models import Finding, RunResult
+from quality_gates.taxonomy import classify_finding
 
 
 def enrich_finding(
@@ -32,7 +33,7 @@ def enrich_finding(
             finding.verify = f"quality {gate}"
     if not finding.tool and result is not None:
         finding.tool = result.tool
-    return finding
+    return classify_finding(finding)
 
 
 def enrich_findings(

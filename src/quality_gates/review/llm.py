@@ -48,7 +48,8 @@ Return JSON only, no markdown:
       "reason": "why it matters",
       "suggestion": "how to fix",
       "patch": "replacement lines or a tiny unified diff",
-      "verify": "command that proves the fix"
+      "verify": "command that proves the fix",
+      "reproduce": "numbered steps a reviewer can follow to confirm the issue"
     }
   ],
   "files": ["optional extra files to read when action=need"],
@@ -168,12 +169,27 @@ class AnthropicClient:
         )
 
 
-def resolve_client(config: QualityConfig) -> ChatClient | None:
-    if config.offline:
+def _ollama_client(config: QualityConfig) -> ChatClient | None:
+    host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+    from quality_gates.tools import which
+
+    if not which("ollama") and "OLLAMA_HOST" not in os.environ:
         return None
+    model = config.review_model or os.environ.get("OLLAMA_MODEL") or "llama3.2"
+    return OpenAICompatClient(
+        f"{host}/v1/chat/completions",
+        os.environ.get("OLLAMA_API_KEY", "ollama"),
+        model,
+        "ollama",
+    )
+
+
+def resolve_client(config: QualityConfig) -> ChatClient | None:
     provider = (config.review_provider or "auto").lower()
     if provider in {"off", "heuristic", "none"}:
         return None
+    if config.offline or provider == "ollama":
+        return _ollama_client(config)
     openai_key = os.environ.get("OPENAI_API_KEY")
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
     if provider == "auto":
@@ -182,7 +198,7 @@ def resolve_client(config: QualityConfig) -> ChatClient | None:
         elif openai_key:
             provider = "openai"
         else:
-            return None
+            return _ollama_client(config)
     if provider == "github-models":
         # Retired 2026-07-30. GITHUB_TOKEN on Actions is not an inference key.
         return None

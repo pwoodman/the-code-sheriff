@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "quality-gates"
-version = "1.9.0"
-description = "Multi-language quality gates: format, lint, DRY, security, compile, coverage, 120-point audit, selective UI tests, and AI review."
+version = "1.12.0"
+description = "The Code Sheriff: polyglot quality gates for every change."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-authors = [{ name = "Quality Gates" }]
+authors = [{ name = "The Code Sheriff" }]
 keywords = ["lint", "format", "security", "ci", "code-review"]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -33,12 +33,13 @@ all = ["ruff>=0.8", "sqlfluff>=3.2", "semgrep>=1.90", "pytest>=8.0", "pytest-cov
 
 [project.scripts]
 quality = "quality_gates.cli:main"
+codesheriff = "quality_gates.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/pwoodman/poly-check"
-Repository = "https://github.com/pwoodman/poly-check"
-Issues = "https://github.com/pwoodman/poly-check/issues"
-Changelog = "https://github.com/pwoodman/poly-check/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/pwoodman/the-code-sheriff"
+Repository = "https://github.com/pwoodman/the-code-sheriff"
+Issues = "https://github.com/pwoodman/the-code-sheriff/issues"
+Changelog = "https://github.com/pwoodman/the-code-sheriff/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/quality_gates"]

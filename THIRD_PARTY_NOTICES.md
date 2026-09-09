@@ -1,6 +1,6 @@
 # Third-party notices
 
-poly-check itself is MIT licensed. It interoperates with third-party tools but
+The Code Sheriff itself is MIT licensed. It interoperates with third-party tools but
 does not incorporate their binaries. Tool names, versions, capabilities, and
 SPDX-style license identifiers are listed in `configs/tool-manifest.json`.
 

@@ -17,8 +17,10 @@ mechanical bar; review is for bugs those gates cannot statically prove.
 4. Style-nit findings are dropped. A validator pass (same model) can drop false
    positives. Output is `.quality-reports/review.json` plus `review.md`.
 5. `--post` / the GitHub Actions review job writes **inline** pull-request
-   comments at `path:line` and a `quality-review` check run (not only an issue
-   comment). Resolution rate vs the previous `review.json` is recorded.
+   comments at `path:line`, a `quality-review` check run, and a summary block
+   on the pull request description. Findings include OWASP/CWE and steps of
+   reproduction when classified. Resolution rate vs the previous `review.json`
+   is recorded.
 
 ## Custom rules
 

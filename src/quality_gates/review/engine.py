@@ -185,7 +185,7 @@ def run_review(
             f"({resolution['rate']})"
         )
     if post:
-        from quality_gates.github_comment import post_review
+        from quality_gates.github_comment import post_review, sync_pr_summary
 
         notes.extend(
             post_review(
@@ -197,6 +197,7 @@ def run_review(
                 fail_on_review="review" in config.fail_on,
             )
         )
+        notes.append(sync_pr_summary(llm_summary or body))
 
     blocking = "review" in config.fail_on and (
         any(item.severity == "error" for item in findings) or partial
@@ -286,7 +287,9 @@ def _bullets(items: list[Finding]) -> list[str]:
         )
         extra = f" — {item.suggestion}" if item.suggestion else ""
         verify = f" (verify: `{item.verify}`)" if item.verify else ""
-        lines.append(f"- `{loc}` {item.message}{extra}{verify}")
+        labels = [part for part in (item.owasp, item.cwe) if part]
+        tax = f" ({' · '.join(labels)})" if labels else ""
+        lines.append(f"- `{loc}` {item.message}{tax}{extra}{verify}")
     return lines
 
 

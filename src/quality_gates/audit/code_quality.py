@@ -45,7 +45,8 @@ LANGUAGE_BY_SUFFIX = {
     ".lua": "lua",
     ".r": "r",
     ".rmd": "r",
-    ".m": "matlab",
+    ".ex": "elixir",
+    ".exs": "elixir",
     ".sh": "shell",
     ".bash": "shell",
     ".zsh": "shell",
@@ -81,7 +82,7 @@ CODE_QUALITY_CAPABILITIES.update(
         "ruby": {"stubs": "lexical-narrow", "unreachable": "unsupported"},
         "lua": {"stubs": "lexical-narrow", "unreachable": "unsupported"},
         "r": {"stubs": "lexical-narrow", "unreachable": "unsupported"},
-        "matlab": {"stubs": "lexical-narrow", "unreachable": "unsupported"},
+        "elixir": {"stubs": "lexical-narrow", "unreachable": "unsupported"},
         "shell": {"stubs": "lexical-narrow", "unreachable": "unsupported"},
         "powershell": {"stubs": "lexical-narrow", "unreachable": "unsupported"},
     }
@@ -190,14 +191,15 @@ def _empty_callable(
     lines: list[tuple[int, str, str]], position: int, language: str
 ) -> bool:
     _line_no, _raw, stripped = lines[position]
-    if language == "ruby":
+    if language in {"ruby", "elixir"}:
+        prefix = ("def ", "defp ") if language == "elixir" else ("def ",)
         return (
-            stripped.startswith("def ")
+            stripped.startswith(prefix)
             and position + 1 < len(lines)
             and lines[position + 1][2] == "end"
         )
-    if language in {"lua", "matlab"}:
-        prefix = "function " if language == "lua" else "function"
+    if language == "lua":
+        prefix = "function "
         return (
             stripped.startswith(prefix)
             and position + 1 < len(lines)
@@ -256,9 +258,11 @@ def _unreachable_after(
 
 
 def _comment_only(line: str, language: str) -> bool:
-    prefixes = ("#",) if language in {"ruby", "r", "shell"} else ("//", "/*", "*")
-    if language in {"lua", "matlab"}:
-        prefixes = ("--", "%")
+    prefixes = (
+        ("#",) if language in {"ruby", "r", "shell", "elixir"} else ("//", "/*", "*")
+    )
+    if language == "lua":
+        prefixes = ("--",)
     return line.startswith(prefixes)
 
 

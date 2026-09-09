@@ -37,6 +37,19 @@ DANGEROUS = [
         re.compile(r"child_process\.exec\s*\("),
         "child_process.exec runs a shell string; prefer execFile with argv",
     ),
+    (
+        re.compile(r"\.unwrap\(\)"),
+        "Rust unwrap() panics on None/Err in production paths",
+    ),
+    (re.compile(r"\bpanic!\s*\("), "Go/Rust panic on a library path"),
+    (
+        re.compile(r"ObjectInputStream"),
+        "Java ObjectInputStream is a deserialization gadget risk",
+    ),
+    (
+        re.compile(r"ignore_changes\s*="),
+        "Terraform ignore_changes hides drift from review",
+    ),
 ]
 
 TODO_RE = re.compile(r"\b(TODO|FIXME|HACK|XXX)\b")
@@ -52,6 +65,12 @@ SOURCE_SUFFIXES = (
     ".java",
     ".cs",
     ".sql",
+    ".php",
+    ".rb",
+    ".kt",
+    ".ex",
+    ".tf",
+    ".proto",
 )
 STYLE_GATES = frozenset({"format", "lint"})
 # Match audit god-file (800). 400 flagged HTML templates and extracted modules.

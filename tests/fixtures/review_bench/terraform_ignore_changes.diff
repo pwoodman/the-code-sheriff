@@ -1,0 +1,5 @@
+diff --git a/main.tf b/main.tf
+--- a/main.tf
++++ b/main.tf
+@@ -0,0 +1,1 @@
++  ignore_changes = [tags]

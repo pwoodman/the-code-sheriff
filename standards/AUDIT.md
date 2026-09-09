@@ -32,10 +32,10 @@ unreachable statements for Python. Intentional Python interfaces declared with
 `Protocol`, `@abstractmethod`, or `@overload` are excluded.
 
 Narrow lexical detectors recognize explicit empty callable bodies across the
-registered C-style, Ruby, Lua, R, MATLAB, shell, and PowerShell syntax families.
+registered C-style, Ruby, Lua, R, Elixir, shell, and PowerShell syntax families.
 Same-block unreachable checks are limited to C-style brace languages where an
 unconditional terminator, indentation, and following statement align.
-Unreachable detection remains explicitly unsupported for Ruby, Lua, R, MATLAB,
+Unreachable detection remains explicitly unsupported for Ruby, Lua, R, Elixir,
 shell, and PowerShell; native/project linters can supply those diagnostics when
 installed. The audit does not label these lexical checks as AST precision.
 These P1 findings are warnings under the default policy.

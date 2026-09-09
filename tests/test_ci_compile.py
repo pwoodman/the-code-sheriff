@@ -29,6 +29,7 @@ def test_local_mode_on_github_is_cheap(monkeypatch) -> None:
     assert select_gates(config) == list(CHEAP_GITHUB_GATES)
     assert "format" in CHEAP_GITHUB_GATES
     assert "lint" in CHEAP_GITHUB_GATES
+    assert "security" in CHEAP_GITHUB_GATES
     assert "format" not in HEAVY_GATES
     assert "lint" not in HEAVY_GATES
 

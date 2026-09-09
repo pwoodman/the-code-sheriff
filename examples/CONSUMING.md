@@ -1,9 +1,9 @@
 # How to consume this toolkit from another repository
 
-After this repo lives on GitHub as `YOUR_ORG/quality-gates`, pick one path.
+After this repo lives on GitHub as `pwoodman/the-code-sheriff`, pick one path.
 
 Heavy gates (DRY, security, compile, coverage, UI) default to **developer
-machines**. GitHub Actions always runs format, lint, impact, audit, version,
+machines**. GitHub Actions always runs format, lint, security, impact, audit, version,
 and PR review. Set `ci.mode` to `github` or `both` for the rest.
 
 ## Path A — CLI (recommended)
@@ -11,20 +11,16 @@ and PR review. Set `ci.mode` to `github` or `both` for the rest.
 Copy `quality.toml` (keep `ci.mode = "local"`). Add this workflow:
 
 See [`consumer-cli.yml`](consumer-cli.yml). On Actions, `quality run` is cheap.
-On laptops:
+On your machine:
 
 ```bash
-pip install "git+https://github.com/YOUR_ORG/quality-gates.git@v1"
-quality init --org YOUR_ORG --policy adopt
-quality run --skip review
-quality baseline
-pre-commit install --hook-type pre-commit --hook-type pre-push
+uvx --from git+https://github.com/pwoodman/the-code-sheriff.git quality setup
 ```
 
 Coding agents can loop on `quality oracle --run` (or `quality mcp`) until the
 oracle reports green.
 
-Existing/legacy repos should stay on **adopt** and commit `.quality-baseline.json` so
+Existing/legacy repos should stay on **adopt** (`quality setup` default) and commit `.quality-baseline.json` so
 PRs are not blocked by yesterday's backlog. New repos can use `--policy enforce`.
 See [`standards/POLICY.md`](../standards/POLICY.md).
 
@@ -41,8 +37,10 @@ or re-run the workflow with **full_suite**, or `QUALITY_CI_FULL=1 quality run --
 
 Vendor `.github/workflows/quality.yml`, `.github/workflows/quality-full.yml`,
 and `.github/actions/` if you want the Detect → Format → … UI matrix.
-With `ci.mode = "local"` that matrix is not scheduled, so PRs do not show
-ten skipped heavy jobs.
+`quality.yml` is `workflow_call` only — add a caller named **The Code Sheriff**
+(this repo’s [`sheriff.yml`](../.github/workflows/sheriff.yml), or `quality setup`)
+so the check actually runs. With `ci.mode = "local"` the heavy matrix is not
+scheduled, so PRs do not show ten skipped jobs.
 
 ## Path C — hooks only
 

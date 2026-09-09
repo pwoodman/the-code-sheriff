@@ -1,0 +1,35 @@
+# This repository dogfoods the same caller consumers get from `quality setup`.
+# The reusable implementation lives in quality.yml (workflow_call only).
+
+name: The Code Sheriff
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      full_suite:
+        description: Run the heavy suite on GitHub (ignores ci.mode=local)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  security-events: write
+
+jobs:
+  sheriff:
+    name: The Code Sheriff
+    uses: ./.github/workflows/quality.yml
+    with:
+      full_suite: ${{ github.event_name == 'workflow_dispatch' && inputs.full_suite || false }}
+    secrets: inherit
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+      security-events: write

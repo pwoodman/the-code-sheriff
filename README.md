@@ -1,22 +1,28 @@
-# Quality gates
+# The Code Sheriff
 
-Project home: https://github.com/pwoodman/poly-check
+Project home: https://github.com/pwoodman/the-code-sheriff
 
-A reusable **format → lint → DRY → security → compile → impact → coverage → audit → UI → version → AI review**
-pipeline. Heavy work defaults to **your PC**. GitHub Actions stays cheap unless
-you opt in.
+Polyglot **format → lint → DRY → security → compile → impact → coverage → audit → UI → version → AI review**
+gates. CLI: `quality` (alias: `codesheriff`). Heavy work defaults to **your machine**. GitHub Actions stays cheap unless
+you opt in. One command on a new repo:
+
+```bash
+uvx --from git+https://github.com/pwoodman/the-code-sheriff.git quality setup
+```
+
+The GitHub App is optional; see [`docs/GITHUB_APP.md`](docs/GITHUB_APP.md).
 
 | When | What | Where |
 | --- | --- | --- |
-| `git commit` | format, lint, version | laptop |
-| `git push` | DRY, security, compile, impact, coverage, audit, selective UI | laptop |
-| Push / PR on GitHub | format, lint, impact, audit, version, PR review | Actions (seconds) |
+| `git commit` | format, lint, version | your device |
+| `git push` | DRY, security, compile, impact, coverage, audit, selective UI | your device |
+| Push / PR on GitHub | format, lint, security, impact, audit, version, PR review | Actions |
 | Optional | full suite on Actions | `ci.mode = "both"` / `"github"`, or workflow **full_suite** |
 | Optional | Playwright/Cypress on Actions | `[quality.ui] on_github = true` |
 
 That split saves runner minutes. Hooks are the contract; Actions in `local` mode
-only checks versioning and (on PRs) posts a review. Browser UI tests stay off
-GitHub even in `github`/`both` mode unless you turn them on.
+runs the cheap PR gates (format, lint, security, impact, audit, version, review).
+Browser UI tests stay off GitHub even in `github`/`both` mode unless you turn them on.
 
 ## What is enforced
 
@@ -25,7 +31,7 @@ GitHub even in `github`/`both` mode unless you turn them on.
 | **Format** | csharpier, Prettier, rustfmt, gofmt, ruff, google-java-format, SQLFluff | C#, JS/TS/React, Rust, Go, Python, Java, SQL |
 | **Lint** | Roslyn, ESLint + react-hooks + jsx-a11y, clippy, golangci-lint, ruff, Checkstyle, SQLFluff | same |
 | **DRY** | jscpd | copy-paste |
-| **Security** | gitleaks, osv-scanner, optional semgrep | secrets + CVEs + SAST |
+| **Security** | gitleaks, osv-scanner, Trivy, optional semgrep/Checkov | secrets + SCA + SAST + IaC + SBOM |
 | **Compile** | `dotnet build`, `cargo build`, `go build`, `mvn`/`javac`, `tsc --noEmit` | **only after security passes**; build plugins and package scripts may execute |
 | **Impact** | import graph | upstream deps + downstream consumers; fail if callers weren’t updated or tested |
 | **Coverage** | pytest-cov / Jest / Go cover / LCOV | default **80% line** floor (industry baseline); skip if no tests |
@@ -36,7 +42,7 @@ GitHub even in `github`/`both` mode unless you turn them on.
 
 Languages and structured file kinds are auto-detected from a declarative
 capability registry. C#, JavaScript/TypeScript, Java, C/C++, Go, Rust, Python,
-PHP, Ruby, Swift, Kotlin, Dart, Scala, Lua, R, MATLAB, Shell, PowerShell, and SQL
+PHP, Ruby, Swift, Kotlin, Dart, Scala, Lua, R, Elixir, Shell, PowerShell, and SQL
 have registry-driven tool adapters. The original Python, JS/TS, Go, Rust, Java,
 C#, and SQL handlers remain the mature, fully tested tier. Other language
 adapters are **experimental/best-effort**: they use established project or PATH
@@ -85,7 +91,7 @@ quality report                     # scorecard, performance, issues, recommendat
 mode = "local"                     # default: cheap Actions
 # mode = "github"                  # full suite on runners
 # mode = "both"                    # hooks + full Actions
-github_gates = ["format", "lint", "impact", "audit", "version", "review"]
+github_gates = ["format", "lint", "security", "impact", "audit", "version", "review"]
 
 [quality.ui]
 select = "changed"                 # only specs that touch added/changed files
@@ -93,22 +99,24 @@ on_github = false                  # keep browsers off Actions
 ```
 
 `quality run` on Actions with `mode = "local"` only runs `github_gates`
-(format, lint, impact, audit, version, review). Format and lint are cheap and
-always belong on PRs. Force the rest with `quality run --full`,
+(format, lint, security, impact, audit, version, review). Format, lint, and
+security belong on PRs so secrets, CVEs, SAST, and IaC do not wait for a
+hosted scanner. Force the rest with `quality run --full`,
 `QUALITY_CI_FULL=1`, `[quality.ci] mode = "both"`, or Actions → **Quality gates
 (full suite)**. Playwright/Cypress still skip on GitHub unless `on_github = true`
 or `QUALITY_UI_ON_GITHUB=1`.
 
-This toolkit’s own `quality.toml` uses `mode = "both"` so detect / format / lint /
-DRY / security / compile / coverage actually run on GitHub instead of looking
-skipped. Compile still reports skip on a Python-only tree (there is nothing to
+This toolkit’s own PRs run that same **The Code Sheriff** check via
+[`.github/workflows/sheriff.yml`](.github/workflows/sheriff.yml). `quality.toml`
+uses `mode = "both"` so detect / format / lint / DRY / security / compile /
+coverage actually run on GitHub instead of looking skipped. Compile still reports skip on a Python-only tree (there is nothing to
 build). UI still reports skip when there is no Playwright/Cypress project.
 
 Unit tests run on Linux, macOS, and Windows across Python 3.11–3.14 in
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Scheduled toolchain
 fixtures cover representative ecosystem setup without adding that cost to PRs.
 
-Consumers: [`examples/CONSUMING.md`](examples/CONSUMING.md).
+Consumers: [`examples/CONSUMING.md`](examples/CONSUMING.md). Golden paths: [`docs/START.md`](docs/START.md). Required-check setup: [`docs/GITHUB_APP.md`](docs/GITHUB_APP.md).
 
 ## Configuration
 
@@ -184,6 +192,7 @@ quality format [--check | --write]
 quality lint
 quality dry
 quality security
+quality sbom [--format all|cyclonedx|spdx]
 quality compile [--force]
 quality impact [--base origin/main]
 quality coverage
@@ -197,9 +206,13 @@ quality oracle [--run] [--prompt]
 quality eval [--suite reviewbench|martian|macroscope|all] [--download] [--llm]
 quality mcp
 quality run [--only security,compile,impact,coverage,audit,ui] [--skip review] [--full]
-quality report [--format console|markdown|html|json|sarif|junit]
+quality report [--format console|markdown|html|json|sarif|junit] [--diff]
+quality watch [--interval 1.5]
 quality cache [status|clean]
-quality init --org YOUR_ORG [--policy adopt]
+quality setup
+quality init [--policy adopt]
+quality github-app register|serve|manifest
+codesheriff github-app register|serve|manifest
 quality --policy observe run --skip review
 ```
 
@@ -208,6 +221,8 @@ After `quality run`, `.quality-reports/` holds a scorecard you can print or shar
 - `quality-report.md` — performance, issues, and recommended next commands
 - `quality-report.html` — same report, print-friendly in a browser
 - `quality-report.json` — machine-readable digest
+- `diagnostics.json` — editor problem-matcher list
+- `history.json` — last 20 run verdicts (`quality report --diff` vs previous)
 
 `quality report` reprints the last run without re-executing gates. Every run
 writes JSON, Markdown, HTML, SARIF 2.1.0, and JUnit XML. JSON report, audit,
@@ -227,6 +242,28 @@ Use `quality cache status`, `quality cache clean`, or set
 `QUALITY_GATES_CACHE_ENABLED=0`.
 
 Exit `1` = a gate in `fail_on` reported errors. Skip ≠ fail.
+
+## Covering a hosted scanner
+
+The Code Sheriff is meant to replace a second PR-time security/review product
+(CodeAnt-class SAST, secrets, SCA, IaC, SBOM, AI review, quality gates). It
+does **not** run live pentests, DAST against a deployed app, or cloud CSPM of
+AWS/GCP/Azure accounts — those are a different job.
+
+| Need | How The Code Sheriff covers it |
+| --- | --- |
+| SAST | Semgrep + 120-point audit + AI review |
+| Secrets | gitleaks + Trivy secret + heuristic |
+| SCA / CVEs | osv-scanner + Trivy filesystem |
+| IaC | Trivy misconfig + Checkov (if installed) + kubeconform/hadolint/tflint |
+| SBOM | `quality sbom` (CycloneDX + SPDX); also written during the security gate |
+| Duplicate code | jscpd (`quality dry`) |
+| Coverage | line floor (default 80%) |
+| Dead code / complexity | audit |
+| AI PR review | inline comments, apply-able patches, OWASP/CWE, steps of reproduction |
+| PR summary | review posts a summary onto the pull request description |
+| IDE | `.quality-reports/diagnostics.json` problem matcher |
+| Auto-fix | suggestion fences, MCP `quality_apply_fix`, `quality oracle` |
 
 ## License
 

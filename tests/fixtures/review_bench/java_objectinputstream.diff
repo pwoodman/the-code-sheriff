@@ -1,0 +1,5 @@
+diff --git a/src/Load.java b/src/Load.java
+--- a/src/Load.java
++++ b/src/Load.java
+@@ -0,0 +1,1 @@
++ObjectInputStream in = new ObjectInputStream(stream);

@@ -113,7 +113,57 @@ def _python(root: Path, config: QualityConfig, files: list[Path]) -> GateResult:
             )
     except json.JSONDecodeError:
         findings = findings_from_text("lint", result, language="python", root=root)
-    return fail_or_pass("lint", findings, root=root, run=result)
+    typed = _python_typecheck(root, config, files)
+    notes: list[str] = []
+    if typed is not None:
+        findings.extend(typed.findings)
+        notes.extend(typed.notes)
+    return fail_or_pass("lint", findings, notes or None, root=root, run=result)
+
+
+def _python_typecheck(
+    root: Path, config: QualityConfig, files: list[Path]
+) -> GateResult | None:
+    """Run mypy or pyright when a project config exists and the tool is installed."""
+    for name, extra in (
+        ("mypy", ["--hide-error-context", "--no-error-summary"]),
+        ("pyright", []),
+    ):
+        if not _has_typecheck_config(root, name):
+            continue
+        executable = which(
+            name, project=root, prefer_project=config.prefer_project_tools
+        )
+        if not executable:
+            continue
+        argv = [executable, *extra, *(relative(root, item) for item in files)]
+        ran = run(argv, cwd=root, timeout=300)
+        return fail_or_pass(
+            "lint",
+            findings_from_text("lint", ran, language="python", root=root),
+            [f"{name} typecheck"],
+            root=root,
+            run=ran,
+        )
+    return None
+
+
+def _has_typecheck_config(root: Path, name: str) -> bool:
+    if name == "mypy":
+        if (root / "mypy.ini").is_file() or (root / ".mypy.ini").is_file():
+            return True
+        marker = "[tool.mypy]"
+    else:
+        if (root / "pyrightconfig.json").is_file():
+            return True
+        marker = "[tool.pyright]"
+    pyproject = root / "pyproject.toml"
+    if not pyproject.is_file():
+        return False
+    try:
+        return marker in pyproject.read_text(encoding="utf-8")
+    except OSError:
+        return False
 
 
 def _scoped(files: list[Path], scope: list[Path] | None) -> list[Path]:

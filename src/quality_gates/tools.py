@@ -74,6 +74,25 @@ def run(
 ) -> RunResult:
     argv_list = [str(part) for part in argv]
     run_env = isolated_env(env) if isolated else env
+    if isolated:
+        bwrap = which("bwrap")
+        if bwrap:
+            argv_list = [
+                bwrap,
+                "--die-with-parent",
+                "--unshare-net",
+                "--ro-bind",
+                "/",
+                "/",
+                "--dev",
+                "/dev",
+                "--tmpfs",
+                "/tmp",
+                "--chdir",
+                str(cwd),
+                "--",
+                *argv_list,
+            ]
     try:
         proc = subprocess.run(
             argv_list,

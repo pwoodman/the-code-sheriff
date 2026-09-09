@@ -8,6 +8,7 @@ import zipfile
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+from quality_gates.identity import HOMEPAGE
 from quality_gates.paths import bin_dir, cache_dir, tooling_js_dir
 from quality_gates.tool_manifest import (
     artifact_for_install,
@@ -17,7 +18,7 @@ from quality_gates.tool_manifest import (
 )
 from quality_gates.tools import run, which
 
-USER_AGENT = "quality-gates/1.7.2 (+https://github.com/pwoodman/poly-check)"
+USER_AGENT = f"quality-gates/1.12.0 (+{HOMEPAGE})"
 
 GITLEAKS_VERSION = "8.24.3"
 OSV_VERSION = "2.0.2"
@@ -91,9 +92,10 @@ def ensure_gitleaks() -> Path | None:
         return target
     artifact = _manifest_artifact("gitleaks")
     url = artifact.url
-    archive = cache_dir() / "downloads" / f"gitleaks_{GITLEAKS_VERSION}.tar.gz"
+    suffix = ".zip" if url.endswith(".zip") else ".tar.gz"
+    archive = cache_dir() / "downloads" / f"gitleaks_{GITLEAKS_VERSION}{suffix}"
     _download(url, archive, sha256=artifact.sha256)
-    _extract_named(archive, "gitleaks", target)
+    _extract_named(archive, "gitleaks.exe" if suffix == ".zip" else "gitleaks", target)
     return target
 
 
@@ -119,9 +121,11 @@ def ensure_golangci_lint() -> Path | None:
         return target
     artifact = _manifest_artifact("golangci-lint")
     url = artifact.url
-    archive = cache_dir() / "downloads" / f"golangci-lint-{GOLANGCI_VERSION}.tar.gz"
+    suffix = ".zip" if url.endswith(".zip") else ".tar.gz"
+    archive = cache_dir() / "downloads" / f"golangci-lint-{GOLANGCI_VERSION}{suffix}"
     _download(url, archive, sha256=artifact.sha256)
-    _extract_named(archive, "golangci-lint", target)
+    member = "golangci-lint.exe" if suffix == ".zip" else "golangci-lint"
+    _extract_named(archive, member, target)
     return target
 
 

@@ -1,8 +1,10 @@
-# This repo uses [quality.ci] mode = "both", so PRs run quality-full.yml
+# Reusable implementation. This repo and every consumer call it from a
+# workflow named The Code Sheriff (see sheriff.yml and `quality setup`).
+# This repo uses [quality.ci] mode = "both", so that caller runs quality-full.yml
 # (detect, format, lint, DRY, security, compile, impact, coverage, UI, version).
-# Consumers that keep mode = "local" only run github_gates here (now includes
-# format + lint). Dispatch Quality gates (full suite) or set mode github/both
-# for the heavy matrix. Compile/UI still self-skip when they do not apply.
+# Consumers that keep mode = "local" only run github_gates (format, lint,
+# security, impact, audit, version, review). Compile/UI still self-skip when
+# they do not apply.
 
 name: Quality gates
 
@@ -18,10 +20,6 @@ on:
         required: false
       ANTHROPIC_API_KEY:
         required: false
-  pull_request:
-  merge_group:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       full_suite:
@@ -37,6 +35,7 @@ permissions:
   contents: read
   pull-requests: write
   checks: write
+  security-events: write
 
 jobs:
   plan:
@@ -56,7 +55,7 @@ jobs:
       - name: Decide local vs full
         id: plan
         env:
-          QUALITY_CI_FULL: ${{ github.event.inputs.full_suite == 'true' && '1' || '' }}
+          QUALITY_CI_FULL: ${{ inputs.full_suite && '1' || '' }}
         run: |
           python3 - <<'PY'
           import os
@@ -91,8 +90,8 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "ci.mode=${{ needs.plan.outputs.mode }} — github_gates (format, lint, impact, audit, version, review)."
-          echo "Detect/format/lint are cheap and belong on PRs. DRY/security/compile/coverage/UI stay local unless mode is github/both."
+          echo "ci.mode=${{ needs.plan.outputs.mode }} — github_gates (format, lint, security, impact, audit, version, review)."
+          echo "Detect/format/lint/security belong on PRs. DRY/compile/coverage/UI stay local unless mode is github/both."
           quality run --base "origin/${{ github.base_ref || github.event.repository.default_branch }}"
       - name: Upload quality report
         if: always()
@@ -104,6 +103,43 @@ jobs:
             .quality-reports/quality-report.html
             .quality-reports/quality-report.md
             .quality-reports/quality-report.json
+            .quality-reports/quality-report.sarif
+            .quality-reports/diagnostics.json
+      - name: Publish SARIF to code scanning
+        if: always() && hashFiles('.quality-reports/quality-report.sarif') != ''
+        continue-on-error: true
+        run: |
+          # Prefer the GitHub code-scanning API so we do not pin a moving
+          # codeql-action SHA here. Forks without security-events still keep
+          # the artifact above.
+          if [ -n "${GITHUB_TOKEN:-}" ] && [ -f .quality-reports/quality-report.sarif ]; then
+            gzip -c .quality-reports/quality-report.sarif | base64 -w0 > /tmp/quality.sarif.b64
+            python3 - <<'PY'
+          import json, os, urllib.request
+          sarif = open("/tmp/quality.sarif.b64", encoding="utf-8").read()
+          req = urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/code-scanning/sarifs",
+              data=json.dumps({
+                  "commit_sha": os.environ.get("GITHUB_SHA"),
+                  "ref": os.environ.get("GITHUB_REF"),
+                  "sarif": sarif,
+                  "tool_name": "quality-gates",
+              }).encode(),
+              headers={
+                  "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
+                  "Accept": "application/vnd.github+json",
+              },
+              method="POST",
+          )
+          try:
+              urllib.request.urlopen(req, timeout=30)
+              print("uploaded SARIF")
+          except Exception as exc:
+              print(f"SARIF upload skipped: {exc}")
+          PY
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   full:
     name: Full suite
@@ -117,7 +153,7 @@ jobs:
       checks: write
 
   summary:
-    name: Quality summary
+    name: The Code Sheriff
     needs: [plan, local, full]
     if: always()
     runs-on: ubuntu-latest

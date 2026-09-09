@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,8 @@ __all__ = [
     "Recommendation",
     "build_digest",
     "emit_annotations",
+    "filter_new_findings",
+    "load_history",
     "load_results",
     "performance_bullets",
     "render_console",
@@ -35,6 +38,7 @@ __all__ = [
     "render_junit",
     "render_markdown",
     "render_sarif",
+    "write_diagnostics",
     "write_reports",
 ]
 
@@ -112,6 +116,10 @@ def write_reports(
     policy: str = "enforce",
 ) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
+    current = directory / "quality-report.json"
+    previous = directory / "quality-report.prev.json"
+    if current.is_file():
+        previous.write_text(current.read_text(encoding="utf-8"), encoding="utf-8")
     digest = (
         results
         if isinstance(results, QualityDigest)
@@ -131,7 +139,76 @@ def write_reports(
     (directory / "quality-report.junit.xml").write_text(
         render_junit(digest), encoding="utf-8"
     )
+    _append_history(directory, digest)
+    write_diagnostics(digest, directory)
     return path
+
+
+def write_diagnostics(digest: QualityDigest, directory: Path) -> Path:
+    """Editor-friendly problem list for VS Code / problem matchers."""
+    directory.mkdir(parents=True, exist_ok=True)
+    items = [
+        {
+            "source": f"quality.{finding.gate}",
+            "severity": finding.severity,
+            "path": finding.path,
+            "line": finding.line or 1,
+            "column": finding.column or 1,
+            "message": finding.message,
+            "rule": finding.rule,
+        }
+        for finding in digest.issues()
+        if finding.path
+    ]
+    path = directory / "diagnostics.json"
+    path.write_text(json.dumps({"version": 1, "diagnostics": items}, indent=2) + "\n")
+    return path
+
+
+def _append_history(directory: Path, digest: QualityDigest) -> None:
+    path = directory / "history.json"
+    try:
+        existing = json.loads(path.read_text(encoding="utf-8"))
+        entries = existing if isinstance(existing, list) else []
+    except (OSError, json.JSONDecodeError):
+        entries = []
+    entries.append(
+        {
+            "ts": datetime.now(UTC).isoformat(),
+            "verdict": digest.verdict,
+            "errors": digest.errors,
+            "warnings": digest.warnings,
+            "coverage": digest.performance.coverage_line,
+            "gate_ms": digest.performance.gate_ms,
+            "failed": digest.failed,
+        }
+    )
+    path.write_text(json.dumps(entries[-20:], indent=2) + "\n", encoding="utf-8")
+
+
+def finding_key(finding: Finding) -> tuple[str, str, str, str]:
+    return (
+        finding.gate,
+        str(finding.rule or ""),
+        str(finding.path or ""),
+        finding.message,
+    )
+
+
+def filter_new_findings(
+    current: list[Finding], previous: list[Finding]
+) -> list[Finding]:
+    seen = {finding_key(item) for item in previous}
+    return [item for item in current if finding_key(item) not in seen]
+
+
+def load_history(directory: Path) -> list[dict[str, Any]]:
+    path = directory / "history.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    return data if isinstance(data, list) else []
 
 
 def render_sarif(results: list[GateResult] | QualityDigest) -> dict[str, Any]:
@@ -154,8 +231,10 @@ def render_html(results: list[GateResult] | QualityDigest) -> str:
     return report_html.render_html(_as_digest(results))
 
 
-def load_results(report_dir: Path) -> tuple[list[GateResult], str]:
-    path = report_dir / "quality-report.json"
+def load_results(
+    report_dir: Path, filename: str = "quality-report.json"
+) -> tuple[list[GateResult], str]:
+    path = report_dir / filename
     if not path.is_file():
         return [], "enforce"
     try:
@@ -402,6 +481,32 @@ def _recommendations(
                 else f"{result.name} failed.",
                 f"quality {result.name}",
             )
+
+    for result in results:
+        if result.status not in {"skip", "unsupported"}:
+            continue
+        if result.name == "security":
+            continue
+        command = (
+            "quality doctor"
+            if result.skipped_tools
+            else f"quality {result.name}"
+            if result.name in {"format", "lint", "coverage", "test"}
+            else None
+        )
+        add(
+            "P2",
+            f"{result.name} skipped",
+            (result.notes[0] if result.notes else f"{result.name} did not run.")
+            + (
+                " Next: install "
+                + ", ".join(result.skipped_tools)
+                + " or run quality doctor."
+                if result.skipped_tools
+                else " Skip means not applicable, not a pass."
+            ),
+            command,
+        )
 
     security = by_name.get("security")
     if security and security.status == "skip":

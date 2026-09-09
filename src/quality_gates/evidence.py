@@ -33,6 +33,14 @@ def snapshot_digest(root: Path, manifest: ChangeManifest | None = None) -> str:
         )
         return hashlib.sha256(value.encode()).hexdigest()
     digest = hashlib.sha256()
+    try:
+        from quality_gates.detect import discover_workspaces
+
+        for workspace in discover_workspaces(root):
+            digest.update(workspace.path.encode())
+            digest.update(workspace.manifest.encode())
+    except OSError:
+        pass
     for path in sorted(root.rglob("*")):
         if (
             not path.is_file()

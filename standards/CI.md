@@ -5,12 +5,12 @@ Default is **your machine**, not GitHub-hosted runners.
 ```toml
 [quality.ci]
 mode = "local"                 # local | github | both
-github_gates = ["format", "lint", "impact", "audit", "version", "review"]
+github_gates = ["format", "lint", "security", "impact", "audit", "version", "review"]
 ```
 
 | Mode | Developer PC (hooks + `quality run`) | GitHub Actions |
 | --- | --- | --- |
-| `local` (default) | format, lint, DRY, security, compile, impact, coverage, audit, UI, version | format, lint, impact, audit, version, PR review |
+| `local` (default) | format, lint, DRY, security, compile, impact, coverage, audit, UI, version | format, lint, security, impact, audit, version, PR review |
 | `github` | optional hooks | full suite including compile-after-security; UI still off |
 | `both` | full hooks | full suite; UI still off unless opted in |
 

@@ -77,6 +77,47 @@ def test_detector_help_text_is_not_xss(tmp_path: Path) -> None:
     assert "audit-8" not in {item.rule for item in result.findings}
 
 
+def test_english_update_in_fstring_is_not_sql_injection(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text(
+        'print(f"webhook update failed HTTP {status}: {data}")\n',
+        encoding="utf-8",
+    )
+    result = run_audit(tmp_path, QualityConfig())
+    assert "audit-6" not in {item.rule for item in result.findings}
+
+
+def test_sql_fstring_interpolation_is_still_injection(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text(
+        'cursor.execute(f"SELECT * FROM users WHERE id = {user_id}")\n',
+        encoding="utf-8",
+    )
+    result = run_audit(tmp_path, QualityConfig())
+    assert "audit-6" in {item.rule for item in result.findings}
+
+
+def test_webhook_hmac_is_not_custom_password_auth(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text(
+        "import hashlib\n"
+        "import hmac\n\n"
+        "def verify(secret: str, body: bytes) -> str:\n"
+        "    return hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()\n",
+        encoding="utf-8",
+    )
+    result = run_audit(tmp_path, QualityConfig())
+    assert "audit-11" not in {item.rule for item in result.findings}
+
+
+def test_sha256_of_password_is_still_custom_auth(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text(
+        "import hashlib\n\n"
+        "def store(password: str) -> str:\n"
+        "    return hashlib.sha256(password.encode()).hexdigest()\n",
+        encoding="utf-8",
+    )
+    result = run_audit(tmp_path, QualityConfig())
+    assert "audit-11" in {item.rule for item in result.findings}
+
+
 def test_audit_config_defaults(tmp_path: Path) -> None:
     config = load_config(tmp_path)
     assert config.audit_fail_on_priority == ["P0"]
@@ -254,7 +295,7 @@ def test_module_level_import_cycle_is_reported(tmp_path: Path) -> None:
         ("app.scala", "def unfinished = {}\n"),
         ("app.lua", "function unfinished()\nend\n"),
         ("app.r", "unfinished <- function() {}\n"),
-        ("app.m", "function unfinished()\nend\n"),
+        ("app.ex", "def unfinished do\nend\n"),
         ("app.sh", "unfinished() { :; }\n"),
         ("app.ps1", "function Invoke-Unfinished {}\n"),
     ],
@@ -306,7 +347,7 @@ def test_code_quality_capabilities_are_explicit() -> None:
         "scala",
         "lua",
         "r",
-        "matlab",
+        "elixir",
         "shell",
         "powershell",
     }

@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 from typing import Any
 
 from quality_gates.diagnostics import detail_lines, pointer
+from quality_gates.identity import HOMEPAGE, PRODUCT
 from quality_gates.report_model import (
     QualityDigest,
     _fmt_ms,
@@ -47,6 +48,10 @@ def render_sarif(digest: QualityDigest) -> dict[str, Any]:
                     "snippet": finding.snippet,
                     "patch": finding.patch,
                     "verify": finding.verify,
+                    "cwe": finding.cwe,
+                    "owasp": finding.owasp,
+                    "epss": finding.epss,
+                    "reproduce": finding.reproduce,
                 }.items()
                 if value
             },
@@ -75,8 +80,8 @@ def render_sarif(digest: QualityDigest) -> dict[str, Any]:
             {
                 "tool": {
                     "driver": {
-                        "name": "quality-gates",
-                        "informationUri": "https://github.com/pwoodman/poly-check",
+                        "name": PRODUCT,
+                        "informationUri": HOMEPAGE,
                         "rules": [rules[key] for key in sorted(rules)],
                     }
                 },

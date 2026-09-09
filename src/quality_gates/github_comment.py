@@ -11,12 +11,15 @@ from pathlib import Path
 from typing import Any
 
 from quality_gates.gitutil import git_head
+from quality_gates.identity import PRODUCT
 from quality_gates.models import Finding
 from quality_gates.review.contract import suggestion_fence
 
 API_VERSION = "2022-11-28"
 MAX_INLINE = 24
 MAX_ANNOTATIONS = 50
+SUMMARY_START = "<!-- the-code-sheriff:summary -->"
+SUMMARY_END = "<!-- /the-code-sheriff:summary -->"
 
 
 def pr_number() -> str | None:
@@ -231,10 +234,15 @@ def _inline_body(item: Finding) -> str:
     parts = [f"**{item.rule or 'review'}** ({item.severity})", "", item.message]
     if item.reason:
         parts.extend(["", f"Why: {item.reason}"])
+    if item.owasp or item.cwe:
+        labels = [value for value in (item.owasp, item.cwe) if value]
+        parts.extend(["", " · ".join(labels)])
     if item.snippet:
         parts.extend(["", f"Where: `{item.snippet}`"])
     if item.suggestion:
         parts.extend(["", f"Suggested fix: {item.suggestion}"])
+    if item.reproduce:
+        parts.extend(["", "**Steps of reproduction**", "", item.reproduce])
     if item.verify:
         parts.extend(["", f"Verify: `{item.verify}`"])
     if item.documentation_url:
@@ -251,6 +259,53 @@ def _inline_body(item: Finding) -> str:
     return "\n".join(parts)
 
 
+def merge_pr_body(existing: str, summary: str) -> str:
+    """Insert or replace the Sheriff summary block in a pull request body."""
+    block = f"{SUMMARY_START}\n## {PRODUCT}\n\n{summary.strip()}\n{SUMMARY_END}"
+    text = existing or ""
+    if SUMMARY_START in text and SUMMARY_END in text:
+        start = text.find(SUMMARY_START)
+        end = text.find(SUMMARY_END) + len(SUMMARY_END)
+        return text[:start] + block + text[end:]
+    if not text.strip():
+        return block
+    return text.rstrip() + "\n\n" + block + "\n"
+
+
+def sync_pr_summary(summary: str) -> str:
+    """Write the review summary onto the pull request description."""
+    text = (summary or "").strip()
+    if not text:
+        return "skipped PR description (empty summary)"
+    creds = _creds()
+    if creds is None:
+        return (
+            "skipped PR description (need GITHUB_TOKEN, GITHUB_REPOSITORY, "
+            "pull request number)"
+        )
+    token, repo, pr = creds
+    status, payload = _request(
+        "GET",
+        f"https://api.github.com/repos/{repo}/pulls/{pr}",
+        token,
+    )
+    if status < 200 or status >= 300:
+        return f"PR description GET HTTP {status}"
+    existing = ""
+    if isinstance(payload, dict):
+        existing = str(payload.get("body") or "")
+    body = merge_pr_body(existing, text)
+    status, _payload = _request(
+        "PATCH",
+        f"https://api.github.com/repos/{repo}/pulls/{pr}",
+        token,
+        {"body": body},
+    )
+    if 200 <= status < 300:
+        return f"updated PR #{pr} description"
+    return f"PR description PATCH HTTP {status}"
+
+
 def _creds() -> tuple[str, str, str] | None:
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     repo = os.environ.get("GITHUB_REPOSITORY")
@@ -261,9 +316,9 @@ def _creds() -> tuple[str, str, str] | None:
 
 
 def _request(
-    method: str, url: str, token: str, payload: dict[str, Any]
+    method: str, url: str, token: str, payload: dict[str, Any] | None = None
 ) -> tuple[int, Any]:
-    body = json.dumps(payload).encode("utf-8")
+    body = json.dumps(payload).encode("utf-8") if payload is not None else None
     request = urllib.request.Request(
         url,
         data=body,

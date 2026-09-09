@@ -46,66 +46,80 @@ from quality_gates.result_cache import cache_status, clean_cache
 from quality_gates.tool_manifest import load_tool_manifest, platform_id
 from quality_gates.tools import tool_version, which
 
-INIT_WORKFLOW = """name: Quality gates
 
-on:
-  pull_request:
-  push:
-    branches: [main]
-  workflow_dispatch:
+def _invoked_as_sheriff(argv: Sequence[str] | None) -> bool:
+    if argv is not None:
+        return False
+    name = Path(sys.argv[0]).name.lower().replace("_", "-")
+    return name in {"codesheriff", "the-codesheriff"} or name.startswith("codesheriff")
 
-permissions:
-  contents: read
-  pull-requests: write
-  checks: write
-  security-events: write
 
-jobs:
-  quality:
-    # Replace with a reviewed 40-character commit SHA from pwoodman/poly-check.
-    uses: pwoodman/poly-check/.github/workflows/quality.yml@REPLACE_FULL_COMMIT_SHA
-    secrets: inherit
-"""
-
-INIT_LOCAL = """name: Quality gates (vendored CLI)
-
-on:
-  pull_request:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  pull-requests: write
-  checks: write
-
-jobs:
-  quality:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
-        with:
-          python-version: "3.12"
-      - name: Install quality-gates
-        run: pip install "git+https://github.com/pwoodman/poly-check.git@v1"
-      - name: Run gates
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: quality run
-"""
+def _add_onboard_args(
+    parser: argparse.ArgumentParser,
+    *,
+    require_check: bool,
+    hooks: bool = False,
+    run: bool = False,
+) -> None:
+    parser.add_argument(
+        "--org",
+        default="",
+        help="GitHub owner of a The Code Sheriff fork (default: pwoodman)",
+    )
+    parser.add_argument(
+        "--source",
+        default="",
+        help="owner/repo that hosts the reusable workflow (default: pwoodman/the-code-sheriff)",
+    )
+    parser.add_argument(
+        "--pin",
+        default="auto",
+        help="commit SHA or git ref to pin; auto resolves main",
+    )
+    parser.add_argument(
+        "--policy",
+        dest="init_policy",
+        choices=["observe", "adopt", "enforce"],
+        default="adopt",
+        help="PR-blocking policy for the new repo (default adopt)",
+    )
+    parser.add_argument(
+        "--vendor-cli",
+        action="store_true",
+        help="also write a pip-install workflow instead of only the reusable one",
+    )
+    parser.add_argument(
+        "--require-check",
+        action=argparse.BooleanOptionalAction,
+        default=require_check,
+        help="create a GitHub ruleset requiring The Code Sheriff",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite quality.toml and generated workflows",
+    )
+    parser.add_argument(
+        "--hooks",
+        action=argparse.BooleanOptionalAction,
+        default=hooks,
+        help="write .pre-commit-config.yaml and try pre-commit install",
+    )
+    parser.add_argument(
+        "--run",
+        action=argparse.BooleanOptionalAction,
+        default=run,
+        help="run gates once and write .quality-baseline.json",
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="quality",
+        prog="codesheriff" if _invoked_as_sheriff(argv) else "quality",
         description="Multi-language format, lint, DRY, security, compile, impact, coverage, 120-point audit, UI, version, and AI review gates.",
     )
     parser.add_argument(
-        "--version", action="version", version=f"quality-gates {__version__}"
+        "--version", action="version", version=f"The Code Sheriff {__version__}"
     )
     parser.add_argument(
         "--root", type=Path, default=None, help="project root (default: cwd / git root)"
@@ -140,7 +154,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     lint.add_argument("--language", action="append", dest="languages")
 
     sub.add_parser("dry", help="copy-paste / duplication scan")
-    sub.add_parser("security", help="secrets, dependency CVEs, SAST")
+    sub.add_parser(
+        "security",
+        help="secrets, SCA, SAST, IaC misconfig, SBOM (gitleaks/osv/semgrep/trivy/checkov)",
+    )
+    sbom_p = sub.add_parser(
+        "sbom",
+        help="write CycloneDX and SPDX SBOMs under .quality-reports",
+    )
+    sbom_p.add_argument(
+        "--format",
+        dest="sbom_format",
+        choices=["all", "cyclonedx", "spdx"],
+        default="all",
+    )
     compile_p = sub.add_parser(
         "compile",
         help="build compiled languages (only after a clean security gate)",
@@ -263,17 +290,80 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="on GitHub Actions, run the heavy suite even when ci.mode=local",
     )
 
-    init = sub.add_parser("init", help="write quality.toml and a starter workflow")
-    init.add_argument(
-        "--org", default="REPLACE_ORG", help="GitHub org/user that hosts quality-gates"
+    init = sub.add_parser(
+        "init", help="write default quality.toml and a pinned The Code Sheriff workflow"
     )
-    init.add_argument(
-        "--policy",
-        dest="init_policy",
-        choices=["observe", "adopt", "enforce"],
-        default="adopt",
-        help="PR-blocking policy for the new repo (default adopt)",
+    _add_onboard_args(init, require_check=False)
+    setup = sub.add_parser(
+        "setup",
+        help="one command: defaults, workflow, hooks, required check, first baseline",
     )
+    _add_onboard_args(setup, require_check=True, hooks=True, run=True)
+    setup.add_argument(
+        "--app",
+        action="store_true",
+        help="also start GitHub App registration after writing files",
+    )
+
+    gh_app = sub.add_parser(
+        "github-app",
+        help="register The Code Sheriff GitHub App (runs on each repo's Actions minutes)",
+    )
+    gh_cmd = gh_app.add_subparsers(dest="app_command", required=True)
+    manifest_p = gh_cmd.add_parser(
+        "manifest", help="print the GitHub App manifest JSON"
+    )
+    manifest_p.add_argument("--name", default="The Code Sheriff")
+    manifest_p.add_argument("--webhook-url", default="")
+    manifest_p.add_argument("--redirect-url", default="")
+    manifest_p.add_argument("--public", action="store_true")
+    register = gh_cmd.add_parser(
+        "register", help="create the App via GitHub's manifest flow"
+    )
+    register.add_argument("--host", default="127.0.0.1")
+    register.add_argument("--port", type=int, default=8787)
+    register.add_argument("--webhook-url", default="")
+    register.add_argument("--org", default="", help="create under this GitHub org")
+    register.add_argument("--name", default="The Code Sheriff")
+    register.add_argument("--public", action="store_true")
+    register.add_argument(
+        "--no-open",
+        action="store_true",
+        help="do not open a browser for create/install",
+    )
+    register.add_argument(
+        "--no-init",
+        action="store_true",
+        help="do not write quality.toml / workflow after the App is created",
+    )
+    serve = gh_cmd.add_parser(
+        "serve", help="receive GitHub webhooks and dispatch Actions"
+    )
+    serve.add_argument("--host", default="0.0.0.0")
+    serve.add_argument("--port", type=int, default=8787)
+    handle = gh_cmd.add_parser(
+        "handle", help="process one webhook payload from a file or stdin"
+    )
+    handle.add_argument("payload", nargs="?", default="-")
+    handle.add_argument("--event", default="pull_request")
+    handle.add_argument("--signature", default="")
+    gh_cmd.add_parser(
+        "prepare", help="verify a repository_dispatch payload in GitHub Actions"
+    )
+    check = gh_cmd.add_parser("check", help="create a check run on GITHUB_REPOSITORY")
+    check.add_argument("--name", default="The Code Sheriff")
+    check.add_argument(
+        "--status",
+        choices=["queued", "in_progress", "completed"],
+        default="in_progress",
+    )
+    check.add_argument("--conclusion", default="")
+    check.add_argument("--title", default="")
+    check.add_argument("--summary", default="")
+    token_p = gh_cmd.add_parser("token", help="mint an installation access token")
+    token_p.add_argument("--installation-id", required=True)
+    hook = gh_cmd.add_parser("webhook", help="set the GitHub App webhook URL")
+    hook.add_argument("--url", required=True)
 
     baseline_p = sub.add_parser(
         "baseline",
@@ -296,6 +386,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         default="console",
         help="console (default), markdown, html, or json",
     )
+    report_p.add_argument(
+        "--diff",
+        dest="report_diff",
+        nargs="?",
+        const="history",
+        default=None,
+        help="show only findings new since the previous history entry or a git ref",
+    )
+    watch_p = sub.add_parser("watch", help="rerun cheap gates when files change")
+    watch_p.add_argument(
+        "--interval", type=float, default=1.5, help="poll interval in seconds"
+    )
 
     args = parser.parse_args(argv)
     root = project_root(args.root)
@@ -304,8 +406,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.policy:
         config.policy = args.policy
 
-    if args.command == "init":
-        return _init(root, args.org, policy=args.init_policy)
+    if args.command == "github-app":
+        from quality_gates.github_app import cli_github_app
+
+        return cli_github_app(args)
+    if args.command in {"init", "setup"}:
+        return _onboard(root, args)
     if args.command == "mcp":
         from quality_gates.mcp_server import serve
 
@@ -317,7 +423,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "baseline":
         return _baseline(root, config, ratchet=args.ratchet)
     if args.command == "report":
-        return _print_report(root, fmt=args.report_format, as_json=args.json)
+        return _print_report(
+            root,
+            fmt=args.report_format,
+            as_json=args.json,
+            diff=getattr(args, "report_diff", None),
+        )
+    if args.command == "watch":
+        return _watch(root, config, interval=args.interval)
     if args.command == "doctor":
         return _doctor(root, config, install=args.install, as_json=args.json)
     if args.command == "cache":
@@ -356,6 +469,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "dry":
         result = gate_runners.run_dry(root, config, languages)
         return _emit([result], root, config, args.json, ["dry"])
+    if args.command == "sbom":
+        from quality_gates.sbom import write_sbom
+
+        payload = write_sbom(root, fmt=args.sbom_format)
+        if args.json:
+            print(json.dumps(payload, indent=2))
+        else:
+            files = payload.get("files") or {}
+            if files:
+                print("wrote " + ", ".join(files.values()))
+            for note in payload.get("notes") or []:
+                print(note)
+            print(f"components: {payload.get('components', 0)}")
+        return 0
     if args.command == "security":
         result = gate_runners.run_security(root, config, languages)
         return _emit([result], root, config, args.json, ["security"])
@@ -668,7 +795,23 @@ def _emit(
     return 0 if evaluate(results, required).approved else 1
 
 
-def _print_report(root: Path, *, fmt: str, as_json: bool) -> int:
+def _watch(root: Path, config: QualityConfig, *, interval: float) -> int:
+    from quality_gates.watch import watch_loop
+
+    def _rerun() -> None:
+        print("change detected — quality run --skip review", flush=True)
+        main(["--root", str(root), "run", "--skip", "review"])
+
+    print(f"watching {root} every {interval}s (Ctrl-C to stop)", flush=True)
+    try:
+        return watch_loop(root, config, _rerun, interval=interval)
+    except KeyboardInterrupt:
+        return 0
+
+
+def _print_report(
+    root: Path, *, fmt: str, as_json: bool, diff: str | None = None
+) -> int:
     report_dir = root / ".quality-reports"
     results, policy = load_results(report_dir)
     if not results:
@@ -677,6 +820,22 @@ def _print_report(root: Path, *, fmt: str, as_json: bool) -> int:
             file=sys.stderr,
         )
         return 2
+    if diff:
+        from quality_gates.report import filter_new_findings
+
+        prior_results, _prior_policy = load_results(
+            report_dir, "quality-report.prev.json"
+        )
+        previous = [finding for item in prior_results for finding in item.findings]
+        current = [finding for item in results for finding in item.findings]
+        if previous:
+            kept = set(map(id, filter_new_findings(current, previous)))
+            for item in results:
+                item.findings = [
+                    finding for finding in item.findings if id(finding) in kept
+                ]
+        else:
+            print("no previous findings to diff against; showing full report")
     digest = build_digest(results, policy=policy, report_dir=report_dir)
     write_reports(digest, report_dir, policy=policy)
     if as_json or fmt == "json":
@@ -825,28 +984,55 @@ def _install_all() -> None:
             print(f"warning: {loader.__name__} failed: {exc}", file=sys.stderr)
 
 
-def _init(root: Path, org: str, *, policy: str = "adopt") -> int:
-    config_path = root / "quality.toml"
-    if not config_path.exists():
-        config_path.write_text(_consumer_toml(policy), encoding="utf-8")
-        print(f"wrote {config_path} (policy={policy})")
-    else:
-        print(f"kept existing {config_path}")
-    workflow_dir = root / ".github" / "workflows"
-    workflow_dir.mkdir(parents=True, exist_ok=True)
-    reusable = workflow_dir / "quality.yml"
-    if not reusable.exists():
-        reusable.write_text(INIT_WORKFLOW.replace("REPLACE_ORG", org), encoding="utf-8")
-        print(f"wrote {reusable}")
-    local = workflow_dir / "quality-cli.yml"
-    if not local.exists():
-        local.write_text(INIT_LOCAL.replace("REPLACE_ORG", org), encoding="utf-8")
-        print(f"wrote {local} (CLI fallback)")
-    print("Edit REPLACE_ORG if you used the default, then commit.")
-    print(
-        "Next: quality run --skip review && quality baseline && git add .quality-baseline.json"
+def _onboard(root: Path, args: argparse.Namespace) -> int:
+    from quality_gates.onboard import init_repo
+
+    code = init_repo(
+        root,
+        policy=args.init_policy,
+        org=args.org,
+        source=args.source,
+        pin=args.pin,
+        vendor_cli=args.vendor_cli,
+        require_check=bool(args.require_check),
+        force=args.force,
+        hooks=bool(getattr(args, "hooks", False)),
     )
-    return 0
+    if getattr(args, "run", False):
+        print("Running first gates and writing a baseline...")
+        run_code = main(["--root", str(root), "run", "--skip", "review"])
+        base_code = main(["--root", str(root), "baseline"])
+        if run_code not in {0, 1}:
+            code = run_code
+        elif base_code != 0:
+            code = base_code
+    if args.command == "setup":
+        print(
+            "Commit quality.toml, .github/workflows/quality.yml, "
+            "and .quality-baseline.json"
+        )
+        if getattr(args, "hooks", False):
+            print("Include .pre-commit-config.yaml if it was just written.")
+        print("GitHub App is optional: quality github-app register")
+    else:
+        print("Next: quality run --skip review && quality baseline")
+    if args.command == "setup" and getattr(args, "app", False):
+        from quality_gates.github_app import cli_github_app
+
+        register = argparse.Namespace(
+            app_command="register",
+            host="127.0.0.1",
+            port=8787,
+            webhook_url="",
+            org=args.org,
+            name="The Code Sheriff",
+            public=False,
+            no_open=False,
+            no_init=True,
+        )
+        app_code = cli_github_app(register)
+        return app_code or code
+    return code
 
 
 def _baseline(root: Path, config: QualityConfig, *, ratchet: bool) -> int:
@@ -864,47 +1050,6 @@ def _baseline(root: Path, config: QualityConfig, *, ratchet: bool) -> int:
     print(f"wrote {path.relative_to(root)}" + (" (ratchet)" if ratchet else ""))
     print("Commit this file so PRs fail only on new issues, not the existing backlog.")
     return 0
-
-
-def _consumer_toml(policy: str) -> str:
-    return f"""[quality]
-languages = ["auto"]
-# observe  = never block PRs (still comments + warnings)
-# adopt    = fail only on NEW issues vs .quality-baseline.json (recommended for old repos)
-# enforce  = fail_on list blocks the job
-policy = "{policy}"
-baseline = ".quality-baseline.json"
-comment_on_pr = true
-fail_on = ["format", "lint", "dry", "security", "compile", "impact", "coverage", "audit", "ui", "version"]
-ai_review = "pr-only"
-
-[quality.ci]
-mode = "local"
-github_gates = ["format", "lint", "impact", "audit", "version", "review"]
-
-[quality.compile]
-require_security = true
-
-[quality.coverage]
-line = 80
-branch = 0
-tool = "auto"
-
-[quality.audit]
-fail_on_priority = ["P0"]
-min_confidence = "HIGH"
-
-[quality.ui]
-select = "changed"
-on_github = false
-
-[quality.impact]
-depth = 4
-require_downstream = true
-
-[quality.version]
-require_changelog = "if-present"
-"""
 
 
 if __name__ == "__main__":

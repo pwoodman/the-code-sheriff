@@ -38,6 +38,12 @@ SOURCE_SUFFIXES = {
     ".rs",
     ".java",
     ".cs",
+    ".php",
+    ".rb",
+    ".kt",
+    ".kts",
+    ".ex",
+    ".exs",
     ".vue",
     ".svelte",
 }
@@ -130,6 +136,41 @@ def _js_symbols_and_relations(text: str) -> tuple[set[str], set[str], set[str]]:
     for m in re.finditer(r"\b(\w+)\s*\(", text):
         name = m.group(1)
         if name not in {"if", "for", "while", "switch", "catch", "function", "return"}:
+            callers.add(name)
+    return symbols, callers, inheritance
+
+
+def _c_like_symbols(
+    text: str,
+    symbol_re: str,
+    inherit_re: str,
+    *,
+    impl: bool = False,
+) -> tuple[set[str], set[str], set[str]]:
+    symbols: set[str] = set()
+    callers: set[str] = set()
+    inheritance: set[str] = set()
+    for match in re.finditer(symbol_re, text):
+        symbols.add(match.group(1))
+    for match in re.finditer(inherit_re, text):
+        if match.lastindex and match.lastindex >= 2:
+            child, base = match.group(1), match.group(2)
+            symbols.add(child)
+            inheritance.add(f"{child}:{base}")
+        elif impl and match.lastindex == 1:
+            symbols.add(match.group(1))
+    for match in re.finditer(r"\b(\w+)\s*\(", text):
+        name = match.group(1)
+        if name not in {
+            "if",
+            "for",
+            "while",
+            "switch",
+            "catch",
+            "return",
+            "new",
+            "sizeof",
+        }:
             callers.add(name)
     return symbols, callers, inheritance
 
@@ -301,10 +342,57 @@ def build_graph(root: Path, config: QualityConfig) -> ImportGraph:
             graph.inheritance[rel] = inher
         elif suffix == ".go":
             resolved, unresolved = _go_deps(rel, text, index, go_module)
+            syms, calls, inher = _c_like_symbols(
+                text,
+                r"func\s+(?:\([^)]+\)\s+)?(\w+)",
+                r"type\s+(\w+)\s+struct",
+            )
+            graph.symbols[rel] = syms
+            graph.callers[rel] = calls
+            graph.inheritance[rel] = inher
         elif suffix == ".rs":
             resolved, unresolved = _rust_deps(rel, text, index)
+            syms, calls, inher = _c_like_symbols(
+                text,
+                r"(?:fn|struct|enum|trait)\s+(\w+)",
+                r"impl(?:<[^>]+>)?\s+(\w+)\s+for\s+(\w+)",
+                impl=True,
+            )
+            graph.symbols[rel] = syms
+            graph.callers[rel] = calls
+            graph.inheritance[rel] = inher
         elif suffix == ".java":
             resolved, unresolved = _java_deps(text, index)
+            syms, calls, inher = _c_like_symbols(
+                text,
+                r"(?:class|interface|enum|record)\s+(\w+)",
+                r"class\s+(\w+)\s+extends\s+(\w+)",
+            )
+            graph.symbols[rel] = syms
+            graph.callers[rel] = calls
+            graph.inheritance[rel] = inher
+        elif suffix == ".cs":
+            resolved, unresolved = _java_deps(text, index)
+            syms, calls, inher = _c_like_symbols(
+                text,
+                r"(?:class|interface|record|struct)\s+(\w+)",
+                r"class\s+(\w+)\s*:\s*(\w+)",
+            )
+            graph.symbols[rel] = syms
+            graph.callers[rel] = calls
+            graph.inheritance[rel] = inher
+        elif suffix in {".php", ".rb", ".kt", ".kts", ".ex", ".exs"}:
+            resolved, unresolved = [], []
+            if suffix == ".php":
+                resolved, unresolved = _java_deps(text, index)
+            syms, calls, inher = _c_like_symbols(
+                text,
+                r"(?:class|def|fn|defmodule|defstruct)\s+(\w+)",
+                r"class\s+(\w+)\s+(?:extends|<|:)\s+(\w+)",
+            )
+            graph.symbols[rel] = syms
+            graph.callers[rel] = calls
+            graph.inheritance[rel] = inher
         for target in resolved:
             if target == rel:
                 continue

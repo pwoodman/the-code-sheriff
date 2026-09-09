@@ -33,12 +33,14 @@ def render_html(digest: QualityDigest) -> str:
         f"<span class='hint'> (skip means not applicable, not a failure)</span></p>"
         f"</header>"
         f"<main>"
+        f"{_html_filters()}"
         f"{_html_scorecard(digest)}"
         f"{_html_performance(digest)}"
+        f"{_html_history(digest)}"
         f"{_html_issues(digest)}"
         f"{_html_recommendations(digest)}"
         f"{_html_gates(digest)}"
-        f"</main></body></html>\n"
+        f"</main>{_HTML_SCRIPT}</body></html>\n"
     )
 
 
@@ -151,6 +153,49 @@ def _coverage_meter(perf: PerformanceSnapshot) -> str:
     )
 
 
+def _html_filters() -> str:
+    return (
+        "<section class='card filters'><h2>Filter</h2>"
+        "<div class='filter-row'>"
+        "<label>Gate <input id='filter-gate' type='search' placeholder='lint'/></label>"
+        "<label>Severity <select id='filter-severity'>"
+        "<option value=''>all</option><option>error</option>"
+        "<option>warning</option><option>info</option></select></label>"
+        "<label>File <input id='filter-path' type='search' placeholder='src/'/></label>"
+        "</div></section>"
+    )
+
+
+def _html_history(digest: QualityDigest) -> str:
+    if digest.report_dir is None:
+        return ""
+    from quality_gates.report import load_history
+
+    entries = load_history(digest.report_dir)
+    if len(entries) < 2:
+        return ""
+    rows = []
+    for item in entries[-10:]:
+        rows.append(
+            "<tr><td>"
+            + html.escape(str(item.get("ts") or "")[:19])
+            + "</td><td>"
+            + html.escape(str(item.get("verdict") or ""))
+            + "</td><td>"
+            + html.escape(str(item.get("errors") or 0))
+            + "</td><td>"
+            + html.escape(str(item.get("coverage") or "—"))
+            + "</td></tr>"
+        )
+    return (
+        "<section class='card'><h2>Recent runs</h2>"
+        "<table class='score'><thead><tr><th>When</th><th>Verdict</th>"
+        "<th>Errors</th><th>Coverage</th></tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table></section>"
+    )
+
+
 def _html_issues(digest: QualityDigest) -> str:
     grouped = _issues_by_gate(digest)
     if not grouped:
@@ -164,8 +209,14 @@ def _html_issues(digest: QualityDigest) -> str:
             " open" if any(item.severity == "error" for item in findings) else ""
         )
         items = "".join(
-            "<li class='"
+            "<li class='issue-row "
             + html.escape(item.severity)
+            + "' data-gate='"
+            + html.escape(item.gate)
+            + "' data-severity='"
+            + html.escape(item.severity)
+            + "' data-path='"
+            + html.escape(item.path or "")
             + "'>"
             + _html_finding(item)
             + "</li>"
@@ -329,6 +380,11 @@ ul.issues, details.nest ul { margin: 0 0 .5rem; padding-left: 1.15rem; }
 li.error { color: var(--fail); font-weight: 650; }
 li.warning { color: var(--skip); }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .9em; }
+.filter-row { display: flex; flex-wrap: wrap; gap: .8rem; }
+.filter-row label { display: flex; flex-direction: column; gap: .2rem; font-size: .82rem; color: var(--muted); }
+.filter-row input, .filter-row select { min-width: 10rem; padding: .35rem .5rem; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--bg); color: var(--ink); }
+.issue-row.is-hidden { display: none; }
 @media print {
   body { background: #fff; color: #111; }
   .hero, .card { box-shadow: none; break-inside: avoid; }
@@ -336,6 +392,32 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
   details.nest summary { display: block; }
   details.nest > *:not(summary) { display: block !important; }
 }
+"""
+
+_HTML_SCRIPT = """
+<script>
+(function () {
+  const gate = document.getElementById('filter-gate');
+  const severity = document.getElementById('filter-severity');
+  const path = document.getElementById('filter-path');
+  if (!gate || !severity || !path) return;
+  function apply() {
+    const g = (gate.value || '').toLowerCase();
+    const s = (severity.value || '').toLowerCase();
+    const p = (path.value || '').toLowerCase();
+    document.querySelectorAll('.issue-row').forEach((row) => {
+      const ok =
+        (!g || (row.dataset.gate || '').includes(g)) &&
+        (!s || (row.dataset.severity || '') === s) &&
+        (!p || (row.dataset.path || '').toLowerCase().includes(p));
+      row.classList.toggle('is-hidden', !ok);
+    });
+  }
+  gate.addEventListener('input', apply);
+  severity.addEventListener('change', apply);
+  path.addEventListener('input', apply);
+})();
+</script>
 """
 
 

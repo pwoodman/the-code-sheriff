@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -29,11 +30,21 @@ def run_contract(root: Path, config: QualityConfig, *, base: str | None) -> Gate
             or not manifest.base
         ):
             continue
-        current = _json(root / change.path)
-        previous = _base_json(root, manifest.base, change.old_path or change.path)
-        if current is None or previous is None:
-            continue
-        for rule, msg in _contract_breaking_changes(previous, current):
+        if _is_schema_text(change.path):
+            current_text = _text(root / change.path)
+            previous_text = _base_text(
+                root, manifest.base, change.old_path or change.path
+            )
+            if current_text is None or previous_text is None:
+                continue
+            pairs = _schema_text_breaking(previous_text, current_text, change.path)
+        else:
+            current = _json(root / change.path)
+            previous = _base_json(root, manifest.base, change.old_path or change.path)
+            if current is None or previous is None:
+                continue
+            pairs = _contract_breaking_changes(previous, current)
+        for rule, msg in pairs:
             findings.append(
                 Finding(
                     gate="contract",
@@ -44,7 +55,9 @@ def run_contract(root: Path, config: QualityConfig, *, base: str | None) -> Gate
                 )
             )
     if not any(_is_contract(item.path) for item in manifest.changes):
-        return skip_result("contract", "no changed JSON schema or OpenAPI contract")
+        return skip_result(
+            "contract", "no changed JSON schema, OpenAPI, protobuf, or GraphQL contract"
+        )
     return fail_or_pass(
         "contract", findings, ["compared changed contracts with base snapshot"]
     )
@@ -52,7 +65,59 @@ def run_contract(root: Path, config: QualityConfig, *, base: str | None) -> Gate
 
 def _is_contract(path: str) -> bool:
     lower = path.lower()
-    return lower.endswith(".schema.json") or "openapi" in lower or "swagger" in lower
+    return (
+        lower.endswith(".schema.json")
+        or lower.endswith(".proto")
+        or lower.endswith((".graphql", ".gql"))
+        or "openapi" in lower
+        or "swagger" in lower
+    )
+
+
+def _is_schema_text(path: str) -> bool:
+    lower = path.lower()
+    return lower.endswith((".proto", ".graphql", ".gql"))
+
+
+def _text(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def _base_text(root: Path, base: str, path: str) -> str | None:
+    result = subprocess.run(
+        ["git", "show", f"{base}:{path}"],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode:
+        return None
+    return result.stdout
+
+
+def _schema_text_breaking(
+    previous: str, current: str, path: str
+) -> list[tuple[str, str]]:
+    if path.lower().endswith(".proto"):
+        old = set(re.findall(r"^\s*(?:message|rpc|enum)\s+(\w+)", previous, re.M))
+        new = set(re.findall(r"^\s*(?:message|rpc|enum)\s+(\w+)", current, re.M))
+        old_fields = set(re.findall(r"^\s+\w+\s+(\w+)\s*=\s*\d+", previous, re.M))
+        new_fields = set(re.findall(r"^\s+\w+\s+(\w+)\s*=\s*\d+", current, re.M))
+    else:
+        old = set(re.findall(r"^\s*(?:type|enum|interface)\s+(\w+)", previous, re.M))
+        new = set(re.findall(r"^\s*(?:type|enum|interface)\s+(\w+)", current, re.M))
+        old_fields = set(re.findall(r"^\s+(\w+)\s*[:\(]", previous, re.M))
+        new_fields = set(re.findall(r"^\s+(\w+)\s*[:\(]", current, re.M))
+    issues: list[tuple[str, str]] = []
+    for name in sorted(old - new):
+        issues.append(("type-removed", f"contract type or rpc removed: {name}"))
+    for name in sorted(old_fields - new_fields):
+        issues.append(("field-removed", f"contract field removed: {name}"))
+    return issues
 
 
 def _json(path: Path) -> dict | None:

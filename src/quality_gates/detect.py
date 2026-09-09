@@ -143,15 +143,12 @@ def detect_languages(
         shebang = profiles_for_shebang(first_line)
         if shebang:
             matched = shebang
-        elif path.suffix.lower() in {".h", ".m"}:
+        elif path.suffix.lower() == ".h":
             try:
                 ambiguous_path = path.relative_to(root).as_posix()
             except ValueError:
                 ambiguous_path = str(path)
-            choices = (
-                "c or cpp" if path.suffix.lower() == ".h" else "matlab or objective-c"
-            )
-            ambiguities.append(f"{ambiguous_path}: {choices}")
+            ambiguities.append(f"{ambiguous_path}: c or cpp")
         for profile in matched:
             if profile.kind == "language":
                 languages.add(profile.id)
@@ -209,6 +206,10 @@ def discover_workspaces(root: Path) -> list[Workspace]:
         ("pyproject.toml", "python"),
         ("Cargo.toml", "rust"),
         ("go.mod", "go"),
+        ("pom.xml", "java"),
+        ("mix.exs", "elixir"),
+        ("Gemfile", "ruby"),
+        ("composer.json", "php"),
     ]
     for manifest, lang in manifest_types:
         if (root / manifest).is_file():

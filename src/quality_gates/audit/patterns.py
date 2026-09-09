@@ -32,12 +32,13 @@ _PUBLIC_SECRET = re.compile(
 )
 _SQL_CONCAT = re.compile(
     r"""(?ix)
-    (?:execute|executemany|raw|query|cursor\.execute)\s*\(\s*(?:f['\"].*(?:SELECT|INSERT|UPDATE|DELETE|WHERE)
-      |['\"](?:SELECT|INSERT|UPDATE|DELETE).*(?:%s|\{|\+|`))
+    (?:execute|executemany|raw|query|cursor\.execute)\s*\(\s*
+    (?:f?['\"]\s*(?:SELECT|INSERT|UPDATE|DELETE)
+      |['\"](?:SELECT|INSERT|UPDATE|DELETE)[^'\"]*(?:%s|\{|\+|`))
     |
     (?:SELECT|INSERT|UPDATE|DELETE)\s+[^;]{0,80}['\"]\s*\+
     |
-    f['\"][^'\"]*(?:SELECT|INSERT|UPDATE|DELETE|WHERE)\s+[^'\"]*\{
+    f['\"]\s*(?:SELECT|INSERT|UPDATE|DELETE)\b[^'\"]*\{
     """
 )
 _MONGO_INJECT = re.compile(
@@ -83,7 +84,9 @@ _WEAK_HASH = re.compile(
 )
 _CUSTOM_AUTH = re.compile(
     r"""(?ix)
-    (?:hmac\.new|hashlib\.sha256\s*\(\s*(?:password|passwd)|base64\.b64encode\s*\(\s*password)
+    hmac\.new\s*\([^)]{0,160}(?:password|passwd|user_password)
+    |hashlib\.sha256\s*\(\s*(?:password|passwd)
+    |base64\.b64encode\s*\(\s*password
     """
 )
 _JWT_NONE = re.compile(

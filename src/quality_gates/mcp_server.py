@@ -113,7 +113,7 @@ def handle(
             {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "poly-check", "version": __version__},
+                "serverInfo": {"name": "the-codesheriff", "version": __version__},
             },
         )
     if method == "notifications/initialized" or method == "exit":

@@ -32,7 +32,7 @@ trust = "trusted"
 # both   = local hooks AND the full Actions suite.
 [quality.ci]
 mode = "both"
-github_gates = ["format", "lint", "impact", "audit", "version", "review"]
+github_gates = ["format", "lint", "security", "impact", "audit", "version", "review"]
 
 [quality.compile]
 # Never compile if secrets/CVEs/SAST errors are present, or if scanners skipped.
@@ -99,6 +99,7 @@ exclude = [
   ".zvec-grep",
   ".cursor",
   ".idea",
+  "github-app",
 ]
 
 [quality.format]
@@ -127,6 +128,7 @@ ignore = [
   "**/tooling/**",
   "**/configs/**",
   "**/.github/workflows/**",
+  "**/github-app/**",
 ]
 
 [quality.sql]

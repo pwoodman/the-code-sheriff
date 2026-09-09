@@ -1,0 +1,28 @@
+- id: quality-format
+  name: The Code Sheriff (format)
+  description: Check formatting with The Code Sheriff
+  entry: quality format --check
+  language: python
+  pass_filenames: false
+  stages: [pre-commit]
+- id: quality-lint
+  name: The Code Sheriff (lint)
+  description: Lint with The Code Sheriff
+  entry: quality lint
+  language: python
+  pass_filenames: false
+  stages: [pre-commit]
+- id: quality-version
+  name: The Code Sheriff (version)
+  description: Check version/changelog with The Code Sheriff
+  entry: quality version
+  language: python
+  pass_filenames: false
+  stages: [pre-commit]
+- id: quality-push
+  name: The Code Sheriff (push gates)
+  description: DRY, security, compile, impact, coverage, audit, and UI
+  entry: quality run --only dry,security,compile,impact,coverage,audit,ui
+  language: python
+  pass_filenames: false
+  stages: [pre-push]
