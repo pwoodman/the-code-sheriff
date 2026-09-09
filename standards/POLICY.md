@@ -47,6 +47,48 @@ quality baseline --ratchet             # union fingerprints; raise coverage floo
 
 Never shrink the baseline to hide a new defect.
 
+## Ignore a single finding
+
+Inline, next-line, or file header:
+
+```python
+eval(sample)  # quality:ignore eval
+# quality:ignore-next-line eval
+eval(sample)
+# quality:ignore-file missing-tests
+```
+
+Durable (expires, attributed):
+
+```bash
+quality ignore add --rule eval --path src/app.py --reason "test fixture" --owner you --days 90
+```
+
+That appends `.quality/ignore.toml`. For merge-policy exceptions with `approved_by`, keep using `[[quality.exceptions]]`.
+
+Last-run errors live in `.quality-reports/findings-last.json` (previous copy in `findings-previous.json`). If the snippet is still in the file, the next run reopens the finding even when the current scanner missed it.
+
+## Test timing
+
+Touched tests that run **15% slower** (and at least 50ms slower) than the last good duration fail with `timing-regression`. Thresholds:
+
+```toml
+[quality.test]
+require_for_source = true
+timing = true
+timing_regression_pct = 15
+timing_min_delta_ms = 50
+```
+
+Accept a slower duration on purpose:
+
+```bash
+quality timing accept --test tests/test_app.py::test_ok
+quality timing accept --all-regressed
+```
+
+Or ignore with `# quality:ignore-file timing-regression` / `quality ignore add --rule timing-regression`.
+
 ## New repo
 
 ```bash

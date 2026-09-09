@@ -184,7 +184,9 @@ def _ollama_client(config: QualityConfig) -> ChatClient | None:
     )
 
 
-def resolve_client(config: QualityConfig) -> ChatClient | None:
+def resolve_client(
+    config: QualityConfig, *, model: str | None = None
+) -> ChatClient | None:
     provider = (config.review_provider or "auto").lower()
     if provider in {"off", "heuristic", "none"}:
         return None
@@ -202,19 +204,16 @@ def resolve_client(config: QualityConfig) -> ChatClient | None:
     if provider == "github-models":
         # Retired 2026-07-30. GITHUB_TOKEN on Actions is not an inference key.
         return None
+    chosen = (model or config.review_model or "").strip()
     if provider == "anthropic" and anthropic_key:
-        model = config.review_model or os.environ.get(
-            "ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_MODEL
-        )
-        return AnthropicClient(anthropic_key, model)
+        chosen = chosen or os.environ.get("ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_MODEL)
+        return AnthropicClient(anthropic_key, chosen)
     if provider == "openai" and openai_key:
-        model = config.review_model or os.environ.get(
-            "OPENAI_MODEL", DEFAULT_OPENAI_MODEL
-        )
+        chosen = chosen or os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
         return OpenAICompatClient(
             "https://api.openai.com/v1/chat/completions",
             openai_key,
-            model,
+            chosen,
             "openai",
         )
     return None

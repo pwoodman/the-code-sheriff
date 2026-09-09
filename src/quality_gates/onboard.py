@@ -31,12 +31,12 @@ languages = ["auto"]
 policy = "{policy}"
 baseline = ".quality-baseline.json"
 comment_on_pr = true
-fail_on = ["format", "lint", "dry", "security", "compile", "contract", "impact", "test", "coverage", "audit", "ui", "version"]
+fail_on = ["format", "lint", "regex", "packages", "dry", "security", "compile", "contract", "impact", "test", "coverage", "audit", "ui", "version"]
 ai_review = "pr-only"
 
 [quality.ci]
 mode = "local"
-github_gates = ["format", "lint", "security", "impact", "audit", "version", "review"]
+github_gates = ["format", "lint", "regex", "packages", "security", "impact", "audit", "version", "review"]
 
 [quality.compile]
 require_security = true
@@ -71,6 +71,17 @@ prefer_project_tools = true
 provider = "auto"
 inline_comments = true
 check_run = true
+incremental = true
+risk = "auto"
+
+[quality.test]
+require_for_source = true
+timing = true
+timing_regression_pct = 15
+timing_min_delta_ms = 50
+
+[quality.packages]
+require_declared = true
 """
 
 

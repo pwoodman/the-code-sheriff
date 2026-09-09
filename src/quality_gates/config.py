@@ -11,6 +11,32 @@ from typing import Any
 from quality_gates import ALL_LANGUAGES
 from quality_gates.registry import canonical_name
 
+DEFAULT_REVIEW_SKIP_GLOBS = [
+    "**/package-lock.json",
+    "**/pnpm-lock.yaml",
+    "**/yarn.lock",
+    "**/npm-shrinkwrap.json",
+    "**/Cargo.lock",
+    "**/go.sum",
+    "**/go.work.sum",
+    "**/poetry.lock",
+    "**/uv.lock",
+    "**/composer.lock",
+    "**/Gemfile.lock",
+    "**/*.min.js",
+    "**/*.min.css",
+    "**/dist/**",
+    "**/build/**",
+    "**/vendor/**",
+    "**/.venv/**",
+    "**/generated/**",
+    "**/*_generated.*",
+    "**/*.pb.go",
+    "**/*.pb.ts",
+    "**/CHANGELOG.md",
+    "**/changelog.md",
+]
+
 DEFAULT_EXCLUDE = [
     ".git",
     ".quality-gates",
@@ -71,6 +97,12 @@ def _as_float(value: Any, fallback: float) -> float:
         return fallback
 
 
+def _as_dict_list(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
 def _as_ints(value: Any, fallback: list[int]) -> list[int]:
     if value is None:
         return list(fallback)
@@ -88,6 +120,8 @@ def _as_ints(value: Any, fallback: list[int]) -> list[int]:
 DEFAULT_FAIL_ON = [
     "format",
     "lint",
+    "regex",
+    "packages",
     "dry",
     "security",
     "compile",
@@ -109,6 +143,8 @@ DEFAULT_FAIL_ON = [
 DEFAULT_GITHUB_GATES = [
     "format",
     "lint",
+    "regex",
+    "packages",
     "security",
     "impact",
     "audit",
@@ -143,6 +179,8 @@ QUALITY_KEYS = frozenset(
         "detect",
         "format",
         "lint",
+        "regex",
+        "packages",
         "dry",
         "sql",
         "review",
@@ -210,6 +248,25 @@ class QualityConfig:
     review_check_run: bool = True
     review_verify_tests: bool = False
     review_symbol_neighbors: bool = True
+    review_incremental: bool = True
+    review_risk: str = "auto"
+    review_cheap_model: str = ""
+    review_full_model: str = ""
+    review_skip_globs: list[str] = field(
+        default_factory=lambda: list(DEFAULT_REVIEW_SKIP_GLOBS)
+    )
+    regex_enabled: bool = True
+    regex_include_defaults: bool = True
+    regex_rules: list[dict[str, Any]] = field(default_factory=list)
+    packages_enabled: bool = True
+    packages_include_defaults: bool = True
+    packages_require_declared: bool = True
+    packages_deny: list[dict[str, Any]] = field(default_factory=list)
+    packages_allow: list[str] = field(default_factory=list)
+    test_require_for_source: bool = True
+    test_timing_enabled: bool = True
+    test_timing_regression_pct: float = 15.0
+    test_timing_min_delta_ms: float = 50.0
     ui_select: str = "changed"
     ui_framework: str = "auto"
     ui_spec_dirs: list[str] = field(default_factory=list)
@@ -292,6 +349,9 @@ def load_config(project: Path) -> QualityConfig:
     dry = _section(data, "quality", "dry")
     sql = _section(data, "quality", "sql")
     review = _section(data, "quality", "review")
+    regex_cfg = _section(data, "quality", "regex")
+    packages_cfg = _section(data, "quality", "packages")
+    test_cfg = _section(data, "quality", "test")
     ci = _section(data, "quality", "ci")
     compile_cfg = _section(data, "quality", "compile")
     version_cfg = _section(data, "quality", "version")
@@ -392,6 +452,25 @@ def load_config(project: Path) -> QualityConfig:
         review_check_run=_as_bool(review.get("check_run"), True),
         review_verify_tests=_as_bool(review.get("verify_tests"), False),
         review_symbol_neighbors=_as_bool(review.get("symbol_neighbors"), True),
+        review_incremental=_as_bool(review.get("incremental"), True),
+        review_risk=_review_risk(review.get("risk", "auto")),
+        review_cheap_model=str(review.get("cheap_model") or ""),
+        review_full_model=str(review.get("full_model") or ""),
+        review_skip_globs=_as_list(review.get("skip_globs"), DEFAULT_REVIEW_SKIP_GLOBS),
+        regex_enabled=_as_bool(regex_cfg.get("enabled"), True),
+        regex_include_defaults=_as_bool(regex_cfg.get("include_defaults"), True),
+        regex_rules=_as_dict_list(regex_cfg.get("rules")),
+        packages_enabled=_as_bool(packages_cfg.get("enabled"), True),
+        packages_include_defaults=_as_bool(packages_cfg.get("include_defaults"), True),
+        packages_require_declared=_as_bool(packages_cfg.get("require_declared"), True),
+        packages_deny=_as_dict_list(packages_cfg.get("deny")),
+        packages_allow=_as_list(packages_cfg.get("allow"), []),
+        test_require_for_source=_as_bool(test_cfg.get("require_for_source"), True),
+        test_timing_enabled=_as_bool(test_cfg.get("timing"), True),
+        test_timing_regression_pct=_as_float(
+            test_cfg.get("timing_regression_pct"), 15.0
+        ),
+        test_timing_min_delta_ms=_as_float(test_cfg.get("timing_min_delta_ms"), 50.0),
         ui_select=ui_select,
         ui_framework=ui_framework,
         ui_spec_dirs=_as_list(ui_cfg.get("spec_dirs"), []),
@@ -405,7 +484,8 @@ def load_config(project: Path) -> QualityConfig:
             impact_cfg.get("require_downstream", True), True
         ),
         impact_require_own_tests=_as_bool(
-            impact_cfg.get("require_own_tests", False), False
+            impact_cfg.get("require_own_tests"),
+            _as_bool(test_cfg.get("require_for_source"), True),
         ),
         coverage_enabled=_as_bool(coverage_cfg.get("enabled"), True),
         coverage_line=_as_float(coverage_cfg.get("line"), 80.0),
@@ -508,6 +588,13 @@ def _apply_trusted_merge_policy(project: Path, data: dict[str, Any]) -> dict[str
     out = dict(data)
     out["quality"] = merged
     return out
+
+
+def _review_risk(value: Any) -> str:
+    risk = str(value or "auto").strip().lower()
+    if risk not in {"auto", "skip", "cheap", "full", "heuristic"}:
+        return "auto"
+    return risk
 
 
 def _review_mode(value: Any) -> str:
