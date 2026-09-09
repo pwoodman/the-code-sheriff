@@ -17,6 +17,9 @@
   work. Resolved Sheriff comments are remembered so review does not re-raise them.
 - GitHub check annotations pin to the failing source file (and a job
   summary table) instead of `.github:N Process completed with exit code 1`.
+- Format reports the path from ruff's `--> file:line` diagnostic (and older
+  `Would reformat:` lines), not the `File would be reformatted` title. DRY
+  ignores generated Cursor/Claude skill copies (same template, two IDE paths).
 - Repository is public MIT: https://github.com/pwoodman/the-code-sheriff
 
 ## 1.13.0

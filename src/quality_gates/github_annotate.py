@@ -8,8 +8,6 @@ from pathlib import Path
 
 from quality_gates.models import Finding, GateResult
 
-_UNFORMATTED = ("would reformat:", "unformatted:")
-
 
 def github_annotation(
     message: str,
@@ -139,7 +137,7 @@ def run_ruff_github(paths: list[str]) -> int:
     if fmt.returncode not in {0, None}:
         for raw in combined.splitlines():
             path = unformatted_path(raw)
-            if path:
+            if path and path not in unformatted:
                 unformatted.append(path)
                 print(
                     github_annotation(
@@ -172,14 +170,10 @@ def run_ruff_github(paths: list[str]) -> int:
 
 
 def unformatted_path(line: str) -> str | None:
-    body = (line or "").strip()
-    if not body:
-        return None
-    lowered = body.lower()
-    for prefix in _UNFORMATTED:
-        if lowered.startswith(prefix):
-            return body.split(":", 1)[-1].strip() or None
-    return None
+    from quality_gates.gates.format import parse_ruff_format_line
+
+    parsed = parse_ruff_format_line(line)
+    return None if parsed is None else parsed[0]
 
 
 def main(argv: list[str] | None = None) -> int:

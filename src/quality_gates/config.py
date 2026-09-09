@@ -236,6 +236,8 @@ class QualityConfig:
             "**/vendor/**",
             "**/.git/**",
             "**/tests/fixtures/**",
+            "**/.cursor/skills/**",
+            "**/.claude/skills/**",
         ]
     )
     sql_dialect: str = "ansi"

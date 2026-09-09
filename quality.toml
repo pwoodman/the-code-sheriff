@@ -131,6 +131,8 @@ ignore = [
   "**/vendor/**",
   "**/.git/**",
   "**/tests/fixtures/**",
+  "**/.cursor/skills/**",
+  "**/.claude/skills/**",
   "**/src/quality_gates/bundled/**",
   "**/src/quality_gates/tooling_js/**",
   "**/tooling/**",

@@ -29,6 +29,10 @@ def test_annotation_pins_source_file_not_workflow() -> None:
 
 def test_unformatted_path_parses_ruff_format_check() -> None:
     assert unformatted_path("Would reformat: src/app.py") == "src/app.py"
+    assert unformatted_path("unformatted: File would be reformatted") is None
+    assert unformatted_path(" --> src/app.py:3:2") == "src/app.py"
+    assert unformatted_path("6 files would be reformatted") is None
+    assert unformatted_path("File would be reformatted") is None
     assert unformatted_path("warning: something") is None
 
 
