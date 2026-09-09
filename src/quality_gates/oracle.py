@@ -137,7 +137,11 @@ def _attach_pr_comments(root: Path, payload: dict[str, Any]) -> None:
 
 
 def render_prompt(payload: dict[str, Any]) -> str:
-    if payload.get("green") and not (payload.get("review") or {}).get("findings") and not payload.get("comments"):
+    if (
+        payload.get("green")
+        and not (payload.get("review") or {}).get("findings")
+        and not payload.get("comments")
+    ):
         return "Quality gates are green. Do not change code for gate failures."
     lines = [
         "You are fixing a repository until `quality oracle --run` reports green.",

@@ -15,6 +15,8 @@
 - `quality comments` and MCP `quality_pr_comments` list unresolved GitHub
   review threads (Greptile, BugBot, humans). The oracle treats them as remaining
   work. Resolved Sheriff comments are remembered so review does not re-raise them.
+- GitHub check annotations pin to the failing source file (and a job
+  summary table) instead of `.github:N Process completed with exit code 1`.
 - Repository is public MIT: https://github.com/pwoodman/the-code-sheriff
 
 ## 1.13.0

@@ -54,12 +54,12 @@ def run_merge(
         "using_working_tree_commit": used_stash,
     }
     if used_stash:
-        notes.append("preview includes staged/unstaged tracked files via git stash create")
+        notes.append(
+            "preview includes staged/unstaged tracked files via git stash create"
+        )
     extra = untracked_names(root)
     if extra:
-        notes.append(
-            f"{len(extra)} untracked file(s) are not in the merge preview"
-        )
+        notes.append(f"{len(extra)} untracked file(s) are not in the merge preview")
 
     primary = preview(root, ours, theirs)
     primary.using_stash_commit = used_stash
@@ -84,9 +84,7 @@ def run_merge(
     report["messages"] = primary.messages
     if not primary.clean:
         findings.extend(_conflict_findings(primary, theirs, sibling=None))
-        notes.append(
-            f"textual conflict vs {theirs}: " + ", ".join(primary.files[:8])
-        )
+        notes.append(f"textual conflict vs {theirs}: " + ", ".join(primary.files[:8]))
     else:
         notes.append(f"clean textual merge vs {theirs}")
 
@@ -109,9 +107,7 @@ def run_merge(
                 notes.append(f"sibling {label}: {other.error}")
                 continue
             if not other.clean:
-                findings.extend(
-                    _conflict_findings(other, head, sibling=label)
-                )
+                findings.extend(_conflict_findings(other, head, sibling=label))
         notes.append(f"checked {len(sibling_rows)} open sibling PR(s)")
     report["siblings"] = sibling_rows
 
@@ -224,11 +220,9 @@ def _verify_merged(
                 )
             )
             findings.extend(
-                [
-                    item
-                    for item in compile_result.findings
-                    if item.severity == "error"
-                ][:8]
+                [item for item in compile_result.findings if item.severity == "error"][
+                    :8
+                ]
             )
         impact_result = run_impact(dest, config, base=theirs)
         if impact_result.status == "fail":

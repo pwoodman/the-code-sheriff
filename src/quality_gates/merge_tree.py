@@ -31,7 +31,9 @@ class MergePreview:
     using_stash_commit: bool = False
 
 
-def resolve_theirs(root: Path, explicit: str | None = None, configured: str = "") -> str | None:
+def resolve_theirs(
+    root: Path, explicit: str | None = None, configured: str = ""
+) -> str | None:
     if explicit:
         return explicit if _rev_ok(root, explicit) else None
     if configured.strip() and _rev_ok(root, configured.strip()):
@@ -155,18 +157,14 @@ def same_commit(root: Path, left: str, right: str) -> bool:
 
 
 def current_branch(root: Path) -> str:
-    result = run(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=root, timeout=15
-    )
+    result = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=root, timeout=15)
     if result.returncode != 0:
         return ""
     return result.stdout.strip()
 
 
 def untracked_names(root: Path) -> list[str]:
-    result = run(
-        ["git", "ls-files", "-o", "--exclude-standard"], cwd=root, timeout=15
-    )
+    result = run(["git", "ls-files", "-o", "--exclude-standard"], cwd=root, timeout=15)
     if result.returncode != 0:
         return []
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]

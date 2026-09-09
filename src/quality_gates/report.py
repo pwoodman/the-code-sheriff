@@ -44,48 +44,15 @@ __all__ = [
 
 
 def emit_annotations(results: list[GateResult]) -> None:
-    if os.environ.get("GITHUB_ACTIONS") != "true":
-        return
-    for result in results:
-        for finding in result.findings:
-            _emit(finding)
-
-
-def _emit(finding: Finding) -> None:
-    level = "error" if finding.severity == "error" else "warning"
-    bits = [f"::{level}"]
-    args: list[str] = []
-    if finding.path:
-        args.append(f"file={_escape_anno(finding.path)}")
-    if finding.line:
-        args.append(f"line={finding.line}")
-    if finding.column:
-        args.append(f"col={finding.column}")
-    if finding.rule:
-        args.append(f"title={_escape_anno(finding.rule)}")
-    if args:
-        bits.append(" " + ",".join(args))
-    detail = finding.message
-    if finding.snippet:
-        detail += f" At: {finding.snippet}."
-    if finding.reason:
-        detail += f" Why: {finding.reason}."
-    if finding.suggestion:
-        detail += f" Fix: {finding.suggestion}"
-    if finding.documentation_url:
-        detail += f" Docs: {finding.documentation_url}"
-    bits.append(f"::{_escape_anno(detail)}")
-    print("".join(bits))
-
-
-def _escape_anno(value: str) -> str:
-    return (
-        value.replace("%", "%25")
-        .replace("\r", "%0D")
-        .replace("\n", "%0A")
-        .replace(",", "%2C")
-        .replace(":", "%3A")
+    from quality_gates.github_annotate import (
+        emit_result_annotations,
+        summary_from_results,
+        write_github_summary,
     )
+
+    emit_result_annotations(results)
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        write_github_summary(summary_from_results(results))
 
 
 def build_digest(

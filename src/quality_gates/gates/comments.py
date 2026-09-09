@@ -6,6 +6,7 @@ from pathlib import Path
 
 from quality_gates.config import QualityConfig
 from quality_gates.gates.common import fail_or_pass, skip_result
+from quality_gates.models import GateResult
 from quality_gates.pr_comments import (
     dismissed_fingerprints,
     list_threads,

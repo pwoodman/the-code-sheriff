@@ -15,9 +15,7 @@ from quality_gates.review.parse import fingerprint
 
 DISMISSED_FILE = "dismissed.json"
 COMMENTS_FILE = "comments.json"
-_SUGGESTION = re.compile(
-    r"```suggestion[^\n]*\n(.*?)```", re.S | re.I
-)
+_SUGGESTION = re.compile(r"```suggestion[^\n]*\n(.*?)```", re.S | re.I)
 _SHERIFF_RULE = re.compile(
     r"\*\*(?P<rule>[^*]+)\*\*\s*\((?P<severity>error|warning|info)\)",
     re.I,
@@ -148,7 +146,9 @@ def unresolved_findings(threads: list[ReviewThread] | None = None) -> list[Findi
                 line=thread.line,
                 message=_summary(thread.body),
                 suggestion=suggestion,
-                patch=_suggestion_patch(thread.path, suggestion) if suggestion else None,
+                patch=_suggestion_patch(thread.path, suggestion)
+                if suggestion
+                else None,
                 verify="quality comments",
                 reason=f"unresolved review by {thread.author or 'reviewer'}",
                 documentation_url=thread.url or None,
@@ -250,14 +250,9 @@ def sync_dismissed(root: Path) -> list[str]:
 
 
 def _from_graphql(data: Any) -> list[ReviewThread]:
-    nodes = (
-        ((data or {}).get("data") or {})
-        .get("repository", {})
-        .get("pullRequest", {})
-        .get("reviewThreads", {})
-        .get("nodes")
-        or []
-    )
+    nodes = ((data or {}).get("data") or {}).get("repository", {}).get(
+        "pullRequest", {}
+    ).get("reviewThreads", {}).get("nodes") or []
     threads: list[ReviewThread] = []
     if not isinstance(nodes, list):
         return []
@@ -269,9 +264,7 @@ def _from_graphql(data: Any) -> list[ReviewThread]:
             continue
         first = comments[0] if isinstance(comments[0], dict) else {}
         bodies = [
-            str(item.get("body") or "")
-            for item in comments
-            if isinstance(item, dict)
+            str(item.get("body") or "") for item in comments if isinstance(item, dict)
         ]
         body = "\n\n".join(part for part in bodies if part.strip())
         path = str(first.get("path") or "").strip() or None

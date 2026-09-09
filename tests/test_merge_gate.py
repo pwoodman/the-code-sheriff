@@ -28,11 +28,7 @@ def test_parse_merge_tree_clean() -> None:
 
 def test_parse_merge_tree_conflict_messages() -> None:
     oid = "b" * 40
-    stdout = (
-        f"{oid}\n"
-        "CONFLICT (content): Merge conflict in src/app.py\n"
-        "src/app.py\n"
-    )
+    stdout = f"{oid}\nCONFLICT (content): Merge conflict in src/app.py\nsrc/app.py\n"
     parsed = parse_merge_tree(stdout, 1)
     assert parsed.clean is False
     assert parsed.tree == oid
@@ -45,9 +41,7 @@ def test_merge_gate_skips_when_head_is_the_base(tmp_path: Path) -> None:
     (tmp_path / "readme.txt").write_text("ok\n", encoding="utf-8")
     _git(tmp_path, "add", ".")
     _git(tmp_path, "commit", "-qm", "base")
-    result = run_merge(
-        tmp_path, QualityConfig(merge_verify="never"), base="main"
-    )
+    result = run_merge(tmp_path, QualityConfig(merge_verify="never"), base="main")
     assert result.status == "skip"
     assert "already" in " ".join(result.notes)
 
@@ -68,9 +62,7 @@ def test_merge_gate_fails_textual_conflict(tmp_path: Path) -> None:
     _git(tmp_path, "commit", "-qm", "main-side")
     _git(tmp_path, "checkout", "-q", "feature")
 
-    result = run_merge(
-        tmp_path, QualityConfig(merge_verify="never"), base="main"
-    )
+    result = run_merge(tmp_path, QualityConfig(merge_verify="never"), base="main")
     assert result.status == "fail"
     assert any(item.rule == "textual-conflict" for item in result.findings)
     assert (tmp_path / ".quality-reports" / "merge.json").is_file()
@@ -104,9 +96,7 @@ def test_merge_gate_passes_clean_textual_merge(tmp_path: Path) -> None:
     _git(tmp_path, "commit", "-qm", "main-side")
     _git(tmp_path, "checkout", "-q", "feature")
 
-    result = run_merge(
-        tmp_path, QualityConfig(merge_verify="never"), base="main"
-    )
+    result = run_merge(tmp_path, QualityConfig(merge_verify="never"), base="main")
     assert result.status == "pass"
     assert not result.findings
     assert any("clean textual merge" in note for note in result.notes)

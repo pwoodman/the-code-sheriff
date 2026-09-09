@@ -1221,7 +1221,9 @@ def _onboard(root: Path, args: argparse.Namespace) -> int:
                 "Include .cursor/mcp.json, .mcp.json, "
                 ".cursor/rules/the-code-sheriff.mdc, and the Code Sheriff skill."
             )
-            print("Put `quality` on PATH (`uv tool install git+https://github.com/pwoodman/the-code-sheriff.git`) so MCP can spawn.")
+            print(
+                "Put `quality` on PATH (`uv tool install git+https://github.com/pwoodman/the-code-sheriff.git`) so MCP can spawn."
+            )
         print("GitHub App is optional: quality github-app register")
     else:
         print("Next: quality run --skip review && quality baseline")
