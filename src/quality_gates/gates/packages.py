@@ -15,11 +15,11 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from quality_gates.change_manifest import discover_changes
 from quality_gates.config import QualityConfig
 from quality_gates.gates.common import fail_or_pass, skip_result
 from quality_gates.models import Finding, GateResult
-from quality_gates.review.routing import DEFAULT_SKIP_GLOBS, path_skipped
+from quality_gates.review.diffscan import iter_added_lines, load_review_diff
+from quality_gates.review.routing import path_skipped
 
 PACKAGE_LANGS = {
     "python": "python",
@@ -240,19 +240,12 @@ def run_packages(
 ) -> GateResult:
     if not config.packages_enabled:
         return skip_result("packages", "packages gate disabled")
-    text = diff
+    text = load_review_diff(root, config, base=base, diff=diff)
     if text is None:
-        from quality_gates.review.context import collect_diff
-
-        text = collect_diff(root, base, config.max_diff_bytes)
-        if not text.strip():
-            manifest = discover_changes(root, base)
-            if manifest.state == "empty":
-                return skip_result("packages", "no diff against the review base")
-            text = _tree_excerpt(root, manifest.paths, config)
+        return skip_result("packages", "no diff against the review base")
     if not _has_package_surface(languages or [], text):
         return skip_result("packages", "no package-import language in this change")
-    skip_globs = config.review_skip_globs or DEFAULT_SKIP_GLOBS
+    skip_globs = config.review_skip_globs or []
     declared = load_declared_packages(root)
     local_py = _local_python_names(root)
     risks = _compiled_risks(config)
@@ -284,30 +277,10 @@ def scan_diff(
     skip_globs: list[str],
 ) -> list[Finding]:
     findings: list[Finding] = []
-    current: str | None = None
-    new_line = 0
-    ecosystem = ""
-    for raw in diff.splitlines():
-        if raw.startswith("+++ b/"):
-            current = raw[6:].strip()
-            if current == "/dev/null":
-                current = None
-                ecosystem = ""
-            else:
-                ecosystem = _path_ecosystem(current)
+    for current, new_line, line in iter_added_lines(diff):
+        if path_skipped(current, skip_globs):
             continue
-        if raw.startswith("@@"):
-            match = re.search(r"\+(\d+)", raw)
-            new_line = int(match.group(1)) if match else 0
-            continue
-        if not (raw.startswith("+") and not raw.startswith("+++")):
-            if raw.startswith(" ") and current:
-                new_line += 1
-            continue
-        if not current or path_skipped(current, skip_globs):
-            new_line += 1
-            continue
-        line = raw[1:]
+        ecosystem = _path_ecosystem(current)
         names = _names_from_line(current, line, ecosystem)
         for package, eco in names:
             key = package.lower()
@@ -350,7 +323,6 @@ def scan_diff(
                         ),
                     )
                 )
-        new_line += 1
     return findings
 
 
@@ -776,24 +748,3 @@ def _finding(
         message=message,
         suggestion=suggestion,
     )
-
-
-def _tree_excerpt(root: Path, paths: list[str], config: QualityConfig) -> str:
-    parts: list[str] = []
-    skip_globs = config.review_skip_globs or DEFAULT_SKIP_GLOBS
-    for rel in paths:
-        if path_skipped(rel, skip_globs):
-            continue
-        path = root / rel
-        if not path.is_file():
-            continue
-        try:
-            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        except OSError:
-            continue
-        body = "\n".join(f"+{line}" for line in lines[:400])
-        parts.append(
-            f"diff --git a/{rel} b/{rel}\n--- a/{rel}\n+++ b/{rel}\n"
-            f"@@ -0,0 +1,{min(len(lines), 400)} @@\n{body}\n"
-        )
-    return "\n".join(parts)

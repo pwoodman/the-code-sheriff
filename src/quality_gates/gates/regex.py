@@ -6,12 +6,12 @@ import re
 from pathlib import Path
 from typing import Any
 
-from quality_gates.change_manifest import discover_changes
 from quality_gates.config import QualityConfig
 from quality_gates.gates.common import fail_or_pass, skip_result
 from quality_gates.models import Finding, GateResult
+from quality_gates.review.diffscan import iter_added_lines, load_review_diff
 from quality_gates.review.heuristic import _scan_unsafe_api
-from quality_gates.review.routing import DEFAULT_SKIP_GLOBS, path_skipped
+from quality_gates.review.routing import path_skipped
 
 DEFAULT_RULES: list[dict[str, str]] = [
     {
@@ -65,17 +65,10 @@ def run_regex(
     rules = _compiled_rules(config)
     if not rules:
         return skip_result("regex", "no regex rules configured")
-    text = diff
+    text = load_review_diff(root, config, base=base, diff=diff)
     if text is None:
-        from quality_gates.review.context import collect_diff
-
-        text = collect_diff(root, base, config.max_diff_bytes)
-        if not text.strip():
-            manifest = discover_changes(root, base)
-            if manifest.state == "empty":
-                return skip_result("regex", "no diff against the review base")
-            text = _tree_excerpt(root, manifest.paths, config)
-    skip_globs = config.review_skip_globs or DEFAULT_SKIP_GLOBS
+        return skip_result("regex", "no diff against the review base")
+    skip_globs = config.review_skip_globs or []
     findings = scan_diff(text, rules, skip_globs)
     notes = [f"{len(rules)} rule(s)", f"{len(findings)} hit(s)"]
     return fail_or_pass("regex", findings, notes)
@@ -87,46 +80,27 @@ def scan_diff(
     skip_globs: list[str],
 ) -> list[Finding]:
     findings: list[Finding] = []
-    current: str | None = None
-    new_line = 0
-    for raw in diff.splitlines():
-        if raw.startswith("+++ b/"):
-            current = raw[6:]
-            if current == "/dev/null":
-                current = None
+    for current, new_line, text in iter_added_lines(diff):
+        if path_skipped(current, skip_globs) or not _scan_unsafe_api(current):
             continue
-        if raw.startswith("@@"):
-            match = re.search(r"\+(\d+)", raw)
-            new_line = int(match.group(1)) if match else 0
-            continue
-        if raw.startswith("+") and not raw.startswith("+++"):
-            if (
-                current
-                and not path_skipped(current, skip_globs)
-                and _scan_unsafe_api(current)
-            ):
-                text = raw[1:]
-                for name, pattern, message, severity in rules:
-                    if pattern.search(text):
-                        findings.append(
-                            Finding(
-                                gate="regex",
-                                rule=name,
-                                path=current,
-                                line=new_line,
-                                severity=severity,
-                                message=message,
-                                snippet=text.strip()[:240],
-                                suggestion=(
-                                    "remove the match, or add `# quality:ignore "
-                                    f"{name}` on this line / "
-                                    f"`quality ignore add --rule {name} --path {current}`"
-                                ),
-                            )
-                        )
-            new_line += 1
-        elif raw.startswith(" ") and not raw.startswith("+++"):
-            new_line += 1
+        for name, pattern, message, severity in rules:
+            if pattern.search(text):
+                findings.append(
+                    Finding(
+                        gate="regex",
+                        rule=name,
+                        path=current,
+                        line=new_line,
+                        severity=severity,
+                        message=message,
+                        snippet=text.strip()[:240],
+                        suggestion=(
+                            "remove the match, or add `# quality:ignore "
+                            f"{name}` on this line / "
+                            f"`quality ignore add --rule {name} --path {current}`"
+                        ),
+                    )
+                )
     return findings
 
 
@@ -158,24 +132,3 @@ def _compiled_rules(
             )
         )
     return compiled
-
-
-def _tree_excerpt(root: Path, paths: list[str], config: QualityConfig) -> str:
-    parts: list[str] = []
-    skip_globs = config.review_skip_globs or DEFAULT_SKIP_GLOBS
-    for rel in paths:
-        if path_skipped(rel, skip_globs):
-            continue
-        path = root / rel
-        if not path.is_file():
-            continue
-        try:
-            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        except OSError:
-            continue
-        body = "\n".join(f"+{line}" for line in lines[:400])
-        parts.append(
-            f"diff --git a/{rel} b/{rel}\n--- a/{rel}\n+++ b/{rel}\n"
-            f"@@ -0,0 +1,{min(len(lines), 400)} @@\n{body}\n"
-        )
-    return "\n".join(parts)

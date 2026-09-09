@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from pathlib import Path
 from typing import Any
 
 from quality_gates.gitutil import git_head
 from quality_gates.models import Finding
+from quality_gates.review.diffscan import iter_added_lines
 from quality_gates.review.parse import fingerprint
 
 STATE_NAME = "review-state.json"
@@ -23,7 +23,9 @@ def load_state(root: Path) -> dict[str, Any]:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {"head": None, "hunks": {}, "commented": []}
-    return data if isinstance(data, dict) else {"head": None, "hunks": {}, "commented": []}
+    return (
+        data if isinstance(data, dict) else {"head": None, "hunks": {}, "commented": []}
+    )
 
 
 def save_state(
@@ -46,25 +48,9 @@ def save_state(
 def added_hunks(diff: str) -> dict[str, list[str]]:
     """Map path → stable keys for newly added lines."""
     out: dict[str, list[str]] = {}
-    current = None
-    new_line = 0
-    for raw in diff.splitlines():
-        if raw.startswith("+++ b/"):
-            current = raw[6:]
-            if current == "/dev/null":
-                current = None
-            continue
-        if raw.startswith("@@"):
-            match = re.search(r"\+(\d+)", raw)
-            new_line = int(match.group(1)) if match else 0
-            continue
-        if raw.startswith("+") and not raw.startswith("+++"):
-            if current:
-                digest = hashlib.sha256(raw[1:].encode("utf-8")).hexdigest()[:12]
-                out.setdefault(current, []).append(f"{new_line}:{digest}")
-            new_line += 1
-        elif raw.startswith(" ") and not raw.startswith("+++"):
-            new_line += 1
+    for path, new_line, text in iter_added_lines(diff):
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+        out.setdefault(path, []).append(f"{new_line}:{digest}")
     return out
 
 
@@ -88,9 +74,7 @@ def restrict_diff(diff: str, paths: set[str]) -> str:
     parts: list[str] = []
     for path, body in split_diff_files(diff):
         if path in paths:
-            parts.append(
-                body if "diff --git" in body[:40] else f"+++ b/{path}\n{body}"
-            )
+            parts.append(body if "diff --git" in body[:40] else f"+++ b/{path}\n{body}")
     return "\n".join(parts)
 
 

@@ -27,6 +27,28 @@ from quality_gates.review.routing import (
 from quality_gates.timing import accept_timings, compare_timings, parse_junit
 
 
+def _eval_finding() -> Finding:
+    return Finding(
+        gate="regex",
+        rule="eval",
+        path="app.py",
+        line=1,
+        message="eval()",
+        severity="error",
+        snippet="value = eval(user)",
+    )
+
+
+def _reconcile_eval(tmp_path: Path, source: str) -> tuple[list[Finding], GateResult]:
+    (tmp_path / "app.py").write_text(source, encoding="utf-8")
+    persist_last_findings(
+        tmp_path, [GateResult(name="regex", status="fail", findings=[_eval_finding()])]
+    )
+    later = GateResult(name="regex", status="pass", findings=[])
+    leftover = reconcile_last_findings(tmp_path, [later])
+    return leftover, later
+
+
 def test_lockfile_diff_is_skip_risk() -> None:
     paths = ["package-lock.json"]
     diff = "+++ b/package-lock.json\n+  leftover\n"
@@ -153,76 +175,22 @@ def test_ignore_file_roundtrip(tmp_path: Path) -> None:
 
 
 def test_last_findings_reopen_if_snippet_remains(tmp_path: Path) -> None:
-    src = tmp_path / "app.py"
-    src.write_text("value = eval(user)\n", encoding="utf-8")
-    first = GateResult(
-        name="regex",
-        status="fail",
-        findings=[
-            Finding(
-                gate="regex",
-                rule="eval",
-                path="app.py",
-                line=1,
-                message="eval()",
-                severity="error",
-                snippet="value = eval(user)",
-            )
-        ],
-    )
-    persist_last_findings(tmp_path, [first])
-    later = GateResult(name="regex", status="pass", findings=[])
-    leftover = reconcile_last_findings(tmp_path, [later])
-    assert leftover
-    assert leftover[0].rule == "eval"
+    leftover, later = _reconcile_eval(tmp_path, "value = eval(user)\n")
+    assert leftover and leftover[0].rule == "eval"
     assert later.status == "fail"
 
 
 def test_last_findings_clear_when_snippet_gone(tmp_path: Path) -> None:
-    src = tmp_path / "app.py"
-    src.write_text("value = int(user)\n", encoding="utf-8")
-    first = GateResult(
-        name="regex",
-        status="fail",
-        findings=[
-            Finding(
-                gate="regex",
-                rule="eval",
-                path="app.py",
-                line=1,
-                message="eval()",
-                severity="error",
-                snippet="value = eval(user)",
-            )
-        ],
-    )
-    persist_last_findings(tmp_path, [first])
-    later = GateResult(name="regex", status="pass", findings=[])
-    leftover = reconcile_last_findings(tmp_path, [later])
+    leftover, _later = _reconcile_eval(tmp_path, "value = int(user)\n")
     assert leftover == []
 
 
 def test_last_findings_merge_keeps_other_gates(tmp_path: Path) -> None:
-    src = tmp_path / "app.py"
-    src.write_text("value = eval(user)\n", encoding="utf-8")
+    (tmp_path / "app.py").write_text("value = eval(user)\n", encoding="utf-8")
     persist_last_findings(
         tmp_path,
         [
-            GateResult(
-                name="regex",
-                status="fail",
-                findings=[
-                    Finding(
-                        gate="regex",
-                        rule="eval",
-                        path="app.py",
-                        line=1,
-                        message="eval()",
-                        severity="error",
-                        snippet="value = eval(user)",
-                    )
-                ],
-            ),
+            GateResult(name="regex", status="fail", findings=[_eval_finding()]),
             GateResult(
                 name="test",
                 status="fail",
