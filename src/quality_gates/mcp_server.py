@@ -79,6 +79,39 @@ TOOLS = [
             "properties": {"id": {"type": "string"}},
         },
     },
+    {
+        "name": "quality_merge",
+        "description": (
+            "Dry-merge HEAD into the base branch with git merge-tree. Reports "
+            "textual conflicts and optionally compile/impact on the merged tree. "
+            "Set siblings to also check other open PR heads."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "base": {"type": "string"},
+                "verify": {"type": "boolean"},
+                "siblings": {"type": "boolean"},
+            },
+        },
+    },
+    {
+        "name": "quality_pr_comments",
+        "description": (
+            "List unresolved GitHub review threads on the current pull request "
+            "(Greptile, BugBot, humans, Sheriff). Apply suggestion patches with "
+            "quality_apply_fix, then re-run quality_oracle."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "fail": {
+                    "type": "boolean",
+                    "description": "If true, treat unresolved threads as blocking.",
+                }
+            },
+        },
+    },
 ]
 
 
@@ -202,6 +235,30 @@ def _call_tool(
         verified = apply_and_verify(_root(), finding)
         verified["id"] = row.get("id")
         return json.dumps(verified, indent=2)
+    if name == "quality_merge":
+        argv = ["merge"]
+        if args.get("base"):
+            argv.extend(["--base", str(args["base"])])
+        if args.get("verify") is True:
+            argv.append("--verify")
+        if args.get("verify") is False:
+            argv.append("--no-verify")
+        if args.get("siblings") is True:
+            argv.append("--siblings")
+        if args.get("siblings") is False:
+            argv.append("--no-siblings")
+        code = runner(argv)
+        payload = remaining_from_reports(_root())
+        payload["exit_code"] = code
+        return json.dumps(payload, indent=2)
+    if name == "quality_pr_comments":
+        argv = ["comments"]
+        if args.get("fail"):
+            argv.append("--fail")
+        code = runner(argv)
+        payload = remaining_from_reports(_root())
+        payload["exit_code"] = code
+        return json.dumps(payload, indent=2)
     return f"unknown tool {name}"
 
 

@@ -66,7 +66,8 @@ def remaining_from_reports(root: Path) -> dict[str, Any]:
                 "resolution": review.get("resolution"),
                 "findings": review.get("findings") or [],
             }
-    if not results and not payload.get("review"):
+    _attach_pr_comments(root, payload)
+    if not results and not payload.get("review") and not payload.get("comments"):
         payload["green"] = False
         payload["next"] = "no .quality-reports — run `quality oracle --run` first"
     return payload
@@ -77,6 +78,9 @@ def finding_from_reports(root: Path, finding_id: str | None = None) -> dict[str,
     pool = list(payload.get("blocking") or []) + list(payload.get("warnings") or [])
     review = payload.get("review") or {}
     for item in review.get("findings") or []:
+        if isinstance(item, dict):
+            pool.append(item)
+    for item in payload.get("comments") or []:
         if isinstance(item, dict):
             pool.append(item)
     if not pool:
@@ -90,8 +94,50 @@ def finding_from_reports(root: Path, finding_id: str | None = None) -> dict[str,
     return {"finding": first, "prompt": _prompt_from_row(first)}
 
 
+def _attach_pr_comments(root: Path, payload: dict[str, Any]) -> None:
+    try:
+        from quality_gates.config import load_config
+        from quality_gates.pr_comments import (
+            load_comment_findings,
+            save_comments_report,
+            unresolved_findings,
+        )
+        from quality_gates.review.contract import finding_payload
+
+        config = load_config(root)
+        if not getattr(config, "comments_in_oracle", True):
+            return
+        findings = unresolved_findings()
+        if findings:
+            save_comments_report(root, findings)
+        rows = [finding_payload(item) for item in findings] or load_comment_findings(
+            root
+        )
+        if not rows:
+            return
+        payload["comments"] = rows
+        blocking = payload.setdefault("blocking", [])
+        for row in rows:
+            row = dict(row)
+            row.setdefault("gate", "comments")
+            row.setdefault("rule", "unresolved-review")
+            if not any(
+                item.get("path") == row.get("path")
+                and item.get("message") == row.get("message")
+                for item in blocking
+            ):
+                blocking.append(row)
+        payload["green"] = False
+        payload["next"] = (
+            "Fix blocking gates and unresolved PR review comments, "
+            "then run `quality oracle --run` again."
+        )
+    except (OSError, ValueError, json.JSONDecodeError, TypeError, KeyError):
+        return
+
+
 def render_prompt(payload: dict[str, Any]) -> str:
-    if payload.get("green") and not (payload.get("review") or {}).get("findings"):
+    if payload.get("green") and not (payload.get("review") or {}).get("findings") and not payload.get("comments"):
         return "Quality gates are green. Do not change code for gate failures."
     lines = [
         "You are fixing a repository until `quality oracle --run` reports green.",
@@ -107,6 +153,12 @@ def render_prompt(payload: dict[str, Any]) -> str:
     if review_findings:
         lines.append("Review findings:")
         for item in review_findings[:20]:
+            if isinstance(item, dict):
+                lines.append(_bullet(item))
+    comment_findings = payload.get("comments") or []
+    if comment_findings:
+        lines.append("Unresolved PR review comments:")
+        for item in comment_findings[:20]:
             if isinstance(item, dict):
                 lines.append(_bullet(item))
     lines.append("Re-run `quality oracle --run` after each fix batch.")

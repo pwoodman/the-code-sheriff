@@ -16,6 +16,10 @@ No `uv`? `pip install "git+https://github.com/pwoodman/the-code-sheriff.git"` th
 Share this poster: [getting-started.png](getting-started.png)
 ([HTML source](getting-started.html) if you want to print or tweak it).
 
+Coding agents get MCP + a Cursor/Claude skill that loops on
+`quality oracle --run` until green, including `quality merge` (dry-merge vs
+main) and unresolved GitHub review comments. Skip with `--no-agents`.
+
 ## New Python app
 
 ```bash

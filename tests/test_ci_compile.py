@@ -33,6 +33,8 @@ def test_local_mode_on_github_is_cheap(monkeypatch) -> None:
     assert "regex" in CHEAP_GITHUB_GATES
     assert "packages" in CHEAP_GITHUB_GATES
     assert "security" in CHEAP_GITHUB_GATES
+    assert "merge" in CHEAP_GITHUB_GATES
+    assert "comments" in CHEAP_GITHUB_GATES
     assert "format" not in HEAVY_GATES
     assert "lint" not in HEAVY_GATES
 

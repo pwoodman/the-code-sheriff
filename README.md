@@ -2,7 +2,7 @@
 
 Project home: https://github.com/pwoodman/the-code-sheriff
 
-Polyglot **format → lint → DRY → security → compile → impact → coverage → audit → UI → version → AI review**
+Polyglot **format → lint → DRY → security → compile → impact → coverage → audit → UI → version → merge → AI review**
 gates. CLI: `quality` (alias: `codesheriff`). Heavy work defaults to **your machine**. GitHub Actions stays cheap unless
 you opt in. One command on a new repo:
 
@@ -10,19 +10,60 @@ you opt in. One command on a new repo:
 uvx --from git+https://github.com/pwoodman/the-code-sheriff.git quality setup
 ```
 
+That also drops Cursor/Claude MCP, an always-on rule, and a skill so the agent
+loops on `quality oracle` until green. `--no-agents` skips those files.
+
 The GitHub App is optional; see [`docs/GITHUB_APP.md`](docs/GITHUB_APP.md).
 
 | When | What | Where |
 | --- | --- | --- |
 | `git commit` | format, lint, version | your device |
 | `git push` | DRY, security, compile, impact, coverage, audit, selective UI | your device |
-| Push / PR on GitHub | format, lint, regex, packages, security, impact, audit, version, PR review | Actions |
+| Push / PR on GitHub | format, lint, regex, packages, security, impact, audit, version, merge, PR review | Actions |
 | Optional | full suite on Actions | `ci.mode = "both"` / `"github"`, or workflow **full_suite** |
 | Optional | Playwright/Cypress on Actions | `[quality.ui] on_github = true` |
 
 That split saves runner minutes. Hooks are the contract; Actions in `local` mode
-runs the cheap PR gates (format, lint, regex, packages, security, impact, audit, version, review).
+runs the cheap PR gates (format, lint, regex, packages, security, impact, audit, version, merge, review, comments).
 Browser UI tests stay off GitHub even in `github`/`both` mode unless you turn them on.
+
+## Vibe coding / agent loop
+
+Pandorian-class tools govern **after** a PR exists, for leadership. The Code
+Sheriff sits **in the agent loop**, on your machine, before commit:
+
+```bash
+quality oracle --run --prompt   # or MCP quality_run → quality_oracle
+# fix remaining blockers (including merge conflicts and PR review comments)
+quality oracle --run            # until green is true
+```
+
+`quality merge` is in that loop: `git merge-tree` against origin/main before
+push. GitHub already paints textual conflicts on the PR; Sheriff fails them
+locally for the agent, and locally verifies compile/impact on a clean merge.
+`quality comments` pulls unresolved GitHub review threads (Greptile, BugBot,
+humans) into the same oracle.
+
+`quality setup` writes:
+
+| Surface | File |
+| --- | --- |
+| Cursor MCP | `.cursor/mcp.json` |
+| Claude Code / generic MCP | `.mcp.json` |
+| Always-on Cursor rule | `.cursor/rules/the-code-sheriff.mdc` |
+| Project skill | `.cursor/skills/the-code-sheriff/SKILL.md` and `.claude/skills/the-code-sheriff/SKILL.md` |
+| Agent readme (if missing) | `AGENTS.md` |
+
+The same files the agent already follows (`AGENTS.md`, `CLAUDE.md`,
+`.cursor/rules`) are ingested as review rules. Put team standards in those
+files **or** `.quality/rules/*.md` — one source of truth, no Confluence
+re-entry.
+
+Put `quality` on PATH so MCP can spawn:
+
+```bash
+uv tool install git+https://github.com/pwoodman/the-code-sheriff.git
+```
 
 ## What is enforced
 
@@ -39,6 +80,8 @@ Browser UI tests stay off GitHub even in `github`/`both` mode unless you turn th
 | **Audit** | 120-point static inspection | HIGH-confidence evidence only; fail on P0; N/A when no API/UI |
 | **UI** | Playwright / Cypress | **only specs whose touch set hits the diff** (plus downstream files) |
 | **Version** | semver files + changelog | bump required when source changes |
+| **Merge** | `git merge-tree` | textual conflicts vs base; local verify compile/impact on the merged tree |
+| **Comments** | GitHub review threads | unresolved Greptile/BugBot/human threads stay in the oracle; does not fail CI |
 | **AI review** | heuristic + optional LLM (impact/audit context, custom rules) | PRs; risk-routed cheap/full models; incremental hunks; inline comments; does not fail the build |
 | **Regex** | configurable + default unsafe-API patterns | change set; `# quality:ignore` / `.quality/ignore.toml` |
 | **Packages** | import + manifest names vs a local risk catalog | typosquats/malware/abandoned libs; undeclared third-party imports |
@@ -94,7 +137,7 @@ quality report                     # scorecard, performance, issues, recommendat
 mode = "local"                     # default: cheap Actions
 # mode = "github"                  # full suite on runners
 # mode = "both"                    # hooks + full Actions
-github_gates = ["format", "lint", "regex", "packages", "security", "impact", "audit", "version", "review"]
+github_gates = ["format", "lint", "regex", "packages", "security", "impact", "audit", "version", "merge", "review", "comments"]
 
 [quality.ui]
 select = "changed"                 # only specs that touch added/changed files
@@ -102,7 +145,7 @@ on_github = false                  # keep browsers off Actions
 ```
 
 `quality run` on Actions with `mode = "local"` only runs `github_gates`
-(format, lint, regex, packages, security, impact, audit, version, review). Format, lint, and
+(format, lint, regex, packages, security, impact, audit, version, merge, review, comments). Format, lint, and
 security belong on PRs so secrets, CVEs, SAST, and IaC do not wait for a
 hosted scanner. Force the rest with `quality run --full`,
 `QUALITY_CI_FULL=1`, `[quality.ci] mode = "both"`, or Actions → **Quality gates
@@ -166,6 +209,17 @@ on_github = false
 [quality.version]
 require_changelog = "if-present"   # if-present | always | never
 
+[quality.review]
+ingest_agent_files = true          # AGENTS.md, CLAUDE.md, .cursor/rules
+
+[quality.merge]
+verify = "auto"                    # auto | always | never
+siblings = false
+
+[quality.comments]
+in_oracle = true                   # unresolved GitHub threads stay in quality oracle
+fail = false                       # report only unless --fail / comments.fail = true
+
 [quality.sql]
 dialect = "postgres"
 ```
@@ -181,7 +235,8 @@ Heuristic review always runs. For JSON findings on the PR: `ANTHROPIC_API_KEY`
 or `OPENAI_API_KEY`. Docs, lockfiles, and generated paths skip the LLM. Typical
 PRs use a cheap model (Haiku / GPT-4.1-mini); auth/SQL/high-fan-out diffs use
 Sonnet. Later commits on the same PR only review new hunks. Custom rules live
-in `.quality/rules/*.md`. Inline `# quality:ignore eval` or
+in `.quality/rules/*.md`. `AGENTS.md`, `CLAUDE.md`, and `.cursor/rules` are
+ingested too (`ingest_agent_files = true`). Inline `# quality:ignore eval` or
 `.quality/ignore.toml` (via `quality ignore add`) suppress a hit. Last findings
 are stored in `.quality-reports/findings-last.json` and reopen if the snippet
 is still in the tree. `quality eval` writes `.quality-reports/eval/SCORECARD.md`.
@@ -201,6 +256,8 @@ quality security
 quality sbom [--format all|cyclonedx|spdx]
 quality compile [--force]
 quality impact [--base origin/main]
+quality merge [--base origin/main] [--verify] [--siblings]
+quality comments [--fail]
 quality coverage
 quality test
 quality audit
@@ -276,4 +333,4 @@ AWS/GCP/Azure accounts — those are a different job.
 
 ## License
 
-MIT
+[MIT](LICENSE). Public at https://github.com/pwoodman/the-code-sheriff

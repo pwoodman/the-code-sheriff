@@ -181,6 +181,13 @@ def run_review(
     findings = merge_findings(heuristic_kept, llm_findings)
     findings = drop_style_nits(findings, allowed_paths=None)
     findings = enrich_findings(findings, root)
+    from quality_gates.pr_comments import drop_dismissed, load_dismissed, sync_dismissed
+
+    dismissed = load_dismissed(root)
+    if post:
+        dismissed = list(dict.fromkeys([*dismissed, *sync_dismissed(root)]))
+    before = len(findings)
+    findings = drop_dismissed(findings, dismissed)
     evidence = collect_test_evidence(root, config, paths)
 
     report_dir = root / ".quality-reports"
@@ -231,6 +238,10 @@ def run_review(
         "specialists: " + (", ".join(specialists) or "none"),
         "wrote .quality-reports/review.json and review.md",
     ]
+    if before > len(findings):
+        notes.append(
+            f"suppressed {before - len(findings)} finding(s) previously dismissed on the PR"
+        )
     if skipped_paths:
         notes.append(f"skipped generated/lockfile paths: {len(skipped_paths)}")
     if incremental_skip:

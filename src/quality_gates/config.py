@@ -132,6 +132,7 @@ DEFAULT_FAIL_ON = [
     "audit",
     "ui",
     "version",
+    "merge",
     "migration",
     "authorization",
     "resilience",
@@ -149,7 +150,9 @@ DEFAULT_GITHUB_GATES = [
     "impact",
     "audit",
     "version",
+    "merge",
     "review",
+    "comments",
 ]
 POLICIES = ("observe", "adopt", "enforce")
 TRUST_POLICIES = ("trusted", "prompt", "untrusted")
@@ -184,6 +187,8 @@ QUALITY_KEYS = frozenset(
         "dry",
         "sql",
         "review",
+        "merge",
+        "comments",
         "migration",
         "authorization",
         "resilience",
@@ -241,6 +246,7 @@ class QualityConfig:
     review_passes: int = 3
     review_tool_rounds: int = 4
     review_rules_dir: str = ".quality/rules"
+    review_ingest_agent_files: bool = True
     review_related_files: int = 8
     review_related_bytes: int = 24_000
     review_validate: bool = True
@@ -255,6 +261,13 @@ class QualityConfig:
     review_skip_globs: list[str] = field(
         default_factory=lambda: list(DEFAULT_REVIEW_SKIP_GLOBS)
     )
+    merge_enabled: bool = True
+    merge_verify: str = "auto"
+    merge_verify_tests: bool = False
+    merge_siblings: bool = False
+    merge_base: str = ""
+    comments_in_oracle: bool = True
+    comments_fail: bool = False
     regex_enabled: bool = True
     regex_include_defaults: bool = True
     regex_rules: list[dict[str, Any]] = field(default_factory=list)
@@ -360,6 +373,8 @@ def load_config(project: Path) -> QualityConfig:
     coverage_cfg = _section(data, "quality", "coverage")
     audit_cfg = _section(data, "quality", "audit")
     cache_cfg = _section(data, "quality", "cache")
+    merge_cfg = _section(data, "quality", "merge")
+    comments_cfg = _section(data, "quality", "comments")
 
     auto_install = quality.get("auto_install", False)
     if isinstance(auto_install, str):
@@ -443,6 +458,7 @@ def load_config(project: Path) -> QualityConfig:
         review_passes=max(2, min(8, int(review.get("passes", 3) or 3))),
         review_tool_rounds=max(0, min(8, int(review.get("tool_rounds", 4) or 4))),
         review_rules_dir=str(review.get("rules_dir", ".quality/rules")),
+        review_ingest_agent_files=_as_bool(review.get("ingest_agent_files"), True),
         review_related_files=max(0, min(32, int(review.get("related_files", 8) or 8))),
         review_related_bytes=max(
             4000, int(review.get("related_bytes", 24_000) or 24_000)
@@ -457,6 +473,13 @@ def load_config(project: Path) -> QualityConfig:
         review_cheap_model=str(review.get("cheap_model") or ""),
         review_full_model=str(review.get("full_model") or ""),
         review_skip_globs=_as_list(review.get("skip_globs"), DEFAULT_REVIEW_SKIP_GLOBS),
+        merge_enabled=_as_bool(merge_cfg.get("enabled"), True),
+        merge_verify=_merge_verify(merge_cfg.get("verify", "auto")),
+        merge_verify_tests=_as_bool(merge_cfg.get("verify_tests"), False),
+        merge_siblings=_as_bool(merge_cfg.get("siblings"), False),
+        merge_base=str(merge_cfg.get("base") or ""),
+        comments_in_oracle=_as_bool(comments_cfg.get("in_oracle"), True),
+        comments_fail=_as_bool(comments_cfg.get("fail"), False),
         regex_enabled=_as_bool(regex_cfg.get("enabled"), True),
         regex_include_defaults=_as_bool(regex_cfg.get("include_defaults"), True),
         regex_rules=_as_dict_list(regex_cfg.get("rules")),
@@ -580,6 +603,7 @@ def _apply_trusted_merge_policy(project: Path, data: dict[str, Any]) -> dict[str
         "exceptions",
         "required_tools",
         "ci",
+        "merge",
     }
     merged = dict(candidate)
     for key in protected:
@@ -588,6 +612,17 @@ def _apply_trusted_merge_policy(project: Path, data: dict[str, Any]) -> dict[str
     out = dict(data)
     out["quality"] = merged
     return out
+
+
+def _merge_verify(value: Any) -> str:
+    mode = str(value or "auto").strip().lower()
+    if mode in {"auto", "always", "never"}:
+        return mode
+    if mode in {"true", "yes", "on"}:
+        return "always"
+    if mode in {"false", "no", "off"}:
+        return "never"
+    return "auto"
 
 
 def _review_risk(value: Any) -> str:

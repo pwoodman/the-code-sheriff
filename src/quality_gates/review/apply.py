@@ -12,6 +12,8 @@ from quality_gates.review.parse import fingerprint
 def apply_finding(root: Path, finding: Finding) -> str:
     """Apply `finding.patch` to the working tree. Returns a status string."""
     patch = (finding.patch or "").strip()
+    if not patch and (finding.suggestion or "").strip():
+        patch = f"```suggestion\n{finding.suggestion.strip()}\n```"
     if not patch:
         return "no patch on this finding"
     if "```suggestion" in patch or not _looks_unified(patch):

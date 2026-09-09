@@ -209,6 +209,52 @@ def test_loads_scoped_markdown_rules(tmp_path: Path) -> None:
     assert [rule.name for rule in active] == ["no-eval"]
 
 
+def test_ingests_agents_md_and_cursor_globs(tmp_path: Path) -> None:
+    (tmp_path / "AGENTS.md").write_text(
+        "Never call eval() in application code.\n", encoding="utf-8"
+    )
+    rules_dir = tmp_path / ".cursor" / "rules"
+    rules_dir.mkdir(parents=True)
+    (rules_dir / "no-raw-sql.mdc").write_text(
+        '---\nname: no-raw-sql\nglobs: ["**/*.py"]\nseverity: error\n---\n'
+        "Use the query builder; do not concatenate SQL.\n",
+        encoding="utf-8",
+    )
+    (rules_dir / "the-code-sheriff.mdc").write_text(
+        "---\nalwaysApply: true\n---\nRun quality oracle.\n",
+        encoding="utf-8",
+    )
+    config = QualityConfig()
+    rules = load_review_rules(tmp_path, config)
+    names = {rule.name for rule in rules}
+    assert "AGENTS" in names
+    assert "no-raw-sql" in names
+    assert "the-code-sheriff" not in names
+    active = rules_for_paths(rules, ["src/app.py"])
+    assert {rule.name for rule in active} == {"AGENTS", "no-raw-sql"}
+    sql = next(rule for rule in rules if rule.name == "no-raw-sql")
+    assert sql.paths == ["**/*.py"]
+    assert sql.severity == "error"
+
+
+def test_skips_generated_agent_loop_files(tmp_path: Path) -> None:
+    (tmp_path / "AGENTS.md").write_text(
+        "<!-- the-code-sheriff:agent-loop -->\nRun the oracle.\n",
+        encoding="utf-8",
+    )
+    skill = tmp_path / ".cursor" / "skills" / "the-code-sheriff"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("# loop\n", encoding="utf-8")
+    config = QualityConfig()
+    assert load_review_rules(tmp_path, config) == []
+
+
+def test_ingest_agent_files_can_be_disabled(tmp_path: Path) -> None:
+    (tmp_path / "AGENTS.md").write_text("Never use eval.\n", encoding="utf-8")
+    config = QualityConfig(review_ingest_agent_files=False)
+    assert load_review_rules(tmp_path, config) == []
+
+
 def test_parse_json_findings_and_majority_vote() -> None:
     text = """```json
 {"action":"submit","summary":"bug","findings":[
@@ -459,6 +505,8 @@ def test_mcp_lists_and_calls_oracle(tmp_path: Path, monkeypatch) -> None:
         "quality_review",
         "quality_finding_context",
         "quality_apply_fix",
+        "quality_merge",
+        "quality_pr_comments",
     } <= names
     called = handle(
         {
