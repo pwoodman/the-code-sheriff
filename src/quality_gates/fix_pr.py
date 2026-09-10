@@ -29,7 +29,7 @@ def generate_test_patch(path: str, function: str, framework: str = "pytest") -> 
             f"  expect({function}).toBeDefined();\n"
             f"}});\n"
         )
-    return f"// TODO: add tests for {function} in {path}\n"
+    return f"// add tests for {function} in {path}\n"
 
 
 def plan_fix_pr(

@@ -53,6 +53,8 @@ function loadDiagnostics(collection) {
   }
 }
 
-function deactivate() {}
+function deactivate() {
+  return undefined;
+}
 
 module.exports = { activate, deactivate };
