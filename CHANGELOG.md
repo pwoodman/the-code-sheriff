@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.15.0
+
+- Cover the 100-item GitHub-native reviewer checklist. Matrix:
+  `standards/REVIEWER_COVERAGE.md` and `quality eval` methodology in
+  `standards/EVAL.md`.
+- GitHub App events include `issue_comment` and `check_suite`. Commands use
+  the `/sheriff` prefix. One check run named **The Code Sheriff**.
+  Installation tokens and `GITHUB_API_URL` (GitHub Enterprise) are first-class.
+- Structured PR summary (intent, risk, safe-to-merge), finding explanation
+  template, reaction feedback, named review modes, and severity taxonomy.
+- Framework/IaC/security packs, symbol index, CODEOWNERS, ADRs, issue links,
+  lockfile review, CI failure triage, and a separate `quality fix-pr` branch.
+- BYOK providers (Azure, Bedrock, Gemini, OpenRouter, OpenAI-compatible),
+  cost caps, report retention, SARIF ingest, local `quality serve` API,
+  outcome webhooks, and a Terraform module.
+
 ## 1.14.0
 
 - `quality setup` writes Cursor/Claude MCP (`.cursor/mcp.json`, `.mcp.json`),

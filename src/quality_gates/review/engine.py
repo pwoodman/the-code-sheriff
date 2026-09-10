@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from quality_gates.change_manifest import ChangeManifest
@@ -59,9 +60,22 @@ def run_review(
     prior: list[GateResult] | None = None,
     manifest: ChangeManifest | None = None,
 ) -> GateResult:
-    if config.ai_review == "never":
+    command = os.environ.get("QUALITY_REVIEW_COMMAND") or ""
+    if config.ai_review == "never" and not command:
         return GateResult(name="review", status="skip", notes=["ai_review = never"])
-    if config.ai_review == "pr-only" and not is_pr_event() and not base:
+    if not getattr(config, "review_automatic", True) and not command and not base:
+        return GateResult(
+            name="review",
+            status="skip",
+            notes=["automatic review disabled; comment /sheriff review"],
+        )
+    if _is_draft_pr() and not getattr(config, "review_drafts", False) and not command:
+        return GateResult(
+            name="review",
+            status="skip",
+            notes=["draft pull request skipped (quality.review.drafts = false)"],
+        )
+    if config.ai_review == "pr-only" and not is_pr_event() and not base and not command:
         return GateResult(
             name="review",
             status="skip",
@@ -120,6 +134,24 @@ def run_review(
     prior = prior or []
     paths = changed_paths(diff)
     specialists = _specialists(paths, diff)
+    named = getattr(config, "review_named_mode", "standard")
+    if (
+        named in {"security", "tests", "migration", "architecture"}
+        and named not in specialists
+    ):
+        specialists = [named, *specialists]
+    if post and config.review_check_run:
+        from quality_gates.github_app import post_check
+        from quality_gates.identity import CHECK_NAME
+
+        notes_early = post_check(
+            name=CHECK_NAME,
+            status="in_progress",
+            title="Heuristic and security pass",
+            summary="Streaming first results before the full model pass.",
+        )
+    else:
+        notes_early = ""
     heuristic = heuristic_review(diff, languages, prior)
     if config.test_require_for_source:
         for item in heuristic:
@@ -138,6 +170,9 @@ def run_review(
         already = {path for path, _text in related}
         related = related + function_windows(root, diff, config, already=already)
     allowed = set(paths) | {path for path, _text in related}
+    from quality_gates.review.packs import load_packs, render_packs
+
+    packs = load_packs(root, config, paths=paths, languages=languages)
     prompt = _prompt(
         diff=llm_diff or diff,
         languages=languages,
@@ -147,15 +182,37 @@ def run_review(
         rules=rules,
         related=related,
         specialists=specialists,
+        packs=render_packs(packs),
     )
 
     tier = classify_review_risk(paths, diff, prior, config)
     mode = (config.review_mode or "auto").lower()
+    if getattr(config, "review_named_mode", "standard") == "fast":
+        mode = "heuristic"
+        tier = "cheap" if tier == "full" else tier
+    if getattr(config, "review_confidence_mode", "balanced") == "conservative":
+        tier = "cheap" if tier == "full" else tier
     model = ""
     client = None
     if mode != "heuristic" and tier != "skip" and not incremental_skip:
         model = select_review_model(config, tier)
         client = resolve_client(config, model=model)
+    from quality_gates.review.cost import within_budget
+
+    budget_ok, budget_reason = within_budget(
+        root,
+        monthly_cap=float(getattr(config, "cost_monthly_cap", 0) or 0),
+        per_pr_tokens=int(getattr(config, "cost_per_pr_tokens", 0) or 0),
+        next_tokens=max(0, len(prompt) // 4),
+    )
+    if not budget_ok:
+        cheap = (getattr(config, "review_cheap_model", "") or "").strip()
+        if cheap and client is not None:
+            model = cheap
+            client = resolve_client(config, model=model)
+        else:
+            client = None
+            model = ""
     provider = "heuristic"
     llm_summary = ""
     llm_findings: list[Finding] = []
@@ -181,6 +238,25 @@ def run_review(
     findings = merge_findings(heuristic_kept, llm_findings)
     findings = drop_style_nits(findings, allowed_paths=None)
     findings = enrich_findings(findings, root)
+    from quality_gates.review.context_extra import (
+        adr_conflicts,
+        docs_drift,
+        load_adrs,
+        owners_for,
+        parse_codeowners,
+        review_lockfiles,
+    )
+    from quality_gates.review.feedback import apply_feedback
+    from quality_gates.review.index import build_symbol_index
+    from quality_gates.review.severity import apply_taxonomy
+
+    findings.extend(review_lockfiles(root, paths))
+    findings.extend(docs_drift(paths))
+    findings.extend(adr_conflicts(load_adrs(root), paths, diff))
+    findings = [apply_taxonomy(item) for item in findings]
+    findings = apply_feedback(root, findings)
+    index = build_symbol_index(root, config)
+    owners = owners_for(paths, parse_codeowners(root))
     from quality_gates.pr_comments import drop_dismissed, load_dismissed, sync_dismissed
 
     dismissed = load_dismissed(root)
@@ -220,9 +296,72 @@ def run_review(
     (report_dir / "review.json").write_text(
         json.dumps(payload, indent=2) + "\n", encoding="utf-8"
     )
+    from quality_gates.review.cost import append_audit, latency_breakdown, record_usage
+    from quality_gates.review.summary import (
+        classify_intent,
+        coverage_note_from_prior,
+        impact_map,
+        merge_signal,
+        render_structured_summary,
+        score_risk,
+        summary_payload,
+        write_summary,
+    )
+
+    intent = classify_intent(paths)
+    risk = score_risk(
+        paths,
+        findings,
+        deps_touched=any(
+            "lock" in path or path.endswith("package.json") for path in paths
+        ),
+        auth_touched=any("auth" in path.lower() for path in paths),
+    )
+    signal = merge_signal(
+        findings,
+        risk=risk,
+        fail_on_review="review" in config.fail_on,
+        incomplete=partial,
+    )
+    structured = render_structured_summary(
+        intent=intent,
+        risk=risk,
+        signal=signal,
+        findings=findings,
+        paths=paths,
+        languages=languages,
+        coverage_note=coverage_note_from_prior(prior),
+        impact=impact_map(paths, owners=owners),
+        incomplete=[str(item) for item in unreviewed_units] if partial else [],
+        llm_summary=llm_summary,
+    )
+    write_summary(
+        root,
+        summary_payload(
+            intent=intent, risk=risk, signal=signal, findings=findings, paths=paths
+        ),
+    )
+    record_usage(
+        root,
+        provider=provider,
+        model=model or "heuristic",
+        input_tokens=len(prompt) // 4,
+        output_tokens=len(llm_summary) // 4,
+        mode=getattr(config, "review_named_mode", "standard"),
+    )
+    append_audit(
+        root,
+        {
+            "event": "review.completed",
+            "provider": provider,
+            "risk": risk,
+            "signal": signal,
+            "findings": len(findings),
+        },
+    )
     body = render_review(
         findings,
-        summary=llm_summary,
+        summary=structured,
         provider=provider,
         languages=languages,
         resolution=resolution,
@@ -233,11 +372,23 @@ def run_review(
         f"provider: {provider}",
         f"mode: {mode if client else 'heuristic'}",
         f"risk: {tier}",
+        f"intent: {intent}",
+        f"signal: {signal}",
         f"rules: {len(rules)}",
         f"related_files: {len(related)}",
+        f"packs: {', '.join(pack.name for pack in packs) or 'none'}",
+        f"symbols: {index.get('count') or 0}",
         "specialists: " + (", ".join(specialists) or "none"),
         "wrote .quality-reports/review.json and review.md",
     ]
+    if notes_early:
+        notes.append(str(notes_early))
+    if not budget_ok:
+        notes.append(f"budget: {budget_reason}")
+    latency = latency_breakdown(retrieval_ms=0, model_ms=0)
+    notes.append(
+        "latency: " + ", ".join(f"{key}={value}" for key, value in latency.items())
+    )
     if before > len(findings):
         notes.append(
             f"suppressed {before - len(findings)} finding(s) previously dismissed on the PR"
@@ -278,7 +429,7 @@ def run_review(
                 fail_on_review="review" in config.fail_on,
             )
         )
-        notes.append(sync_pr_summary(llm_summary or body))
+        notes.append(sync_pr_summary(structured or llm_summary or body))
         commented.extend(
             fingerprint(item, bucket=1) for item in posted if item.rule != "languages"
         )
@@ -388,6 +539,7 @@ def _prompt(
     rules,
     related: list[tuple[str, str]],
     specialists: list[str],
+    packs: str = "- none",
 ) -> str:
     bullets = "\n".join(
         f"- [{item.severity}] {item.path or ''}:{item.line or ''} {item.message}"
@@ -422,6 +574,9 @@ Authority & Isolation constraints:
 Custom repo rules (enforce these; they outrank generic style advice):
 {render_rules(rules)}
 
+Selected review packs:
+{packs or "- none"}
+
 Heuristic flags (do not repeat unless you can add new evidence):
 {bullets or "- none"}
 
@@ -436,6 +591,18 @@ Diff:
 {redacted_diff}
 ```
 """
+
+
+def _is_draft_pr() -> bool:
+    event_path = os.environ.get("GITHUB_EVENT_PATH")
+    if not event_path or not Path(event_path).is_file():
+        return False
+    try:
+        payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    pull = payload.get("pull_request") or {}
+    return bool(pull.get("draft"))
 
 
 def _specialists(paths: list[str], diff: str) -> list[str]:

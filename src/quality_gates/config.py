@@ -200,6 +200,12 @@ QUALITY_KEYS = frozenset(
         "policy",
         "baseline",
         "comment_on_pr",
+        "retention",
+        "cost",
+        "outcomes",
+        "notify",
+        "packs",
+        "rbac",
     }
 )
 
@@ -263,6 +269,21 @@ class QualityConfig:
     review_skip_globs: list[str] = field(
         default_factory=lambda: list(DEFAULT_REVIEW_SKIP_GLOBS)
     )
+    review_automatic: bool = True
+    review_drafts: bool = False
+    review_notify_owners: bool = False
+    review_confidence_mode: str = "balanced"
+    review_named_mode: str = "standard"
+    review_fail_on_severity: list[str] = field(default_factory=list)
+    review_disabled_categories: list[str] = field(default_factory=list)
+    review_packs: list[str] = field(default_factory=lambda: ["auto"])
+    review_base_url: str = ""
+    retention_days: int = 0
+    cost_monthly_cap: float = 0.0
+    cost_per_pr_tokens: int = 0
+    outcomes_webhooks: list[str] = field(default_factory=list)
+    notify_slack: str = ""
+    notify_teams: str = ""
     merge_enabled: bool = True
     merge_verify: str = "auto"
     merge_verify_tests: bool = False
@@ -339,6 +360,7 @@ def load_config(project: Path) -> QualityConfig:
     data: dict[str, Any] = {}
     if path.is_file():
         data = tomllib.loads(path.read_text(encoding="utf-8"))
+    data = _apply_org_defaults(project, data)
     data = _apply_trusted_merge_policy(project, data)
     quality = _section(data, "quality")
     unknown = sorted(set(quality) - QUALITY_KEYS)
@@ -475,6 +497,27 @@ def load_config(project: Path) -> QualityConfig:
         review_cheap_model=str(review.get("cheap_model") or ""),
         review_full_model=str(review.get("full_model") or ""),
         review_skip_globs=_as_list(review.get("skip_globs"), DEFAULT_REVIEW_SKIP_GLOBS),
+        review_automatic=_as_bool(review.get("automatic"), True),
+        review_drafts=_as_bool(review.get("drafts"), False),
+        review_notify_owners=_as_bool(review.get("notify_owners"), False),
+        review_confidence_mode=_confidence_mode(review.get("confidence", "balanced")),
+        review_named_mode=_named_mode(review.get("named_mode", "standard")),
+        review_fail_on_severity=_as_list(review.get("fail_on_severity"), []),
+        review_disabled_categories=_as_list(review.get("disable_categories"), []),
+        review_packs=_as_list(review.get("packs"), ["auto"]),
+        review_base_url=str(review.get("base_url") or ""),
+        retention_days=int(_section(data, "quality", "retention").get("days") or 0),
+        cost_monthly_cap=_as_float(
+            _section(data, "quality", "cost").get("monthly_cap"), 0.0
+        ),
+        cost_per_pr_tokens=int(
+            _section(data, "quality", "cost").get("per_pr_tokens") or 0
+        ),
+        outcomes_webhooks=_as_list(
+            _section(data, "quality", "outcomes").get("webhooks"), []
+        ),
+        notify_slack=str(_section(data, "quality", "notify").get("slack") or ""),
+        notify_teams=str(_section(data, "quality", "notify").get("teams") or ""),
         merge_enabled=_as_bool(merge_cfg.get("enabled"), True),
         merge_verify=_merge_verify(merge_cfg.get("verify", "auto")),
         merge_verify_tests=_as_bool(merge_cfg.get("verify_tests"), False),
@@ -639,3 +682,49 @@ def _review_mode(value: Any) -> str:
     if mode not in {"auto", "agentic", "ensemble", "single", "heuristic"}:
         return "auto"
     return mode
+
+
+def _confidence_mode(value: Any) -> str:
+    mode = str(value or "balanced").strip().lower()
+    if mode not in {"conservative", "balanced", "exploratory"}:
+        return "balanced"
+    return mode
+
+
+def _named_mode(value: Any) -> str:
+    mode = str(value or "standard").strip().lower()
+    allowed = {
+        "fast",
+        "standard",
+        "deep",
+        "security",
+        "tests",
+        "migration",
+        "architecture",
+    }
+    return mode if mode in allowed else "standard"
+
+
+def _apply_org_defaults(project: Path, data: dict[str, Any]) -> dict[str, Any]:
+    org_path = project / ".github" / "quality.org.toml"
+    if not org_path.is_file():
+        return data
+    try:
+        org = tomllib.loads(org_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return data
+    org_quality = org.get("quality")
+    repo_quality = data.get("quality")
+    if not isinstance(org_quality, dict):
+        return data
+    merged = dict(org_quality)
+    if isinstance(repo_quality, dict):
+        merged.update(repo_quality)
+        for key, value in repo_quality.items():
+            if isinstance(value, dict) and isinstance(org_quality.get(key), dict):
+                nested = dict(org_quality[key])
+                nested.update(value)
+                merged[key] = nested
+    out = dict(data)
+    out["quality"] = merged
+    return out

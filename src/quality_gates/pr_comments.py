@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from quality_gates.github_comment import _creds, _request, pr_number
+from quality_gates.host import api_url, graphql_url
 from quality_gates.models import Finding
 from quality_gates.review.parse import fingerprint
 
@@ -84,7 +85,7 @@ def list_threads(
         return []
     status, data = _request(
         "POST",
-        "https://api.github.com/graphql",
+        graphql_url(),
         token,
         {
             "query": _GRAPHQL,
@@ -107,7 +108,7 @@ def list_open_pr_heads(
     token, repo, current_pr = creds
     status, data = _request(
         "GET",
-        f"https://api.github.com/repos/{repo}/pulls?state=open&per_page=30",
+        api_url(f"/repos/{repo}/pulls?state=open&per_page=30"),
         token,
     )
     if not (200 <= status < 300) or not isinstance(data, list):
@@ -304,7 +305,7 @@ def _graphql_ok(data: Any) -> bool:
 def _from_rest(token: str, repo: str, pr: str) -> list[ReviewThread]:
     status, data = _request(
         "GET",
-        f"https://api.github.com/repos/{repo}/pulls/{pr}/comments",
+        api_url(f"/repos/{repo}/pulls/{pr}/comments"),
         token,
     )
     if not (200 <= status < 300) or not isinstance(data, list):

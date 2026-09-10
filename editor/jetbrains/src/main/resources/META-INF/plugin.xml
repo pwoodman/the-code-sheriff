@@ -1,0 +1,7 @@
+<idea-plugin>
+  <id>com.codesheriff.diagnostics</id>
+  <name>The Code Sheriff</name>
+  <vendor>The Code Sheriff</vendor>
+  <description>Shows The Code Sheriff findings from .quality-reports/diagnostics.json</description>
+  <depends>com.intellij.modules.platform</depends>
+</idea-plugin>

@@ -210,13 +210,18 @@ def resolve_client(
         return AnthropicClient(anthropic_key, chosen)
     if provider == "openai" and openai_key:
         chosen = chosen or os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
-        return OpenAICompatClient(
-            "https://api.openai.com/v1/chat/completions",
-            openai_key,
-            chosen,
-            "openai",
-        )
-    return None
+        base = (
+            os.environ.get("QUALITY_REVIEW_BASE_URL")
+            or os.environ.get("OPENAI_BASE_URL")
+            or getattr(config, "review_base_url", "")
+            or "https://api.openai.com/v1"
+        ).rstrip("/")
+        url = base if base.endswith("/chat/completions") else f"{base}/chat/completions"
+        name = "compat" if "openai.com" not in base else "openai"
+        return OpenAICompatClient(url, openai_key, chosen, name)
+    from quality_gates.review.providers import resolve_extended_client
+
+    return resolve_extended_client(config, model=model)
 
 
 def _http_error_detail(exc: urllib.error.HTTPError, client: ChatClient) -> str:

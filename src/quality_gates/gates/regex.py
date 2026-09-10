@@ -50,6 +50,24 @@ DEFAULT_RULES: list[dict[str, str]] = [
         "message": "innerHTML assignment is a common XSS sink",
         "severity": "error",
     },
+    {
+        "name": "swallowed-exception",
+        "pattern": r"except(?:\s+\w+)?\s*:\s*(?:pass|continue)\b",
+        "message": "Swallowed exception hides failures from operators.",
+        "severity": "warning",
+    },
+    {
+        "name": "unawaited-create-task",
+        "pattern": r"asyncio\.create_task\s*\(",
+        "message": "Unawaited asyncio.create_task can hide errors and leak work.",
+        "severity": "warning",
+    },
+    {
+        "name": "n-plus-one",
+        "pattern": r"for\s+\w+\s+in\s+.+:\s*(?:\n\s*)?(?:\w+\.)?(?:query|execute|fetch)\(",
+        "message": "Query inside a loop looks like an N+1 hot path.",
+        "severity": "warning",
+    },
 ]
 
 

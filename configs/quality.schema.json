@@ -45,7 +45,19 @@
           "properties": {
             "provider": {
               "type": "string",
-              "enum": ["auto", "openai", "anthropic", "ollama", "github-models", "off"]
+              "enum": [
+                "auto",
+                "openai",
+                "anthropic",
+                "ollama",
+                "azure",
+                "bedrock",
+                "gemini",
+                "openrouter",
+                "compat",
+                "github-models",
+                "off"
+              ]
             },
             "model": {"type": "string"},
             "max_diff_bytes": {"type": "integer", "minimum": 1000},
@@ -71,9 +83,38 @@
             },
             "cheap_model": {"type": "string"},
             "full_model": {"type": "string"},
-            "skip_globs": {"type": "array", "items": {"type": "string"}}
+            "skip_globs": {"type": "array", "items": {"type": "string"}},
+            "automatic": {"type": "boolean"},
+            "drafts": {"type": "boolean"},
+            "notify_owners": {"type": "boolean"},
+            "confidence": {
+              "type": "string",
+              "enum": ["conservative", "balanced", "exploratory"]
+            },
+            "named_mode": {
+              "type": "string",
+              "enum": [
+                "fast",
+                "standard",
+                "deep",
+                "security",
+                "tests",
+                "migration",
+                "architecture"
+              ]
+            },
+            "fail_on_severity": {"type": "array", "items": {"type": "string"}},
+            "disable_categories": {"type": "array", "items": {"type": "string"}},
+            "packs": {"type": "array", "items": {"type": "string"}},
+            "base_url": {"type": "string"}
           }
         },
+        "retention": {"type": "object"},
+        "cost": {"type": "object"},
+        "outcomes": {"type": "object"},
+        "notify": {"type": "object"},
+        "packs": {"type": "object"},
+        "rbac": {"type": "object"},
         "merge": {
           "type": "object",
           "additionalProperties": true,

@@ -64,8 +64,12 @@ export default {
       base: job.base,
       fork: job.fork,
     };
+    if (job.command) unsigned.command = job.command;
+    if (job.focus) unsigned.focus = job.focus;
+    if (job.argument) unsigned.argument = job.argument;
     unsigned.sig = await signDispatch(secret, unsigned);
-    const response = await fetch(`https://api.github.com/repos/${home}/dispatches`, {
+    const api = (env.GITHUB_API_URL || "https://api.github.com").replace(/\/$/, "");
+    const response = await fetch(`${api}/repos/${home}/dispatches`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -123,7 +127,59 @@ function jobFromWebhook(event, payload) {
       fork: "false",
     });
   }
+  if (event === "check_suite" && ["requested", "rerequested"].includes(payload.action)) {
+    const suite = payload.check_suite || {};
+    const pull = (suite.pull_requests || [])[0] || {};
+    return runJob({
+      repository: payload.repository?.full_name,
+      sha: suite.head_sha,
+      pr: pull.number,
+      installation_id: payload.installation?.id,
+      base: pull.base?.ref,
+      fork: "false",
+      command: "review",
+    });
+  }
+  if (event === "issue_comment" && ["created", "edited"].includes(payload.action)) {
+    const issue = payload.issue || {};
+    if (!issue.pull_request) {
+      return null;
+    }
+    const parsed = parseSheriffCommand((payload.comment || {}).body || "");
+    if (!parsed) {
+      return null;
+    }
+    return runJob({
+      repository: payload.repository?.full_name,
+      sha: issue.pull_request.head?.sha || "HEAD",
+      pr: issue.number,
+      installation_id: payload.installation?.id,
+      base: issue.pull_request.base?.ref,
+      fork: "false",
+      command: parsed.name,
+      focus: parsed.focus,
+      argument: parsed.argument,
+    });
+  }
   return null;
+}
+
+function parseSheriffCommand(body) {
+  const match = String(body).match(/^\/sheriff(?:\s+([a-z-]+))?(?:\s+([\s\S]+))?$/im);
+  if (!match) {
+    return null;
+  }
+  const name = (match[1] || "help").toLowerCase();
+  const allowed = new Set(["review", "summary", "explain", "check", "fix", "ignore", "help"]);
+  if (!allowed.has(name)) {
+    return { name: "help", focus: "", argument: name };
+  }
+  const rest = (match[2] || "").trim();
+  if (name === "check") {
+    const focus = rest.split(/\s+/)[0] || "security";
+    return { name: "check", focus, argument: rest.slice(focus.length).trim() };
+  }
+  return { name, focus: "", argument: rest };
 }
 
 function isFork(pull, repository) {
@@ -131,11 +187,11 @@ function isFork(pull, repository) {
   return headRepo && headRepo !== repository ? "true" : "false";
 }
 
-function runJob({ repository, sha, pr, installation_id, base, fork }) {
+function runJob({ repository, sha, pr, installation_id, base, fork, command, focus, argument }) {
   if (!repository || !sha || !pr || !installation_id) {
     return null;
   }
-  return {
+  const job = {
     kind: "run",
     repository: String(repository),
     sha: String(sha),
@@ -144,6 +200,10 @@ function runJob({ repository, sha, pr, installation_id, base, fork }) {
     base: String(base || "main"),
     fork,
   };
+  if (command) job.command = String(command);
+  if (focus) job.focus = String(focus);
+  if (argument) job.argument = String(argument);
+  return job;
 }
 
 function json(payload, status = 200) {
