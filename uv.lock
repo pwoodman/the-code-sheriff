@@ -1345,7 +1345,7 @@ wheels = [
 
 [[package]]
 name = "quality-gates"
-version = "1.14.0"
+version = "1.15.0"
 source = { editable = "." }
 
 [package.optional-dependencies]

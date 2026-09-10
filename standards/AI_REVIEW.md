@@ -114,16 +114,21 @@ Set `ai_review = "never"` to disable the job.
 Coding agents should treat gates as the oracle, not the chat transcript:
 
 ```bash
+quality fix
 quality oracle --run --prompt
-# fix blocking findings
+# do only the Next action
 quality oracle --run
+quality certify
 ```
 
 `quality mcp` exposes `quality_oracle`, `quality_run`, `quality_review`,
-`quality_merge`, `quality_pr_comments`, `quality_finding_context`, and
-`quality_apply_fix` over MCP stdio so Cursor / Claude Code can iterate until
-`green` is true. `quality merge` dry-merges into the base branch.
-Unresolved GitHub review threads (external bots and humans) are remaining oracle work.
+`quality_merge`, `quality_pr_comments`, `quality_finding_context`,
+`quality_apply_fix`, `quality_fix`, and `quality_certify` over MCP stdio so
+Cursor, Claude Code, Copilot, Codex, OpenCode, Qwen, and VS Code can iterate
+until `green` and `certificate.ready` are true. The oracle playbook lists one
+Next action (autofix first). `quality merge` dry-merges into the base branch.
+Unresolved GitHub review threads (Greptile, BugBot, humans) are remaining
+oracle work.
 Inline GitHub comments include why / fix / verify and an apply-able suggestion
 fence when a patch is present.
 

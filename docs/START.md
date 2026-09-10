@@ -16,9 +16,12 @@ No `uv`? `pip install "git+https://github.com/pwoodman/the-code-sheriff.git"` th
 Share this poster: [getting-started.png](getting-started.png)
 ([HTML source](getting-started.html) if you want to print or tweak it).
 
-Coding agents get MCP + a Cursor/Claude skill that loops on
-`quality oracle --run` until green, including `quality merge` (dry-merge vs
-main) and unresolved GitHub review comments. Skip with `--no-agents`.
+Coding agents get MCP + Cursor/Claude/Copilot/Gemini instruction files that
+loop on `quality fix` then `quality oracle --run --prompt` until
+`certificate.ready`. `quality merge` dry-merges vs main. Unresolved GitHub
+review comments stay in the oracle. `quality setup --auto-merge` turns on
+GitHub repo auto-merge so a required Sheriff check can land the PR.
+Skip agent files with `--no-agents`.
 
 ## New Python app
 

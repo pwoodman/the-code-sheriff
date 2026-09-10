@@ -7,6 +7,7 @@ from pathlib import Path
 
 from quality_gates.audit.catalog import CHECK_BY_ID, CHECKS, Check
 from quality_gates.audit.code_quality import scan_code_quality
+from quality_gates.audit.craft import scan_craft
 from quality_gates.audit.model import AuditFinding, CheckOutcome
 from quality_gates.audit.patterns import Pathish, scan_patterns
 from quality_gates.audit.walk import FileHit, RepoContext, load_context
@@ -88,6 +89,7 @@ STATIC_DETECTORS = {
     "ci_perms",
     "god_file",
     "dead_code",
+    "craft",
     "observe",
 }
 
@@ -98,6 +100,7 @@ def run_audit_engine(
     ctx = load_context(root, config)
     by_id = scan_patterns(ctx)
     _merge(by_id, scan_code_quality(ctx))
+    _merge(by_id, scan_craft(ctx))
     _merge(by_id, _authz(ctx))
     _merge(by_id, _god_files(ctx))
     _merge(by_id, _lockfiles(ctx))

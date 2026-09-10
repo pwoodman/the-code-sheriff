@@ -19,7 +19,8 @@ TOOLS = [
         "name": "quality_oracle",
         "description": (
             "Read the last quality-gates run and return remaining blocking "
-            "findings. Iterate until green is true."
+            "findings, a fix playbook (next action first), and a merge "
+            "certificate. Iterate until green is true and certificate.ready."
         ),
         "inputSchema": {
             "type": "object",
@@ -94,6 +95,30 @@ TOOLS = [
                 "siblings": {"type": "boolean"},
             },
         },
+    },
+    {
+        "name": "quality_fix",
+        "description": (
+            "Apply safe automatic remediations: format --write, ruff --fix, "
+            "and finding patches. Then re-run quality_oracle."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "patches": {
+                    "type": "boolean",
+                    "description": "Also apply finding patches (default true).",
+                }
+            },
+        },
+    },
+    {
+        "name": "quality_certify",
+        "description": (
+            "Read or refresh the merge certificate. ready/auto_merge=ready "
+            "means the change can be auto-merged if The Code Sheriff is required."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "quality_pr_comments",
@@ -251,6 +276,16 @@ def _call_tool(
         payload = remaining_from_reports(_root())
         payload["exit_code"] = code
         return json.dumps(payload, indent=2)
+    if name == "quality_fix":
+        from quality_gates.autofix import run_autofix
+
+        payload = run_autofix(_root(), apply_patches=args.get("patches") is not False)
+        remaining = remaining_from_reports(_root())
+        remaining["autofix"] = payload
+        return json.dumps(remaining, indent=2)
+    if name == "quality_certify":
+        payload = remaining_from_reports(_root())
+        return json.dumps(payload.get("certificate") or payload, indent=2)
     if name == "quality_pr_comments":
         argv = ["comments"]
         if args.get("fail"):
