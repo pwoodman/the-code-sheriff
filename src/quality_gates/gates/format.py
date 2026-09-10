@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -100,45 +101,68 @@ def _python(
         argv.append("--check")
     argv.extend(relative(root, item) for item in files) if files else argv.append(".")
     result = run(argv, cwd=root)
-    findings = []
-    for line in result.stdout.splitlines():
-        path = _ruff_unformatted_path(line.strip())
-        if path:
-            findings.append(
-                Finding(
-                    gate="format",
-                    language="python",
-                    path=path,
-                    message="file is not formatted with ruff (line length 88, double quotes, LF)",
-                    rule="ruff-format",
-                )
+    by_path: dict[str, Finding] = {}
+    for raw in (*result.stdout.splitlines(), *result.stderr.splitlines()):
+        parsed = parse_ruff_format_line(raw)
+        if parsed is None:
+            continue
+        path, line_no, column = parsed
+        current = by_path.get(path)
+        if current is None:
+            by_path[path] = Finding(
+                gate="format",
+                language="python",
+                path=path,
+                line=line_no,
+                column=column,
+                message=(
+                    "file is not formatted with ruff "
+                    "(line length 88, double quotes, LF)"
+                ),
+                rule="ruff-format",
             )
+        elif current.line is None and line_no is not None:
+            current.line = line_no
+            current.column = column
+    findings = list(by_path.values())
     if result.returncode != 0 and not findings:
         findings = findings_from_text("format", result, language="python")
     return fail_or_pass("format", findings)
 
 
-def _ruff_unformatted_path(line: str) -> str | None:
-    """Parse ruff format --check stdout into a file path."""
-    if not line:
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+_RUFF_LOCATION = re.compile(r"-->\s+(.+):(\d+):(\d+)\s*$")
+
+
+def parse_ruff_format_line(
+    line: str,
+) -> tuple[str, int | None, int | None] | None:
+    """Parse one ruff format --check line into (path, line, column).
+
+    Ruff 0.16 prints a colored diagnostic::
+
+        unformatted: File would be reformatted
+         --> src/app.py:3:2
+
+    Older ruff printed ``Would reformat: src/app.py``. Summary lines such as
+    ``6 files would be reformatted`` are not paths.
+    """
+    body = _ANSI.sub("", line or "").strip()
+    if not body:
         return None
-    body = line
     lowered = body.lower()
-    for prefix in ("unformatted:", "would reformat:"):
-        if lowered.startswith(prefix):
-            body = body.split(":", 1)[1].strip()
-            lowered = body.lower()
-            break
-    if "would be reformatted" in lowered:
-        body = body.split("would be reformatted", 1)[0].strip()
-    elif lowered.endswith("reformatted"):
-        body = body[: -len("reformatted")].strip()
-    else:
-        return None
-    path = body.split()[0] if body else ""
-    if not path or path.lower().rstrip(":") in {"would", "unformatted"}:
-        return None
-    return path
+    if lowered.startswith("would reformat:"):
+        path = body.split(":", 1)[1].strip().strip("\"'")
+        return (path, None, None) if path else None
+    match = _RUFF_LOCATION.search(body)
+    if match:
+        return match.group(1), int(match.group(2)), int(match.group(3))
+    return None
+
+
+def _ruff_unformatted_path(line: str) -> str | None:
+    parsed = parse_ruff_format_line(line)
+    return None if parsed is None else parsed[0]
 
 
 def _scoped(files: list[Path], scope: list[Path] | None) -> list[Path]:

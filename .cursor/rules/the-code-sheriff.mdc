@@ -1,0 +1,20 @@
+---
+description: Treat The Code Sheriff as the merge oracle. Run quality gates before claiming work is done.
+alwaysApply: true
+---
+
+<!-- the-code-sheriff:agent-loop -->
+
+# The Code Sheriff
+
+Chat is not proof. After edits, loop until the oracle is green:
+
+1. `quality oracle --run --prompt` (or MCP `quality_run` then `quality_oracle`)
+2. Fix every remaining blocker (`quality_finding_context` / `quality_apply_fix`)
+3. Re-run until `green` is true
+4. If `quality merge` reports textual-conflict, rebase onto the base branch
+5. Unresolved GitHub review comments (Greptile, BugBot, humans) are remaining work — apply suggestion patches
+6. Only then commit or open a PR
+
+Custom standards: `.quality/rules/*.md`. `AGENTS.md`, `CLAUDE.md`, and
+`.cursor/rules` are enforced as review rules automatically.

@@ -36,6 +36,9 @@ def test_consumer_defaults_are_adopt_and_local() -> None:
     assert 'github_gates = ["format", "lint", "regex", "packages", "security"' in text
     assert "require_for_source = true" in text
     assert "timing_regression_pct = 15" in text
+    assert "[quality.merge]" in text
+    assert '"merge"' in text or "merge" in text
+    assert "[quality.comments]" in text
 
 
 def test_init_writes_pinned_workflow(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -117,6 +120,42 @@ def test_init_does_not_write_hooks(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("quality_gates.onboard.resolve_pin", lambda *a, **k: PIN)
     assert main(["--root", str(tmp_path), "init", "--no-require-check"]) == 0
     assert not (tmp_path / ".pre-commit-config.yaml").exists()
+    assert not (tmp_path / ".cursor" / "mcp.json").exists()
+
+
+def test_setup_writes_agent_loop_files(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("quality_gates.onboard.resolve_pin", lambda *a, **k: PIN)
+    monkeypatch.setattr(
+        "quality_gates.onboard.install_git_hooks",
+        lambda *a, **k: "skipped hook install",
+    )
+    from quality_gates.onboard import init_repo
+
+    assert init_repo(tmp_path, hooks=True, agents=True) == 0
+    mcp = (tmp_path / ".cursor" / "mcp.json").read_text(encoding="utf-8")
+    assert '"quality"' in mcp
+    assert "mcp" in mcp
+    rule = (tmp_path / ".cursor" / "rules" / "the-code-sheriff.mdc").read_text(
+        encoding="utf-8"
+    )
+    assert "quality oracle" in rule
+    skill = (
+        tmp_path / ".cursor" / "skills" / "the-code-sheriff" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    assert "quality_oracle" in skill
+    assert "quality_merge" in skill
+    assert "quality_pr_comments" in skill
+    assert (tmp_path / ".mcp.json").is_file()
+    assert (tmp_path / "AGENTS.md").is_file()
+
+
+def test_setup_keeps_existing_agents_md(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("quality_gates.onboard.resolve_pin", lambda *a, **k: PIN)
+    (tmp_path / "AGENTS.md").write_text("team rules only\n", encoding="utf-8")
+    from quality_gates.onboard import init_repo
+
+    assert init_repo(tmp_path, agents=True) == 0
+    assert (tmp_path / "AGENTS.md").read_text(encoding="utf-8") == "team rules only\n"
 
 
 def test_workflow_yaml_names_the_check() -> None:

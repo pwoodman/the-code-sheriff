@@ -64,6 +64,7 @@
             "verify_tests": {"type": "boolean"},
             "symbol_neighbors": {"type": "boolean"},
             "incremental": {"type": "boolean"},
+            "ingest_agent_files": {"type": "boolean"},
             "risk": {
               "type": "string",
               "enum": ["auto", "skip", "cheap", "full", "heuristic"]
@@ -71,6 +72,28 @@
             "cheap_model": {"type": "string"},
             "full_model": {"type": "string"},
             "skip_globs": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "merge": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "verify": {
+              "type": "string",
+              "enum": ["auto", "always", "never"]
+            },
+            "verify_tests": {"type": "boolean"},
+            "siblings": {"type": "boolean"},
+            "base": {"type": "string"}
+          }
+        },
+        "comments": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "in_oracle": {"type": "boolean"},
+            "fail": {"type": "boolean"}
           }
         },
         "regex": {

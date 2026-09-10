@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.14.0
+
+- `quality setup` writes Cursor/Claude MCP (`.cursor/mcp.json`, `.mcp.json`),
+  an always-on Cursor rule, and a project skill so coding agents loop on
+  `quality oracle` before commit. Use `--no-agents` to skip.
+- Review ingests `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, and `.cursor/rules`
+  as the same markdown rules as `.quality/rules/` (`ingest_agent_files`, on by
+  default). The files the agent reads are the files enforcement checks.
+- `quality merge` dry-merges HEAD into the base branch with `git merge-tree`
+  (no working-tree mutation). Textual conflicts fail the merge gate. Locally,
+  a clean merge then compile/impact-checks the merged tree (`verify = "auto"`).
+  `--siblings` also merge-trees other open PR heads.
+- `quality comments` and MCP `quality_pr_comments` list unresolved GitHub
+  review threads (Greptile, BugBot, humans). The oracle treats them as remaining
+  work. Resolved Sheriff comments are remembered so review does not re-raise them.
+- GitHub check annotations pin to the failing source file (and a job
+  summary table) instead of `.github:N Process completed with exit code 1`.
+- Format reports the path from ruff's `--> file:line` diagnostic (and older
+  `Would reformat:` lines), not the `File would be reformatted` title. DRY
+  ignores generated Cursor/Claude skill copies (same template, two IDE paths).
+- Repository is public MIT: https://github.com/pwoodman/the-code-sheriff
+
 ## 1.13.0
 
 - Cheap AI review by default: skip LLM on lockfiles/docs/generated, Haiku/GPT-4.1-mini

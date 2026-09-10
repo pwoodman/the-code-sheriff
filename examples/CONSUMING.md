@@ -4,7 +4,7 @@ After this repo lives on GitHub as `pwoodman/the-code-sheriff`, pick one path.
 
 Heavy gates (DRY, security, compile, coverage, UI) default to **developer
 machines**. GitHub Actions always runs format, lint, security, impact, audit, version,
-and PR review. Set `ci.mode` to `github` or `both` for the rest.
+merge-tree, and PR review. Set `ci.mode` to `github` or `both` for the rest.
 
 ## Path A — CLI (recommended)
 
@@ -18,7 +18,10 @@ uvx --from git+https://github.com/pwoodman/the-code-sheriff.git quality setup
 ```
 
 Coding agents can loop on `quality oracle --run` (or `quality mcp`) until the
-oracle reports green.
+oracle reports green. `quality setup` writes Cursor/Claude MCP, rule, and skill
+files by default. The same `AGENTS.md` / `.cursor/rules` the agent reads are
+enforced as review rules. `quality merge` dry-merges into main before push;
+unresolved GitHub review threads (Greptile, BugBot, humans) stay in the oracle.
 
 Existing/legacy repos should stay on **adopt** (`quality setup` default) and commit `.quality-baseline.json` so
 PRs are not blocked by yesterday's backlog. New repos can use `--policy enforce`.

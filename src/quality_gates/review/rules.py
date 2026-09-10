@@ -6,7 +6,32 @@ import fnmatch
 from dataclasses import dataclass
 from pathlib import Path
 
+from quality_gates.agent_loop import LOOP_MARKER
 from quality_gates.config import QualityConfig
+
+MAX_AGENT_BODY = 8_000
+_AGENT_FILES = (
+    "AGENTS.md",
+    "CLAUDE.md",
+    "GEMINI.md",
+    ".cursorrules",
+    ".clinerules",
+    ".github/copilot-instructions.md",
+)
+_AGENT_GLOBS = (
+    ".cursor/rules/*.mdc",
+    ".cursor/rules/*.md",
+    ".github/instructions/*.md",
+    ".claude/rules/*.md",
+    ".windsurf/rules/*.md",
+    ".clinerules/*.md",
+)
+_SKIP_LOOP_NAMES = frozenset(
+    {
+        "the-code-sheriff.mdc",
+        "the-code-sheriff.md",
+    }
+)
 
 
 @dataclass
@@ -29,31 +54,24 @@ class ReviewRule:
 
 
 def load_review_rules(root: Path, config: QualityConfig) -> list[ReviewRule]:
-    directory = root / (config.review_rules_dir or ".quality/rules")
-    if not directory.is_dir():
-        return []
     rules: list[ReviewRule] = []
-    for path in sorted(directory.glob("*.md")):
-        if path.name.lower().startswith("readme"):
-            continue
-        text = path.read_text(encoding="utf-8")
-        meta, body = _front_matter(text)
-        body = body.strip()
-        if not body:
-            continue
-        name = str(meta.get("name") or path.stem).strip()
-        severity = str(meta.get("severity") or "warning").strip().lower()
-        if severity not in {"error", "warning", "info"}:
-            severity = "warning"
-        rules.append(
-            ReviewRule(
-                name=name,
-                body=body,
-                paths=_as_patterns(meta.get("paths")),
-                severity=severity,
-                source=path.relative_to(root).as_posix(),
-            )
-        )
+    directory = root / (config.review_rules_dir or ".quality/rules")
+    if directory.is_dir():
+        for path in sorted(directory.glob("*.md")):
+            rule = _rule_from_markdown(root, path)
+            if rule is not None:
+                rules.append(rule)
+    if getattr(config, "review_ingest_agent_files", True):
+        seen = {rule.source for rule in rules}
+        for path in _agent_instruction_paths(root):
+            rel = path.relative_to(root).as_posix()
+            if rel in seen:
+                continue
+            rule = _rule_from_markdown(root, path)
+            if rule is None:
+                continue
+            seen.add(rel)
+            rules.append(rule)
     return rules
 
 
@@ -61,6 +79,54 @@ def rules_for_paths(rules: list[ReviewRule], paths: list[str]) -> list[ReviewRul
     if not paths:
         return list(rules)
     return [rule for rule in rules if any(rule.matches(path) for path in paths)]
+
+
+def _agent_instruction_paths(root: Path) -> list[Path]:
+    found: list[Path] = []
+    for rel in _AGENT_FILES:
+        path = root / rel
+        if path.is_file():
+            found.append(path)
+    for pattern in _AGENT_GLOBS:
+        found.extend(sorted(p for p in root.glob(pattern) if p.is_file()))
+    return found
+
+
+def _rule_from_markdown(root: Path, path: Path) -> ReviewRule | None:
+    if path.name.lower().startswith("readme"):
+        return None
+    if path.name.lower() in _SKIP_LOOP_NAMES:
+        return None
+    if path.parent.name == "the-code-sheriff" and path.stem.lower() == "skill":
+        return None
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if LOOP_MARKER in text[:800]:
+        return None
+    meta, body = _front_matter(text)
+    body = body.strip()
+    if not body:
+        return None
+    if len(body) > MAX_AGENT_BODY:
+        body = body[:MAX_AGENT_BODY] + "\n[truncated]\n"
+    name = str(meta.get("name") or path.stem).strip()
+    severity = str(meta.get("severity") or "warning").strip().lower()
+    if severity not in {"error", "warning", "info"}:
+        severity = "warning"
+    patterns = _as_patterns(meta.get("paths")) or _as_patterns(meta.get("globs"))
+    try:
+        source = path.relative_to(root).as_posix()
+    except ValueError:
+        source = path.name
+    return ReviewRule(
+        name=name,
+        body=body,
+        paths=patterns,
+        severity=severity,
+        source=source,
+    )
 
 
 def _as_patterns(value: object) -> list[str]:

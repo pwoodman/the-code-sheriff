@@ -60,6 +60,7 @@ def _add_onboard_args(
     require_check: bool,
     hooks: bool = False,
     run: bool = False,
+    agents: bool = False,
 ) -> None:
     parser.add_argument(
         "--org",
@@ -110,6 +111,12 @@ def _add_onboard_args(
         action=argparse.BooleanOptionalAction,
         default=run,
         help="run gates once and write .quality-baseline.json",
+    )
+    parser.add_argument(
+        "--agents",
+        action=argparse.BooleanOptionalAction,
+        default=agents,
+        help="write Cursor/Claude MCP, rule, and skill so agents loop on quality oracle",
     )
 
 
@@ -246,7 +253,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     sub.add_parser(
         "mcp",
-        help="MCP stdio server: quality_oracle, quality_run, quality_review, quality_finding_context, quality_apply_fix",
+        help=(
+            "MCP stdio server: quality_oracle, quality_run, quality_review, "
+            "quality_merge, quality_pr_comments, quality_finding_context, "
+            "quality_apply_fix"
+        ),
     )
 
     ui_p = sub.add_parser(
@@ -270,6 +281,44 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="upstream/downstream impact: who uses this change, and is it validated",
     )
     impact_p.add_argument("--base", default=None, help="git ref to diff against")
+
+    merge_p = sub.add_parser(
+        "merge",
+        help=(
+            "dry-merge vs the base branch: textual conflicts, optional "
+            "sibling PRs, optional compile/impact verify"
+        ),
+    )
+    merge_p.add_argument(
+        "--base",
+        default=None,
+        help="git ref to merge into (default origin/main)",
+    )
+    merge_p.add_argument(
+        "--verify",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="after a clean merge-tree, compile/impact the merged tree",
+    )
+    merge_p.add_argument(
+        "--siblings",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="also merge-tree against other open PR heads",
+    )
+
+    comments_p = sub.add_parser(
+        "comments",
+        help=(
+            "list unresolved GitHub review threads for the current PR "
+            "(oracle remaining work)"
+        ),
+    )
+    comments_p.add_argument(
+        "--fail",
+        action="store_true",
+        help="exit 1 when unresolved threads remain (default: report only)",
+    )
 
     sub.add_parser(
         "coverage",
@@ -333,7 +382,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "setup",
         help="one command: defaults, workflow, hooks, required check, first baseline",
     )
-    _add_onboard_args(setup, require_check=True, hooks=True, run=True)
+    _add_onboard_args(setup, require_check=True, hooks=True, run=True, agents=True)
     setup.add_argument(
         "--app",
         action="store_true",
@@ -596,6 +645,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "impact":
         result = gate_runners.run_impact(root, config, base=args.base)
         return _emit([result], root, config, args.json, ["impact"])
+    if args.command == "merge":
+        result = gate_runners.run_merge(
+            root,
+            config,
+            base=args.base,
+            verify=args.verify,
+            siblings=args.siblings,
+        )
+        return _emit([result], root, config, args.json, ["merge"])
+    if args.command == "comments":
+        result = gate_runners.run_comments(
+            root, config, fail=True if args.fail else None
+        )
+        required = ["comments"] if args.fail else []
+        return _emit([result], root, config, args.json, required)
     if args.command == "coverage":
         result = gate_runners.run_coverage(root, config)
         return _emit([result], root, config, args.json, ["coverage"])
@@ -709,6 +773,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             elif gate == "impact":
                 item = gate_runners.run_impact(root, config, base=args.base)
+            elif gate == "merge":
+                item = gate_runners.run_merge(root, config, base=args.base)
             elif gate == "test":
                 item = gate_runners.run_tests(root, config)
             elif gate == "coverage":
@@ -744,6 +810,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     prior=prior,
                     manifest=manifest,
                 )
+            elif gate == "comments":
+                item = gate_runners.run_comments(root, config)
             elif gate in {
                 "migration",
                 "authorization",
@@ -1131,6 +1199,7 @@ def _onboard(root: Path, args: argparse.Namespace) -> int:
         require_check=bool(args.require_check),
         force=args.force,
         hooks=bool(getattr(args, "hooks", False)),
+        agents=bool(getattr(args, "agents", False)),
     )
     if getattr(args, "run", False):
         print("Running first gates and writing a baseline...")
@@ -1147,6 +1216,14 @@ def _onboard(root: Path, args: argparse.Namespace) -> int:
         )
         if getattr(args, "hooks", False):
             print("Include .pre-commit-config.yaml if it was just written.")
+        if getattr(args, "agents", False):
+            print(
+                "Include .cursor/mcp.json, .mcp.json, "
+                ".cursor/rules/the-code-sheriff.mdc, and the Code Sheriff skill."
+            )
+            print(
+                "Put `quality` on PATH (`uv tool install git+https://github.com/pwoodman/the-code-sheriff.git`) so MCP can spawn."
+            )
         print("GitHub App is optional: quality github-app register")
     else:
         print("Next: quality run --skip review && quality baseline")

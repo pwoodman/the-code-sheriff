@@ -66,6 +66,11 @@ Do not introduce eval() or equivalent dynamic execution of untrusted strings.
 Rules whose `paths` globs miss every changed file are omitted from the prompt.
 See `examples/review-rules/`.
 
+`AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.github/copilot-instructions.md`,
+and `.cursor/rules/*.{md,mdc}` are loaded the same way (`globs` maps to
+`paths`). Generated Code Sheriff loop files are skipped. Turn this off with
+`ingest_agent_files = false`.
+
 ## Providers (`quality.review.provider = "auto"`)
 
 | Provider | Env | Default model |
@@ -110,9 +115,12 @@ quality oracle --run
 ```
 
 `quality mcp` exposes `quality_oracle`, `quality_run`, `quality_review`,
-`quality_finding_context`, and `quality_apply_fix` over MCP stdio so Cursor /
-Claude Code can iterate until `green` is true. Inline GitHub comments include
-why / fix / verify and an apply-able suggestion fence when a patch is present.
+`quality_merge`, `quality_pr_comments`, `quality_finding_context`, and
+`quality_apply_fix` over MCP stdio so Cursor / Claude Code can iterate until
+`green` is true. `quality merge` dry-merges into the base branch. Unresolved
+GitHub review threads (Greptile, BugBot, humans) are remaining oracle work.
+Inline GitHub comments include why / fix / verify and an apply-able suggestion
+fence when a patch is present.
 
 `quality eval --suite reviewbench` scores labeled diffs (must-catch bugs and
 must-stay-quiet hard negatives). Macroscope's 118-bug JSON is not public; use

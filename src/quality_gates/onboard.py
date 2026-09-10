@@ -31,12 +31,12 @@ languages = ["auto"]
 policy = "{policy}"
 baseline = ".quality-baseline.json"
 comment_on_pr = true
-fail_on = ["format", "lint", "regex", "packages", "dry", "security", "compile", "contract", "impact", "test", "coverage", "audit", "ui", "version"]
+fail_on = ["format", "lint", "regex", "packages", "dry", "security", "compile", "contract", "impact", "test", "coverage", "audit", "ui", "version", "merge"]
 ai_review = "pr-only"
 
 [quality.ci]
 mode = "local"
-github_gates = ["format", "lint", "regex", "packages", "security", "impact", "audit", "version", "review"]
+github_gates = ["format", "lint", "regex", "packages", "security", "impact", "audit", "version", "merge", "review", "comments"]
 
 [quality.compile]
 require_security = true
@@ -58,6 +58,14 @@ on_github = false
 depth = 4
 require_downstream = true
 
+[quality.merge]
+verify = "auto"
+siblings = false
+
+[quality.comments]
+in_oracle = true
+fail = false
+
 [quality.version]
 require_changelog = "if-present"
 
@@ -73,6 +81,7 @@ inline_comments = true
 check_run = true
 incremental = true
 risk = "auto"
+ingest_agent_files = true          # AGENTS.md, CLAUDE.md, .cursor/rules
 
 [quality.test]
 require_for_source = true
@@ -409,6 +418,7 @@ def init_repo(
     require_check: bool = False,
     force: bool = False,
     hooks: bool = False,
+    agents: bool = False,
 ) -> int:
     source_repo = resolve_source(org, source)
     resolved = resolve_pin(source_repo, pin)
@@ -447,6 +457,11 @@ def init_repo(
             notes.append(f"wrote {hook_path}")
         else:
             notes.append(f"kept existing {hook_path}")
+
+    if agents:
+        from quality_gates.agent_loop import write_agent_integrations
+
+        notes.extend(write_agent_integrations(root, force=force))
 
     for line in notes:
         print(line)
