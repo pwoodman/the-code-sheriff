@@ -69,7 +69,12 @@ def run_review(
             status="skip",
             notes=["automatic review disabled; comment /sheriff review"],
         )
-    if _is_draft_pr() and not getattr(config, "review_drafts", False) and not command:
+    if (
+        is_pr_event()
+        and _is_draft_pr()
+        and not getattr(config, "review_drafts", False)
+        and not command
+    ):
         return GateResult(
             name="review",
             status="skip",

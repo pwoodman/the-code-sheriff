@@ -24,7 +24,7 @@ from quality_gates.gates.common import (
 from quality_gates.installers import CHECKSTYLE_VERSION
 from quality_gates.models import Finding, GateResult
 from quality_gates.paths import bundled_file, cache_dir, tooling_js_dir
-from quality_gates.registry import FILE_PROFILES, profiles_for_path
+from quality_gates.registry import file_profiles_for, profiles_for_path
 from quality_gates.tools import prepend_path, run, which
 
 
@@ -39,7 +39,7 @@ def run_lint(
     parts = [_lint_language(root, config, language, scope=scope) for language in unique]
     project_files = _scoped(iter_project_files(root, config), scope)
     jobs: list[tuple[str, tuple[Path, ...]]] = []
-    for profile in FILE_PROFILES:
+    for profile in file_profiles_for(unique):
         files = tuple(
             path for path in project_files if profile in profiles_for_path(path, root)
         )

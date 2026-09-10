@@ -5,6 +5,10 @@
 - Cover the 100-item GitHub-native reviewer checklist. Matrix:
   `standards/REVIEWER_COVERAGE.md` and `quality eval` methodology in
   `standards/EVAL.md`.
+- `quality format|lint --language <lang>` no longer evaluates unrelated
+  file-kind profiles (GitHub Actions YAML preserve-skip cannot poison a
+  JavaScript cell). JavaScript CI installs pinned Prettier/ESLint from
+  `tooling/js`. Review skips drafts only on pull_request events.
 - GitHub App events include `issue_comment` and `check_suite`. Commands use
   the `/sheriff` prefix. One check run named **The Code Sheriff**.
   Installation tokens and `GITHUB_API_URL` (GitHub Enterprise) are first-class.

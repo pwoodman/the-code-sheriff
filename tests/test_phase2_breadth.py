@@ -17,7 +17,12 @@ from quality_gates.coverage_parse import (
     parse_coverage_file,
 )
 from quality_gates.models import RunResult
-from quality_gates.registry import PROFILES, profiles_for_path
+from quality_gates.registry import (
+    FILE_PROFILES,
+    PROFILES,
+    file_profiles_for,
+    profiles_for_path,
+)
 
 
 def test_registry_metadata_is_truthful_and_specialized() -> None:
@@ -29,6 +34,29 @@ def test_registry_metadata_is_truthful_and_specialized() -> None:
     for kind in ("xml", "ini", "properties", "dotenv", "makefile", "batch"):
         assert "format" not in PROFILES[kind].capabilities
         assert "validate" in PROFILES[kind].capabilities
+
+
+def test_file_profiles_for_scopes_single_programming_language() -> None:
+    assert file_profiles_for(["javascript"]) == ()
+    assert file_profiles_for(["python"]) == ()
+    assert file_profiles_for([]) == FILE_PROFILES
+    yaml_ids = {profile.id for profile in file_profiles_for(["yaml"])}
+    assert yaml_ids == {"yaml"}
+    auto = {profile.id for profile in file_profiles_for(["python", "javascript"])}
+    assert "github_actions" in auto
+
+
+def test_javascript_format_does_not_apply_github_actions_preserve(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "app.js").write_text("const x = 1;\n", encoding="utf-8")
+    workflow = tmp_path / ".github" / "workflows" / "ci.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text("name: ci\non: push\njobs: {}\n", encoding="utf-8")
+    from quality_gates.gates.format import run_format
+
+    result = run_format(tmp_path, QualityConfig(), ["javascript"], check=True)
+    assert all("GitHub Actions" not in note for note in result.notes)
 
 
 def test_specialized_workflow_and_action_override_yaml(tmp_path: Path) -> None:
