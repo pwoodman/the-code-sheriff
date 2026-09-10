@@ -11,7 +11,9 @@ from quality_gates.models import Finding
 
 _OWNER_LINE = re.compile(r"^(?P<pattern>\S+)\s+(?P<owners>.+)$")
 _ISSUE = re.compile(r"(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)", re.I)
-_UNPINNED = re.compile(r"""["']?[A-Za-z0-9_.-]+["']?\s*[:=]\s*["']?(?:latest|\*|>=)""")
+_UNPINNED = re.compile(
+    r"""["'](?:latest|\*)["']|:\s*["'](?:latest|\*)["']|=\s*["'](?:latest|\*)["']"""
+)
 
 
 def parse_codeowners(root: Path) -> list[tuple[str, list[str]]]:

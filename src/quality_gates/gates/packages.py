@@ -96,6 +96,7 @@ NODE_BUILTINS = frozenset(
         "util",
         "v8",
         "vm",
+        "vscode",
         "wasi",
         "worker_threads",
         "zlib",

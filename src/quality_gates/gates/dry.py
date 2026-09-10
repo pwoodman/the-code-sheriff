@@ -26,8 +26,6 @@ def run_dry(root: Path, config: QualityConfig, languages: list[str]) -> GateResu
         str(config.dry_min_tokens),
         "--threshold",
         str(config.dry_threshold),
-        "--gitignore",
-        "--silent",
         "--reporters",
         "json",
         "--output",
@@ -36,6 +34,11 @@ def run_dry(root: Path, config: QualityConfig, languages: list[str]) -> GateResu
         ",".join(config.dry_ignore),
         ".",
     ]
+    help_text = run([jscpd, "--help"], cwd=root, timeout=15).combined
+    if "--gitignore" in help_text:
+        argv.insert(-1, "--gitignore")
+    if "--silent" in help_text:
+        argv.insert(-1, "--silent")
     result = run(argv, cwd=root, timeout=300)
     report = report_dir / "jscpd-report.json"
     findings: list[Finding] = []

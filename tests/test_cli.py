@@ -6,7 +6,7 @@ import pytest
 
 from quality_gates.cli import main
 from quality_gates.gates.common import fail_or_pass, merge_results
-from quality_gates.models import Finding
+from quality_gates.models import Finding, GateResult
 
 
 def test_detect_cli_json(tmp_path: Path, capsys, monkeypatch) -> None:
@@ -46,3 +46,13 @@ def test_merge_results_fail_wins() -> None:
     merged = merge_results("format", [passed, failed])
     assert merged.status == "fail"
     assert merged.error_count() == 1
+
+
+def test_merge_results_pass_survives_unsupported_language() -> None:
+    passed = fail_or_pass("format", [])
+    skipped = GateResult(
+        name="format", status="skip", exit_state="unsupported", notes=["preserve"]
+    )
+    merged = merge_results("format", [passed, skipped])
+    assert merged.status == "pass"
+    assert merged.exit_state == "passed"
