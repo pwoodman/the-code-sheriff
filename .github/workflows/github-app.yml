@@ -87,6 +87,7 @@ jobs:
           GITHUB_BASE_REF: ${{ steps.job.outputs.base }}
           QUALITY_TRUSTED_BASE: origin/${{ steps.job.outputs.base }}
           QUALITY_TRUST: ${{ steps.job.outputs.fork == 'true' && 'untrusted' || '' }}
+          QUALITY_REVIEW_COMMAND: ${{ steps.job.outputs.command }}
           OPENAI_API_KEY: ${{ steps.job.outputs.fork != 'true' && secrets.OPENAI_API_KEY || '' }}
           ANTHROPIC_API_KEY: ${{ steps.job.outputs.fork != 'true' && secrets.ANTHROPIC_API_KEY || '' }}
         run: quality run --base "origin/${{ steps.job.outputs.base }}"

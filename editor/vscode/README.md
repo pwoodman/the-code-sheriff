@@ -22,4 +22,7 @@ findings. Point a problem matcher at it:
 ```
 
 Or open `.quality-reports/quality-report.html` and filter by gate / file.
-No marketplace extension is required.
+
+A thin VS Code extension lives in this folder (`package.json` + `extension.js`).
+It reads `.quality-reports/diagnostics.json` and shows The Code Sheriff
+findings in the editor. The JetBrains equivalent is `editor/jetbrains`.

@@ -140,8 +140,15 @@ def merge_results(name: str, parts: Iterable[GateResult]) -> GateResult:
         status = "blocked"
         exit_state = "blocked"
     elif any(s == ExecutionState.UNSUPPORTED for s in states):
-        status = "skip"
-        exit_state = "unsupported"
+        if saw_pass or any(s == ExecutionState.PASSED for s in states):
+            status = "pass"
+            exit_state = "passed"
+            notes.append(
+                "some languages had no applicable formatter/linter; others passed"
+            )
+        else:
+            status = "skip"
+            exit_state = "unsupported"
     elif any(s == ExecutionState.CANCELLED for s in states):
         status = "cancelled"
         exit_state = "cancelled"

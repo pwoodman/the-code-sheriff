@@ -294,6 +294,7 @@ def _is_auditor_source(hit: FileHit) -> bool:
             "gates/regex.py",
             "review/heuristic.py",
             "review/routing.py",
+            "review/packs.py",
         )
     )
 

@@ -400,7 +400,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     manifest_p.add_argument("--name", default="The Code Sheriff")
     manifest_p.add_argument("--webhook-url", default="")
     manifest_p.add_argument("--redirect-url", default="")
-    manifest_p.add_argument("--public", action="store_true")
+    manifest_p.add_argument(
+        "--public",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="list the App as public (default: true)",
+    )
     register = gh_cmd.add_parser(
         "register", help="create the App via GitHub's manifest flow"
     )
@@ -409,7 +414,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     register.add_argument("--webhook-url", default="")
     register.add_argument("--org", default="", help="create under this GitHub org")
     register.add_argument("--name", default="The Code Sheriff")
-    register.add_argument("--public", action="store_true")
+    register.add_argument(
+        "--public",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="create a public App (default: true)",
+    )
     register.add_argument(
         "--no-open",
         action="store_true",
@@ -448,6 +458,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     token_p.add_argument("--installation-id", required=True)
     hook = gh_cmd.add_parser("webhook", help="set the GitHub App webhook URL")
     hook.add_argument("--url", required=True)
+    gh_cmd.add_parser("deliveries", help="show recent webhook delivery ids")
+    gh_cmd.add_parser("install-url", help="print the public App install URL")
 
     baseline_p = sub.add_parser(
         "baseline",
@@ -483,6 +495,51 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--interval", type=float, default=1.5, help="poll interval in seconds"
     )
 
+    check_local = sub.add_parser(
+        "check",
+        help="local review of staged or changed files (same policies as the App)",
+    )
+    check_local.add_argument("--base", default=None)
+
+    serve_p = sub.add_parser("serve", help="local HTTP API for findings, runs, metrics")
+    serve_p.add_argument("--host", default="127.0.0.1")
+    serve_p.add_argument("--port", type=int, default=8788)
+
+    ingest_p = sub.add_parser("ingest", help="merge an external SARIF report")
+    ingest_p.add_argument("--sarif", required=True)
+
+    evidence_p = sub.add_parser("evidence", help="export compliance evidence bundle")
+    evidence_p.add_argument("action", choices=["export"])
+    evidence_p.add_argument(
+        "--framework",
+        default="soc2",
+        choices=["soc2", "iso27001", "hipaa"],
+    )
+
+    notes_p = sub.add_parser("notes", help="draft user-visible release notes")
+    notes_p.add_argument("--from-merged", dest="from_merged", action="store_true")
+    notes_p.add_argument("--title", action="append", dest="titles")
+
+    fix_pr = sub.add_parser(
+        "fix-pr", help="apply accepted patches on a new sheriff/fix/<pr> branch"
+    )
+    fix_pr.add_argument("--pr", required=True)
+    fix_pr.add_argument("--create-branch", action="store_true")
+
+    rules_p = sub.add_parser("rules", help="preview or simulate review rules")
+    rules_cmd = rules_p.add_subparsers(dest="rules_command", required=True)
+    preview = rules_cmd.add_parser("preview", help="count files a path glob would hit")
+    preview.add_argument("--paths", default="**/*")
+    sim = rules_cmd.add_parser("sim", help="estimate comment volume for a path glob")
+    sim.add_argument("--paths", default="**/*")
+    sim.add_argument("--base", default=None)
+
+    reports_p = sub.add_parser(
+        "reports", help="retain or garbage-collect local reports"
+    )
+    reports_p.add_argument("action", choices=["gc"])
+    reports_p.add_argument("--days", type=int, default=None)
+
     args = parser.parse_args(argv)
     root = project_root(args.root)
     os.chdir(root)
@@ -515,6 +572,83 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if args.command == "watch":
         return _watch(root, config, interval=args.interval)
+    if args.command == "serve":
+        from quality_gates.platform import serve_api
+
+        return serve_api(root, host=args.host, port=args.port)
+    if args.command == "ingest":
+        from quality_gates.platform import ingest_sarif
+
+        findings = ingest_sarif(root, args.sarif)
+        print(json.dumps([item.to_dict() for item in findings], indent=2))
+        return 0
+    if args.command == "evidence":
+        from quality_gates.platform import export_evidence
+
+        path = export_evidence(root, framework=args.framework)
+        print(path)
+        return 0
+    if args.command == "notes":
+        from quality_gates.notes import draft_notes
+
+        pulls = [{"title": title} for title in (args.titles or [])]
+        print("\n".join(draft_notes(pulls)) or "(no user-visible notes)")
+        return 0
+    if args.command == "fix-pr":
+        from quality_gates.fix_pr import apply_fix_pr
+        from quality_gates.models import Finding
+
+        report = root / ".quality-reports" / "review.json"
+        findings: list[Finding] = []
+        if report.is_file():
+            payload = json.loads(report.read_text(encoding="utf-8"))
+            for item in payload.get("findings") or []:
+                findings.append(
+                    Finding(
+                        gate="review",
+                        message=str(item.get("message") or ""),
+                        rule=item.get("rule"),
+                        path=item.get("path"),
+                        patch=item.get("patch"),
+                    )
+                )
+        print(
+            json.dumps(
+                apply_fix_pr(
+                    root,
+                    findings,
+                    pr=args.pr,
+                    create_branch=args.create_branch,
+                ),
+                indent=2,
+            )
+        )
+        return 0
+    if args.command == "rules":
+        from quality_gates.detect import iter_project_files
+        from quality_gates.platform import simulate_rule
+
+        paths = [
+            path.relative_to(root).as_posix()
+            for path in iter_project_files(root, config)
+        ]
+        print(json.dumps(simulate_rule(paths, args.paths), indent=2))
+        return 0
+    if args.command == "reports":
+        from quality_gates.review.cost import gc_reports
+
+        days = args.days if args.days is not None else config.retention_days
+        print(json.dumps(gc_reports(root, days=days), indent=2))
+        return 0
+    if args.command == "check":
+        result = gate_runners.run_review(
+            root,
+            config,
+            _resolve_languages(root, config, None, None),
+            base=args.base,
+            post=False,
+        )
+        return _emit([result], root, config, args.json, ["review"])
     if args.command == "doctor":
         return _doctor(root, config, install=args.install, as_json=args.json)
     if args.command == "cache":
@@ -1237,7 +1371,7 @@ def _onboard(root: Path, args: argparse.Namespace) -> int:
             webhook_url="",
             org=args.org,
             name="The Code Sheriff",
-            public=False,
+            public=True,
             no_open=False,
             no_init=True,
         )

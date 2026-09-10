@@ -163,6 +163,10 @@ check_run = true
 incremental = true
 risk = "auto"
 ingest_agent_files = true
+automatic = true
+drafts = false
+confidence = "balanced"
+named_mode = "standard"
 
 [quality.test]
 require_for_source = true

@@ -36,12 +36,29 @@ quality github-app register
 ```
 
 Open the printed URL if a browser did not. Credentials land in `.quality-app/`
-(gitignored). Permissions: checks write, pull requests write, contents read,
-metadata read, security events write.
+(gitignored). Permissions (least privilege):
+
+| Permission | Access | Why |
+| --- | --- | --- |
+| checks | write | One durable check named **The Code Sheriff** |
+| pull_requests | write | Inline comments, suggested changes, PR summary |
+| contents | read | Source, CODEOWNERS, workflows |
+| metadata | read | Installation and private/public visibility |
+| security_events | write | Attach secret/SCA alerts |
+
+Direct install URL: `https://github.com/apps/the-code-sheriff/installations/new`
+(Marketplace listing uses the same public App when GitHub lists it).
+
+Installation tokens are the default identity when `QUALITY_APP_ID` and
+`QUALITY_APP_PRIVATE_KEY` are set. Events: `pull_request`, `check_run`,
+`check_suite`, `issue_comment` (`/sheriff …` commands).
 
 Optional: store `QUALITY_APP_ID` and `QUALITY_APP_PRIVATE_KEY` as org secrets
-if you want checks posted as the App bot instead of
-`github-actions[bot]`. The required check name is still **The Code Sheriff**.
+so checks post as the App bot instead of `github-actions[bot]`. The required
+check name is still **The Code Sheriff**.
+
+GitHub Enterprise Server: set `GITHUB_API_URL`. Delivery diagnostics:
+`quality github-app deliveries`.
 
 ## Optional hosted webhook
 

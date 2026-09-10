@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from quality_gates.config import QualityConfig, load_config
 from quality_gates.github_comment import post_review
 from quality_gates.mcp_server import handle
@@ -23,6 +25,15 @@ from quality_gates.review.rules import load_review_rules, rules_for_paths
 EVAL_DIFF = (
     Path(__file__).parent / "fixtures/review_bench/eval_injection.diff"
 ).read_text(encoding="utf-8")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_github_actions_review_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unit tests must not inherit a draft PR payload from GitHub Actions."""
+    monkeypatch.delenv("GITHUB_EVENT_PATH", raising=False)
+    monkeypatch.delenv("GITHUB_EVENT_NAME", raising=False)
+    monkeypatch.delenv("GITHUB_REF", raising=False)
+    monkeypatch.delenv("QUALITY_REVIEW_COMMAND", raising=False)
 
 
 class ScriptedClient:
@@ -389,6 +400,40 @@ def _patch_review_defaults(monkeypatch, diff: str = EVAL_DIFF) -> None:
     monkeypatch.setattr(
         "quality_gates.review.engine.related_files", lambda *_a, **_k: []
     )
+
+
+def test_draft_pull_request_skips_review_without_a_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    event = tmp_path / "event.json"
+    event.write_text(
+        json.dumps({"pull_request": {"draft": True, "number": 1}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    _patch_review_defaults(monkeypatch)
+
+    skipped = run_review(
+        tmp_path,
+        QualityConfig(ai_review="always"),
+        ["python"],
+        base="HEAD",
+        post=False,
+    )
+    assert skipped.status == "skip"
+    assert any("draft" in note for note in skipped.notes)
+
+    monkeypatch.setenv("QUALITY_REVIEW_COMMAND", "review")
+    commanded = run_review(
+        tmp_path,
+        QualityConfig(ai_review="always"),
+        ["python"],
+        base="HEAD",
+        post=False,
+    )
+    assert commanded.status != "skip"
+    assert all("draft" not in note for note in commanded.notes)
 
 
 def test_configured_review_errors_block_the_gate(tmp_path: Path, monkeypatch) -> None:

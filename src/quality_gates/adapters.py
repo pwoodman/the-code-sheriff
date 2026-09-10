@@ -15,7 +15,11 @@ from typing import Any, ClassVar, Protocol, runtime_checkable
 
 from quality_gates.config import QualityConfig
 from quality_gates.diagnostics import enrich_findings
-from quality_gates.gates.common import execution_details, findings_from_text
+from quality_gates.gates.common import (
+    execution_details,
+    findings_from_text,
+    skip_result,
+)
 from quality_gates.models import Finding, GateResult
 from quality_gates.registry import PROFILES, CapabilityProfile
 from quality_gates.result_cache import cached_result
@@ -602,9 +606,4 @@ def _path_from_line(line: str, root: Path) -> str | None:
 
 
 def _skip(name: str, reason: str, tool: str | None = None) -> GateResult:
-    return GateResult(
-        name=name,
-        status="skip",
-        notes=[reason],
-        skipped_tools=[tool] if tool else [],
-    )
+    return skip_result(name, reason, tool=tool)

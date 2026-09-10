@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from quality_gates.github_comment import API_VERSION, pr_head_sha
+from quality_gates.host import DEFAULT_EVENTS, PERMISSIONS, api_url, install_url
 from quality_gates.identity import (
     CHECK_NAME,
     DEFAULT_APP_NAME,
@@ -32,9 +33,11 @@ from quality_gates.identity import (
     USER_AGENT,
 )
 from quality_gates.paths import repo_root
+from quality_gates.review.commands import parse_sheriff_command
 
 PULL_ACTIONS = {"opened", "synchronize", "reopened", "ready_for_review"}
 CREDENTIALS_DIRNAME = ".quality-app"
+DELIVERIES_NAME = "webhook-deliveries.jsonl"
 
 
 @dataclass(frozen=True)
@@ -66,13 +69,9 @@ def default_manifest(
         "public": public,
         "redirect_url": redirect_url,
         "hook_attributes": {"url": webhook_url, "active": False},
-        "default_events": ["pull_request", "check_run"],
+        "default_events": list(DEFAULT_EVENTS),
         "default_permissions": {
-            "checks": "write",
-            "contents": "read",
-            "metadata": "read",
-            "pull_requests": "write",
-            "security_events": "write",
+            name: access for name, (access, _why) in PERMISSIONS.items()
         },
     }
 
@@ -210,6 +209,41 @@ def job_from_webhook(event: str, payload: dict[str, Any]) -> dict[str, str] | No
             base=(pull.get("base") or {}).get("ref"),
             fork="false",
         )
+    if event == "check_suite" and payload.get("action") in {"requested", "rerequested"}:
+        suite = payload.get("check_suite") or {}
+        pull = (suite.get("pull_requests") or [None])[0] or {}
+        return _run_job(
+            repository=(payload.get("repository") or {}).get("full_name"),
+            sha=suite.get("head_sha"),
+            pr=pull.get("number"),
+            installation_id=(payload.get("installation") or {}).get("id"),
+            base=(pull.get("base") or {}).get("ref"),
+            fork="false",
+            command="review",
+        )
+    if event == "issue_comment" and payload.get("action") in {"created", "edited"}:
+        issue = payload.get("issue") or {}
+        if not issue.get("pull_request"):
+            return None
+        comment = payload.get("comment") or {}
+        parsed = parse_sheriff_command(str(comment.get("body") or ""))
+        if parsed is None:
+            return None
+        pull = issue.get("pull_request") or {}
+        sha = (pull.get("head") or {}).get("sha") or issue.get("head_sha")
+        return _run_job(
+            repository=(payload.get("repository") or {}).get("full_name"),
+            sha=sha
+            or (payload.get("repository") or {}).get("default_branch")
+            or "HEAD",
+            pr=issue.get("number"),
+            installation_id=(payload.get("installation") or {}).get("id"),
+            base=((issue.get("pull_request") or {}).get("base") or {}).get("ref"),
+            fork="false",
+            command=parsed.name,
+            focus=parsed.focus,
+            argument=parsed.argument,
+        )
     return None
 
 
@@ -226,10 +260,13 @@ def _run_job(
     installation_id: object,
     base: object,
     fork: str,
+    command: str = "",
+    focus: str = "",
+    argument: str = "",
 ) -> dict[str, str] | None:
     if not repository or not sha or not pr or not installation_id:
         return None
-    return {
+    job = {
         "kind": "run",
         "repository": str(repository),
         "sha": str(sha),
@@ -238,6 +275,13 @@ def _run_job(
         "base": str(base or "main"),
         "fork": fork,
     }
+    if command:
+        job["command"] = command
+    if focus:
+        job["focus"] = focus
+    if argument:
+        job["argument"] = argument
+    return job
 
 
 def handle_webhook(
@@ -246,8 +290,11 @@ def handle_webhook(
     lowered = {key.lower(): value for key, value in headers.items()}
     signature = lowered.get("x-hub-signature-256")
     event = lowered.get("x-github-event") or ""
+    delivery = lowered.get("x-github-delivery") or ""
     if not verify_signature(settings.webhook_secret, signature, body):
         return 401, {"error": "invalid signature"}
+    if delivery and _delivery_seen(delivery):
+        return 202, {"ok": True, "duplicate": delivery}
     try:
         payload = json.loads(body.decode("utf-8") or "{}")
     except json.JSONDecodeError:
@@ -274,10 +321,14 @@ def handle_webhook(
     unsigned = dispatch_body(
         {key: value for key, value in job.items() if key != "kind"}
     )
+    if delivery:
+        unsigned["delivery_id"] = delivery
     unsigned["sig"] = sign_dispatch(settings.webhook_secret, unsigned)
-    status, data = dispatch_job(settings, unsigned, token)
+    status, data = _dispatch_with_retry(settings, unsigned, token)
     if status >= 300:
         return status, {"error": "dispatch failed", "github": data}
+    if delivery:
+        _record_delivery(delivery, unsigned.get("sha") or "", unsigned.get("pr") or "")
     return 202, {"ok": True, "dispatched": unsigned["repository"], "pr": unsigned["pr"]}
 
 
@@ -289,7 +340,7 @@ def resolve_dispatch_token(settings: AppSettings) -> str:
     token_jwt = app_jwt(settings.app_id, settings.private_key)
     status, data = api_request(
         "GET",
-        f"https://api.github.com/repos/{settings.home_repo}/installation",
+        api_url(f"/repos/{settings.home_repo}/installation"),
         token_jwt,
     )
     installation_id = data.get("id") if isinstance(data, dict) else None
@@ -306,13 +357,66 @@ def resolve_dispatch_token(settings: AppSettings) -> str:
 def dispatch_job(
     settings: AppSettings, payload: dict[str, str], token: str | None = None
 ) -> tuple[int, Any]:
-    url = f"https://api.github.com/repos/{settings.home_repo}/dispatches"
+    url = api_url(f"/repos/{settings.home_repo}/dispatches")
     return api_request(
         "POST",
         url,
         token or settings.dispatch_token,
         {"event_type": DISPATCH_EVENT, "client_payload": payload},
     )
+
+
+def _dispatch_with_retry(
+    settings: AppSettings, payload: dict[str, str], token: str, *, attempts: int = 3
+) -> tuple[int, Any]:
+    last: tuple[int, Any] = (503, {"error": "dispatch failed"})
+    delay = 0.05
+    for _ in range(max(1, attempts)):
+        last = dispatch_job(settings, payload, token)
+        if last[0] < 300:
+            return last
+        time.sleep(delay)
+        delay = min(delay * 2, 1.0)
+    return last
+
+
+def _deliveries_path() -> Path:
+    root = Path(os.environ.get("QUALITY_APP_STATE") or Path.cwd() / ".quality-reports")
+    root.mkdir(parents=True, exist_ok=True)
+    return root / DELIVERIES_NAME
+
+
+def _delivery_seen(delivery_id: str) -> bool:
+    path = _deliveries_path()
+    if not delivery_id or not path.is_file():
+        return False
+    needle = f'"id":"{delivery_id}"'
+    try:
+        return needle in path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+
+def _record_delivery(delivery_id: str, sha: str, pr: str) -> None:
+    path = _deliveries_path()
+    line = json.dumps({"id": delivery_id, "sha": sha, "pr": pr}, separators=(",", ":"))
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
+
+
+def list_deliveries(limit: int = 20) -> list[dict[str, str]]:
+    path = _deliveries_path()
+    if not path.is_file():
+        return []
+    rows = []
+    for raw in path.read_text(encoding="utf-8").splitlines()[-limit:]:
+        try:
+            item = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict):
+            rows.append({str(key): str(value) for key, value in item.items()})
+    return rows
 
 
 def api_request(
@@ -366,7 +470,7 @@ def installation_token(app_id: str, pem: str, installation_id: str) -> str:
     token_jwt = app_jwt(app_id, pem)
     status, data = api_request(
         "POST",
-        f"https://api.github.com/app/installations/{installation_id}/access_tokens",
+        api_url(f"/app/installations/{installation_id}/access_tokens"),
         token_jwt,
         {},
     )
@@ -401,7 +505,7 @@ def post_check(
             "summary": (summary or title or name)[:65535],
         }
     code, data = api_request(
-        "POST", f"https://api.github.com/repos/{repo}/check-runs", token, payload
+        "POST", api_url(f"/repos/{repo}/check-runs"), token, payload
     )
     if 200 <= code < 300:
         return f"posted check run {name} ({status})"
@@ -478,7 +582,7 @@ def _set_webhook(url: str) -> int:
     token_jwt = app_jwt(settings.app_id, settings.private_key)
     status, data = api_request(
         "PATCH",
-        "https://api.github.com/app/hook/config",
+        api_url("/app/hook/config"),
         token_jwt,
         {"url": url, "content_type": "json", "insecure_ssl": "0"},
     )
@@ -491,7 +595,7 @@ def _set_webhook(url: str) -> int:
 
 def exchange_manifest_code(code: str) -> dict[str, Any]:
     status, data = api_request(
-        "POST", f"https://api.github.com/app-manifests/{code}/conversions", "", {}
+        "POST", api_url(f"/app-manifests/{code}/conversions"), "", {}
     )
     if status >= 300 or not isinstance(data, dict):
         raise RuntimeError(f"manifest conversion failed HTTP {status}: {data}")
@@ -542,6 +646,13 @@ def cli_github_app(args: argparse.Namespace) -> int:
         return _prepare_dispatch()
     if command == "webhook":
         return _set_webhook(args.url)
+    if command == "deliveries":
+        rows = list_deliveries()
+        print(json.dumps(rows, indent=2))
+        return 0
+    if command == "install-url":
+        print(install_url())
+        return 0
     if command == "token":
         settings = settings_from_env()
         if not settings.app_id or not settings.private_key:

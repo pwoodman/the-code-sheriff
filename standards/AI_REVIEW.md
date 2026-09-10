@@ -20,7 +20,7 @@ mechanical bar; review is for bugs those gates cannot statically prove.
 5. Style-nit findings are dropped. A validator pass (same model) can drop false
    positives. Output is `.quality-reports/review.json` plus `review.md`.
 6. `--post` / the GitHub Actions review job writes **inline** pull-request
-   comments at `path:line`, a `quality-review` check run, and a summary block
+   comments at `path:line`, a **The Code Sheriff** check run, and a summary block
    on the pull request description. Findings include OWASP/CWE and steps of
    reproduction when classified. Resolution rate vs the previous `review.json`
    is recorded. Open errors from `.quality-reports/findings-last.json` reopen
@@ -77,6 +77,11 @@ and `.cursor/rules/*.{md,mdc}` are loaded the same way (`globs` maps to
 | --- | --- | --- |
 | Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` |
 | OpenAI | `OPENAI_API_KEY` | `gpt-4.1` |
+| Azure OpenAI | `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_ENDPOINT` | deployment name |
+| Gemini | `GEMINI_API_KEY` / `GOOGLE_API_KEY` | `gemini-2.0-flash` |
+| OpenRouter | `OPENROUTER_API_KEY` | `openrouter/auto` |
+| Bedrock (compat) | `AWS_BEDROCK_API_KEY` + `BEDROCK_ENDPOINT` | `BEDROCK_MODEL` |
+| OpenAI-compat | `OPENAI_BASE_URL` / `QUALITY_REVIEW_BASE_URL` | `OPENAI_MODEL` |
 | Heuristic only | no key, `provider = "github-models"` (retired), `mode = "heuristic"`, or `offline` | — |
 
 GitHub Models (`models.github.ai`) was retired on 2026-07-30. A `GITHUB_TOKEN`
@@ -117,8 +122,8 @@ quality oracle --run
 `quality mcp` exposes `quality_oracle`, `quality_run`, `quality_review`,
 `quality_merge`, `quality_pr_comments`, `quality_finding_context`, and
 `quality_apply_fix` over MCP stdio so Cursor / Claude Code can iterate until
-`green` is true. `quality merge` dry-merges into the base branch. Unresolved
-GitHub review threads (Greptile, BugBot, humans) are remaining oracle work.
+`green` is true. `quality merge` dry-merges into the base branch.
+Unresolved GitHub review threads (external bots and humans) are remaining oracle work.
 Inline GitHub comments include why / fix / verify and an apply-able suggestion
 fence when a patch is present.
 

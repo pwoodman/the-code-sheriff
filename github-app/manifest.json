@@ -2,13 +2,13 @@
   "name": "The Code Sheriff",
   "url": "https://github.com/pwoodman/the-code-sheriff",
   "description": "The Code Sheriff runs change-aware quality gates: format, lint, security (SAST, secrets, SCA, IaC, SBOM), compile, impact, coverage, audit, and review as one required check.",
-  "public": false,
+  "public": true,
   "hook_attributes": {
     "url": "https://example.invalid/webhook",
     "active": false
   },
   "redirect_url": "http://127.0.0.1:8787/callback",
-  "default_events": ["pull_request", "check_run"],
+  "default_events": ["pull_request", "check_run", "check_suite", "issue_comment"],
   "default_permissions": {
     "checks": "write",
     "contents": "read",

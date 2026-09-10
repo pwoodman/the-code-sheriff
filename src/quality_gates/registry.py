@@ -574,6 +574,36 @@ FILE_PROFILES = tuple(profile for profile in REGISTRY if profile.kind == "file")
 ALL_LANGUAGES = tuple(profile.id for profile in LANGUAGE_PROFILES)
 ALL_FILE_KINDS = tuple(profile.id for profile in FILE_PROFILES)
 
+
+def file_profiles_for(languages: list[str]) -> tuple[CapabilityProfile, ...]:
+    """File-kind profiles that belong with this language selection.
+
+    ``quality format --language javascript`` must not evaluate GitHub Actions
+    YAML (or other unrelated file kinds). A full run still attaches every file
+    profile. Passing a file kind (``--language yaml``) keeps that profile.
+    """
+    requested = [canonical_name(item) or item for item in languages if item]
+    if not requested:
+        return FILE_PROFILES
+    names = set(requested)
+    for item in list(names):
+        names.add(gate_language(item))
+        profile = PROFILES.get(item)
+        if profile is not None:
+            names.update(profile.aliases)
+    matching = tuple(
+        profile
+        for profile in FILE_PROFILES
+        if profile.id in names or any(alias in names for alias in profile.aliases)
+    )
+    language_ids = {profile.id for profile in LANGUAGE_PROFILES}
+    # A single programming language (``--language javascript``) is a scoped
+    # matrix cell. A full auto-detect run still attaches every file profile.
+    if len(requested) == 1 and requested[0] in language_ids:
+        return matching
+    return matching or FILE_PROFILES
+
+
 _ALIASES = {
     alias.lower(): profile.id
     for profile in REGISTRY

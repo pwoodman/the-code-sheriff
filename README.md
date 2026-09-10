@@ -14,6 +14,8 @@ That also drops Cursor/Claude MCP, an always-on rule, and a skill so the agent
 loops on `quality oracle` until green. `--no-agents` skips those files.
 
 The GitHub App is optional; see [`docs/GITHUB_APP.md`](docs/GITHUB_APP.md).
+PR comment commands use the `/sheriff` prefix (`/sheriff review`, `/sheriff help`).
+The 100-item reviewer checklist is in [`standards/REVIEWER_COVERAGE.md`](standards/REVIEWER_COVERAGE.md).
 
 | When | What | Where |
 | --- | --- | --- |
@@ -41,7 +43,7 @@ quality oracle --run            # until green is true
 `quality merge` is in that loop: `git merge-tree` against origin/main before
 push. GitHub already paints textual conflicts on the PR; Sheriff fails them
 locally for the agent, and locally verifies compile/impact on a clean merge.
-`quality comments` pulls unresolved GitHub review threads (Greptile, BugBot,
+`quality comments` pulls unresolved GitHub review threads (external bots and
 humans) into the same oracle.
 
 `quality setup` writes:
@@ -81,7 +83,7 @@ uv tool install git+https://github.com/pwoodman/the-code-sheriff.git
 | **UI** | Playwright / Cypress | **only specs whose touch set hits the diff** (plus downstream files) |
 | **Version** | semver files + changelog | bump required when source changes |
 | **Merge** | `git merge-tree` | textual conflicts vs base; local verify compile/impact on the merged tree |
-| **Comments** | GitHub review threads | unresolved Greptile/BugBot/human threads stay in the oracle; does not fail CI |
+| **Comments** | GitHub review threads | unresolved external and human threads stay in the oracle; does not fail CI |
 | **AI review** | heuristic + optional LLM (impact/audit context, custom rules) | PRs; risk-routed cheap/full models; incremental hunks; inline comments; does not fail the build |
 | **Regex** | configurable + default unsafe-API patterns | change set; `# quality:ignore` / `.quality/ignore.toml` |
 | **Packages** | import + manifest names vs a local risk catalog | typosquats/malware/abandoned libs; undeclared third-party imports |

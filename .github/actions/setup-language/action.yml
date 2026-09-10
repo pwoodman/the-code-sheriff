@@ -23,6 +23,14 @@ runs:
       with:
         node-version: "22"
 
+    - name: JavaScript format/lint tools
+      if: inputs.language == 'javascript'
+      shell: bash
+      run: |
+        if [ -f tooling/js/package-lock.json ]; then
+          npm --prefix tooling/js ci --no-audit --no-fund
+        fi
+
     - name: Go
       if: inputs.language == 'go'
       uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5

@@ -11,9 +11,11 @@ from pathlib import Path
 from typing import Any
 
 from quality_gates.gitutil import git_head
-from quality_gates.identity import PRODUCT
+from quality_gates.host import api_url
+from quality_gates.identity import CHECK_NAME, PRODUCT
 from quality_gates.models import Finding
 from quality_gates.review.contract import suggestion_fence
+from quality_gates.review.explain import explain_finding
 
 API_VERSION = "2022-11-28"
 MAX_INLINE = 24
@@ -50,7 +52,7 @@ def post_pr_comment(body: str) -> str:
     token, repo, pr = creds
     status, _payload = _request(
         "POST",
-        f"https://api.github.com/repos/{repo}/issues/{pr}/comments",
+        api_url(f"/repos/{repo}/issues/{pr}/comments"),
         token,
         {"body": body},
     )
@@ -148,7 +150,7 @@ def _post_pull_review(
         payload["comments"] = comments
     status, data = _request(
         "POST",
-        f"https://api.github.com/repos/{repo}/pulls/{pr}/reviews",
+        api_url(f"/repos/{repo}/pulls/{pr}/reviews"),
         token,
         payload,
     )
@@ -206,7 +208,7 @@ def _post_check_run(
         else "No review findings"
     )
     payload = {
-        "name": "quality-review",
+        "name": CHECK_NAME,
         "head_sha": sha,
         "status": "completed",
         "conclusion": conclusion,
@@ -218,12 +220,12 @@ def _post_check_run(
     }
     status, data = _request(
         "POST",
-        f"https://api.github.com/repos/{repo}/check-runs",
+        api_url(f"/repos/{repo}/check-runs"),
         token,
         payload,
     )
     if 200 <= status < 300:
-        return f"posted check run quality-review ({conclusion})"
+        return f"posted check run {CHECK_NAME} ({conclusion})"
     message = ""
     if isinstance(data, dict) and data.get("message"):
         message = f" ({data.get('message')})"
@@ -231,8 +233,8 @@ def _post_check_run(
 
 
 def _inline_body(item: Finding) -> str:
-    parts = [f"**{item.rule or 'review'}** ({item.severity})", "", item.message]
-    if item.reason:
+    parts = [explain_finding(item)]
+    if item.reason and "Why it matters here" not in parts[0]:
         parts.extend(["", f"Why: {item.reason}"])
     if item.owasp or item.cwe:
         labels = [value for value in (item.owasp, item.cwe) if value]
@@ -286,7 +288,7 @@ def sync_pr_summary(summary: str) -> str:
     token, repo, pr = creds
     status, payload = _request(
         "GET",
-        f"https://api.github.com/repos/{repo}/pulls/{pr}",
+        api_url(f"/repos/{repo}/pulls/{pr}"),
         token,
     )
     if status < 200 or status >= 300:
@@ -297,7 +299,7 @@ def sync_pr_summary(summary: str) -> str:
     body = merge_pr_body(existing, text)
     status, _payload = _request(
         "PATCH",
-        f"https://api.github.com/repos/{repo}/pulls/{pr}",
+        api_url(f"/repos/{repo}/pulls/{pr}"),
         token,
         {"body": body},
     )
