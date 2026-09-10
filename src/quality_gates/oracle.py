@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
+from quality_gates.certificate import build_certificate, write_certificate
 from quality_gates.decision import evaluate
 from quality_gates.models import Finding, GateResult
+from quality_gates.playbook import autofix_command, build_playbook
 from quality_gates.report import load_results
 from quality_gates.review.contract import agent_prompt, finding_payload, verify_command
 
@@ -21,6 +24,9 @@ def remaining_from_results(
         for item in result.findings:
             row = finding_payload(item)
             row["status"] = result.status
+            command = autofix_command(row)
+            if command:
+                row["autofix"] = command
             if item.severity == "error" and result.status == "fail":
                 blocking.append(row)
             elif item.severity in {"error", "warning"}:
@@ -33,7 +39,7 @@ def remaining_from_results(
     for name in decision.missing:
         blocking.append({"gate": name, "message": "required result is missing"})
     green = decision.approved and not blocking
-    return {
+    payload = {
         "green": green,
         "blocking": blocking,
         "warnings": warnings[:50],
@@ -42,12 +48,19 @@ def remaining_from_results(
             for item in results
         ],
         "missing_required": decision.missing,
-        "next": (
-            "All blocking gates are green."
-            if green
-            else "Fix the blocking findings, then run `quality oracle --run` again."
-        ),
     }
+    payload["playbook"] = build_playbook(payload)
+    payload["certificate"] = build_certificate(payload)
+    nxt = payload["playbook"]["next"]
+    if green:
+        payload["next"] = (
+            "All blocking gates are green. Merge certificate is ready — "
+            "auto-merge is safe if The Code Sheriff is a required check."
+        )
+    else:
+        instruction = nxt.get("instruction") or "Fix the blocking findings"
+        payload["next"] = f"{instruction} Then run `quality oracle --run` again."
+    return payload
 
 
 def remaining_from_reports(root: Path) -> dict[str, Any]:
@@ -70,6 +83,19 @@ def remaining_from_reports(root: Path) -> dict[str, Any]:
     if not results and not payload.get("review") and not payload.get("comments"):
         payload["green"] = False
         payload["next"] = "no .quality-reports — run `quality oracle --run` first"
+    payload["playbook"] = build_playbook(payload)
+    payload["certificate"] = build_certificate(payload, root=root)
+    if payload.get("green") and payload["certificate"].get("ready"):
+        payload["next"] = (
+            "All blocking gates are green. Merge certificate is ready — "
+            "auto-merge is safe if The Code Sheriff is a required check."
+        )
+    elif not payload.get("green"):
+        instruction = (payload["playbook"].get("next") or {}).get("instruction")
+        if instruction and "oracle --run" not in str(payload.get("next") or ""):
+            payload["next"] = f"{instruction} Then run `quality oracle --run` again."
+    with suppress(OSError):
+        write_certificate(root, payload)
     return payload
 
 
@@ -137,17 +163,38 @@ def _attach_pr_comments(root: Path, payload: dict[str, Any]) -> None:
 
 
 def render_prompt(payload: dict[str, Any]) -> str:
+    review_errors = [
+        item
+        for item in (payload.get("review") or {}).get("findings") or []
+        if isinstance(item, dict) and item.get("severity") == "error"
+    ]
     if (
         payload.get("green")
-        and not (payload.get("review") or {}).get("findings")
+        and not review_errors
         and not payload.get("comments")
+        and (payload.get("certificate") or {}).get("ready", True)
     ):
-        return "Quality gates are green. Do not change code for gate failures."
+        return (
+            "Quality gates are green. Merge certificate is ready. "
+            "Do not change code for gate failures. Auto-merge is safe if "
+            "The Code Sheriff is a required check."
+        )
+    playbook = payload.get("playbook") or {}
+    nxt = playbook.get("next") or {}
     lines = [
         "You are fixing a repository until `quality oracle --run` reports green.",
-        "Do not nibble formatter/linter style beyond what the gates already failed.",
-        "Blocking findings:",
+        "Do the next action only. Re-run the oracle after that batch. Do not nibble style.",
     ]
+    if nxt.get("instruction"):
+        lines.append(f"Next action: {nxt['instruction']}")
+        if nxt.get("command"):
+            lines.append(f"Command: `{nxt['command']}`")
+    autofix_first = playbook.get("autofix_first") or []
+    if autofix_first:
+        lines.append("Auto-fix first (safe, no design change):")
+        for step in autofix_first:
+            lines.append(f"- `{step.get('command')}` ({step.get('gate')})")
+    lines.append("Blocking findings:")
     blockers = payload.get("blocking") or []
     if not blockers:
         lines.append("(no mechanical blockers)")
@@ -184,6 +231,8 @@ def _bullet(item: dict[str, Any]) -> str:
         bits.append(f"  verify: `{item['verify']}`")
     if item.get("documentation_url"):
         bits.append(f"  docs: {item['documentation_url']}")
+    if item.get("autofix"):
+        bits.append(f"  autofix: `{item['autofix']}`")
     return "\n".join(bits)
 
 

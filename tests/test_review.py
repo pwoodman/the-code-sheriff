@@ -507,6 +507,8 @@ def test_mcp_lists_and_calls_oracle(tmp_path: Path, monkeypatch) -> None:
         "quality_apply_fix",
         "quality_merge",
         "quality_pr_comments",
+        "quality_fix",
+        "quality_certify",
     } <= names
     called = handle(
         {

@@ -33,9 +33,11 @@ Pandorian-class tools govern **after** a PR exists, for leadership. The Code
 Sheriff sits **in the agent loop**, on your machine, before commit:
 
 ```bash
+quality fix                     # format / safe lint / finding patches
 quality oracle --run --prompt   # or MCP quality_run → quality_oracle
-# fix remaining blockers (including merge conflicts and PR review comments)
+# do only the Next action (including merge conflicts and PR review comments)
 quality oracle --run            # until green is true
+quality certify                 # auto-merge ready when certificate.ready
 ```
 
 `quality merge` is in that loop: `git merge-tree` against origin/main before
@@ -52,7 +54,14 @@ humans) into the same oracle.
 | Claude Code / generic MCP | `.mcp.json` |
 | Always-on Cursor rule | `.cursor/rules/the-code-sheriff.mdc` |
 | Project skill | `.cursor/skills/the-code-sheriff/SKILL.md` and `.claude/skills/the-code-sheriff/SKILL.md` |
-| Agent readme (if missing) | `AGENTS.md` |
+| Agent readme (if missing) | `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` |
+| GitHub Copilot / VS Code | `.github/copilot-instructions.md`, `.github/instructions/the-code-sheriff.instructions.md` |
+| Clean-code review rule | `.quality/rules/clean-code.md` |
+
+Those files cover Cursor, Claude Code, Copilot, Codex, OpenCode, Qwen, DeepSeek
+harness, and VS Code. The oracle playbook is the same in every tool: one Next
+action, then re-run. When `quality certify` says `auto_merge: ready` and
+**The Code Sheriff** is a required check, you can auto-merge the PR.
 
 The same files the agent already follows (`AGENTS.md`, `CLAUDE.md`,
 `.cursor/rules`) are ingested as review rules. Put team standards in those
@@ -109,7 +118,7 @@ remain available without running project code; project builds require trusted
 mode. UI is skipped when compile failed, and when the diff does not touch a
 spec, its imports, a matching route, or a coverage-map hit.
 
-Standards: [`standards/`](standards/FORMATTING.md) · [`VERSIONING`](standards/VERSIONING.md) · [`COMPILE`](standards/COMPILE.md) · [`IMPACT`](standards/IMPACT.md) · [`COVERAGE`](standards/COVERAGE.md) · [`AUDIT`](standards/AUDIT.md) · [`POLICY`](standards/POLICY.md) · [`UI`](standards/UI.md) · [`CI`](standards/CI.md) · [`SUPPORT`](standards/SUPPORT.md) · [`PLUGINS`](standards/PLUGINS.md) · [`TROUBLESHOOTING`](standards/TROUBLESHOOTING.md).
+Standards: [`standards/`](standards/FORMATTING.md) · [`CRAFT`](standards/CRAFT.md) · [`VERSIONING`](standards/VERSIONING.md) · [`COMPILE`](standards/COMPILE.md) · [`IMPACT`](standards/IMPACT.md) · [`COVERAGE`](standards/COVERAGE.md) · [`AUDIT`](standards/AUDIT.md) · [`POLICY`](standards/POLICY.md) · [`UI`](standards/UI.md) · [`CI`](standards/CI.md) · [`SUPPORT`](standards/SUPPORT.md) · [`PLUGINS`](standards/PLUGINS.md) · [`TROUBLESHOOTING`](standards/TROUBLESHOOTING.md).
 
 ## Quick start
 
@@ -269,6 +278,9 @@ quality review [--base origin/main] [--post]
 quality ignore add --rule eval --path src/app.py --reason "demo" --owner you
 quality timing accept --test tests/test_app.py::test_ok
 quality oracle [--run] [--prompt]
+quality fix [--no-patches]
+quality apply [--id FINDING]
+quality certify
 quality eval [--suite reviewbench|martian|macroscope|all] [--download] [--llm]
 quality mcp
 quality run [--only security,compile,impact,coverage,audit,ui] [--skip review] [--full]

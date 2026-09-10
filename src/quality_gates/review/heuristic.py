@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from quality_gates.models import Finding, GateResult
+from quality_gates.review.craft import craft_review
 
 DANGEROUS = [
     (re.compile(r"\beval\s*\("), "eval() on untrusted input is a code-injection risk"),
@@ -94,6 +96,7 @@ def heuristic_review(
     diff: str,
     languages: list[str],
     prior: list[GateResult],
+    root: Path | None = None,
 ) -> list[Finding]:
     findings: list[Finding] = []
     current_file = None
@@ -132,6 +135,8 @@ def heuristic_review(
                             line=new_file_line,
                             rule="todo",
                             message="TODO/FIXME introduced in this change — track or resolve before merge",
+                            reason="Placeholder work shipping as if the feature is done is a common AI-generated defect.",
+                            suggestion="Finish the work, or file a tracked issue and remove the marker from this diff.",
                         )
                     )
                 if _scan_unsafe_api(current_file):
@@ -145,6 +150,8 @@ def heuristic_review(
                                     line=new_file_line,
                                     rule="unsafe-api",
                                     message=message,
+                                    reason="This API is a known injection, XSS, or crash sink.",
+                                    suggestion="Replace it with a safe API (argv subprocess, parameterized SQL, textContent, SafeLoader).",
                                 )
                             )
             new_file_line += 1
@@ -162,6 +169,8 @@ def heuristic_review(
                     path=path,
                     rule="large-file",
                     message=f"{count} lines added in one file — consider splitting the change",
+                    reason="Large mixed-concern files hide bugs and make safe auto-merge impossible.",
+                    suggestion="Split by responsibility; keep the PR reviewable.",
                 )
             )
 
@@ -175,6 +184,8 @@ def heuristic_review(
                     f"diff adds {added_source_lines} production source lines — "
                     "large PRs hide bugs; split if possible"
                 ),
+                reason="Reviewers and agents miss defects in oversized diffs.",
+                suggestion="Split the change so each PR has one reason to exist.",
             )
         )
 
@@ -185,8 +196,12 @@ def heuristic_review(
                 severity="warning",
                 rule="missing-tests",
                 message="source changed without an accompanying test file — add coverage for the new behavior",
+                reason="Untested new behavior is the usual way AI-generated code ships broken.",
+                suggestion="Add a unit test that fails on the old behavior and passes on this change.",
             )
         )
+
+    findings.extend(craft_review(diff, root))
 
     for result in prior:
         if result.name in STYLE_GATES:

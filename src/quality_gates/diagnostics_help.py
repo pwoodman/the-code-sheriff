@@ -261,6 +261,46 @@ RULE_HELP: dict[tuple[str, str], tuple[str, str, str]] = {
         "Split into reviewable commits or pull requests.",
         "",
     ),
+    (
+        "review",
+        "swallowed-exception",
+    ): (
+        "An empty except/catch hides failures so tests and operators cannot see them.",
+        "Log, re-raise, or return an explicit error result. Never `except: pass`.",
+        "",
+    ),
+    (
+        "review",
+        "bare-except",
+    ): (
+        "Bare `except:` also catches SystemExit and KeyboardInterrupt.",
+        "Catch a specific exception type, or at least `Exception`.",
+        "",
+    ),
+    (
+        "review",
+        "magic-number",
+    ): (
+        "The same unexplained literal appears more than once.",
+        "Extract a named constant that says what the number means (timeout, rate, limit).",
+        "",
+    ),
+    (
+        "review",
+        "long-function",
+    ): (
+        "The function does too many jobs to review or test in one sitting.",
+        "Extract one named helper per job (validate, compute, format).",
+        "",
+    ),
+    (
+        "review",
+        "deep-nesting",
+    ): (
+        "Control flow nested five or more levels hides the real decision.",
+        "Extract the inner nest into a named predicate or helper.",
+        "",
+    ),
 }
 
 

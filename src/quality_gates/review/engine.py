@@ -45,7 +45,9 @@ from quality_gates.review.routing import (
 STANDARDS_BRIEF = """
 Mechanical gates already own format, lint, and copy-paste. Do not mention style.
 Review for correctness, error handling, tests, authorization, injection, secrets,
-and blast radius (callers of changed symbols that were not updated).
+blast radius (callers of changed symbols that were not updated), and craft:
+keep functions one-job, extract deep nests, name literals, never swallow errors.
+KISS over clever. Prefer a test over a comment that restates the name.
 """.strip()
 
 
@@ -120,7 +122,7 @@ def run_review(
     prior = prior or []
     paths = changed_paths(diff)
     specialists = _specialists(paths, diff)
-    heuristic = heuristic_review(diff, languages, prior)
+    heuristic = heuristic_review(diff, languages, prior, root=root)
     if config.test_require_for_source:
         for item in heuristic:
             if item.rule == "missing-tests":

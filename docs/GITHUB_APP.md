@@ -26,6 +26,20 @@ GitHub App** for checks to run.
 
 `quality init` writes the files without running gates or touching GitHub rules.
 
+## Auto-merge when Sheriff is green
+
+After the required check exists:
+
+```bash
+quality setup --auto-merge
+```
+
+That sets `allow_auto_merge` on the GitHub repo. On each PR, click **Enable
+auto-merge**. The PR lands only when **The Code Sheriff** is green.
+`quality certify` writes `.quality-reports/certificate.json` with
+`auto_merge: ready` only after every required gate passed and unresolved
+review threads are gone. That is the "no fear" signal — not chat confidence.
+
 Fork PRs stay `untrusted`. LLM keys stay in that repo’s secrets if you want
 review.
 

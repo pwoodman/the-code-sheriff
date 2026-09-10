@@ -17,11 +17,14 @@ On your machine:
 uvx --from git+https://github.com/pwoodman/the-code-sheriff.git quality setup
 ```
 
-Coding agents can loop on `quality oracle --run` (or `quality mcp`) until the
-oracle reports green. `quality setup` writes Cursor/Claude MCP, rule, and skill
-files by default. The same `AGENTS.md` / `.cursor/rules` the agent reads are
-enforced as review rules. `quality merge` dry-merges into main before push;
-unresolved GitHub review threads (Greptile, BugBot, humans) stay in the oracle.
+Coding agents can loop on `quality fix` then `quality oracle --run --prompt`
+(or `quality mcp`) until `green` and `certificate.ready`. `quality setup`
+writes Cursor/Claude/Copilot/Gemini instruction files and
+`.quality/rules/clean-code.md` by default. The same `AGENTS.md` /
+`.cursor/rules` the agent reads are enforced as review rules. `quality merge`
+dry-merges into main before push; unresolved GitHub review threads (Greptile,
+BugBot, humans) stay in the oracle. `quality setup --auto-merge` enables
+GitHub auto-merge so a required Sheriff check can land the PR.
 
 Existing/legacy repos should stay on **adopt** (`quality setup` default) and commit `.quality-baseline.json` so
 PRs are not blocked by yesterday's backlog. New repos can use `--policy enforce`.

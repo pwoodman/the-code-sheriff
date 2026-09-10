@@ -147,6 +147,11 @@ def test_setup_writes_agent_loop_files(tmp_path: Path, monkeypatch) -> None:
     assert "quality_pr_comments" in skill
     assert (tmp_path / ".mcp.json").is_file()
     assert (tmp_path / "AGENTS.md").is_file()
+    assert (tmp_path / "CLAUDE.md").is_file()
+    assert (tmp_path / ".github" / "copilot-instructions.md").is_file()
+    assert (tmp_path / ".quality" / "rules" / "clean-code.md").is_file()
+    assert "quality_fix" in skill or "quality fix" in skill
+    assert "certificate" in skill
 
 
 def test_setup_keeps_existing_agents_md(tmp_path: Path, monkeypatch) -> None:

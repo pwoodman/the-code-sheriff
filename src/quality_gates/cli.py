@@ -118,6 +118,12 @@ def _add_onboard_args(
         default=agents,
         help="write Cursor/Claude MCP, rule, and skill so agents loop on quality oracle",
     )
+    parser.add_argument(
+        "--auto-merge",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="enable GitHub repo auto-merge so green Sheriff PRs can land",
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -256,9 +262,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         help=(
             "MCP stdio server: quality_oracle, quality_run, quality_review, "
             "quality_merge, quality_pr_comments, quality_finding_context, "
-            "quality_apply_fix"
+            "quality_apply_fix, quality_fix, quality_certify"
         ),
     )
+
+    fix_p = sub.add_parser(
+        "fix",
+        help="safe auto-fixes: format --write, ruff --fix, finding patches",
+    )
+    fix_p.add_argument(
+        "--no-patches",
+        action="store_true",
+        help="skip applying finding patches; only format/lint autofix",
+    )
+
+    sub.add_parser(
+        "certify",
+        help="print the merge certificate (auto-merge ready when green)",
+    )
+
+    apply_p = sub.add_parser(
+        "apply",
+        help="apply one finding patch by id from the last oracle report",
+    )
+    apply_p.add_argument("--id", dest="finding_id", default=None)
 
     ui_p = sub.add_parser(
         "ui",
@@ -502,6 +529,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return serve()
     if args.command == "oracle":
         return _oracle(root, args)
+    if args.command == "fix":
+        return _fix(root, apply_patches=not args.no_patches, as_json=args.json)
+    if args.command == "certify":
+        return _certify(root, as_json=args.json)
+    if args.command == "apply":
+        return _apply_one(root, args.finding_id, as_json=args.json)
     if args.command == "eval":
         return _eval(root, args)
     if args.command == "baseline":
@@ -839,6 +872,70 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     parser.error("unknown command")
     return 2
+
+
+def _fix(root: Path, *, apply_patches: bool, as_json: bool) -> int:
+    from quality_gates.autofix import run_autofix
+    from quality_gates.oracle import remaining_from_reports, render_prompt
+
+    payload = run_autofix(root, apply_patches=apply_patches)
+    remaining = remaining_from_reports(root)
+    remaining["autofix"] = payload
+    if as_json:
+        print(json.dumps(remaining, indent=2))
+    else:
+        for note in payload.get("applied") or []:
+            print(note)
+        print(render_prompt(remaining))
+    return 0 if remaining.get("green") else 1
+
+
+def _certify(root: Path, *, as_json: bool) -> int:
+    from quality_gates.oracle import remaining_from_reports
+
+    payload = remaining_from_reports(root)
+    certificate = payload.get("certificate") or {}
+    if as_json:
+        print(json.dumps(certificate, indent=2))
+    else:
+        from quality_gates.certificate import render_certificate
+
+        print(render_certificate(certificate))
+    return 0 if certificate.get("ready") else 1
+
+
+def _apply_one(root: Path, finding_id: str | None, *, as_json: bool) -> int:
+    from quality_gates.models import Finding
+    from quality_gates.oracle import finding_from_reports
+    from quality_gates.review.apply import apply_and_verify
+
+    packed = finding_from_reports(root, finding_id)
+    row = packed.get("finding")
+    if not isinstance(row, dict):
+        if as_json:
+            print(json.dumps(packed, indent=2))
+        else:
+            print(packed.get("error") or "no finding")
+        return 1
+    finding = Finding(
+        gate=str(row.get("gate") or "review"),
+        message=str(row.get("message") or ""),
+        path=row.get("path"),
+        line=row.get("line") if isinstance(row.get("line"), int) else None,
+        rule=row.get("rule"),
+        patch=row.get("patch"),
+        suggestion=row.get("suggestion"),
+        verify=row.get("verify"),
+    )
+    verified = apply_and_verify(root, finding)
+    verified["id"] = row.get("id")
+    if as_json:
+        print(json.dumps(verified, indent=2))
+    else:
+        print(verified.get("status") or verified)
+        if verified.get("next"):
+            print(verified["next"])
+    return 0 if verified.get("resolved") else 1
 
 
 def _oracle(root: Path, args: argparse.Namespace) -> int:
@@ -1200,6 +1297,7 @@ def _onboard(root: Path, args: argparse.Namespace) -> int:
         force=args.force,
         hooks=bool(getattr(args, "hooks", False)),
         agents=bool(getattr(args, "agents", False)),
+        auto_merge=bool(getattr(args, "auto_merge", False)),
     )
     if getattr(args, "run", False):
         print("Running first gates and writing a baseline...")
@@ -1224,6 +1322,8 @@ def _onboard(root: Path, args: argparse.Namespace) -> int:
             print(
                 "Put `quality` on PATH (`uv tool install git+https://github.com/pwoodman/the-code-sheriff.git`) so MCP can spawn."
             )
+        if getattr(args, "auto_merge", False):
+            print("GitHub auto-merge: land PRs when `quality certify` is ready.")
         print("GitHub App is optional: quality github-app register")
     else:
         print("Next: quality run --skip review && quality baseline")

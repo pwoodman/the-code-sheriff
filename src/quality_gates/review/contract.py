@@ -6,6 +6,7 @@ from typing import Any
 
 from quality_gates.diagnostics import pointer
 from quality_gates.models import Finding
+from quality_gates.playbook import autofix_command
 from quality_gates.review.parse import fingerprint
 
 
@@ -49,6 +50,9 @@ def finding_payload(finding: Finding) -> dict[str, Any]:
         value = getattr(finding, key)
         if value is not None and value != "":
             payload[key] = value
+    command = autofix_command(payload)
+    if command:
+        payload["autofix"] = command
     return payload
 
 
@@ -77,6 +81,17 @@ def agent_prompt(finding: Finding) -> str:
         lines.append("Steps of reproduction:\n" + finding.reproduce)
     if finding.documentation_url:
         lines.append(f"Docs: {finding.documentation_url}")
+    command = autofix_command(
+        {
+            "gate": finding.gate,
+            "path": finding.path,
+            "line": finding.line,
+            "patch": finding.patch,
+            "suggestion": finding.suggestion,
+        }
+    )
+    if command:
+        lines.append(f"Autofix: `{command}`")
     return "\n".join(lines)
 
 
