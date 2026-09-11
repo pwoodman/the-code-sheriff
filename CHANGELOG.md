@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.15.0
+## 1.15.1
 
 - Cover the 100-item GitHub-native reviewer checklist. Matrix:
   `standards/REVIEWER_COVERAGE.md` and `quality eval` methodology in
