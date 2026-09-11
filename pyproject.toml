@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "quality-gates"
-version = "1.15.1"
+version = "1.15.2"
 description = "The Code Sheriff: polyglot quality gates for every change."
 readme = "README.md"
 requires-python = ">=3.11"
