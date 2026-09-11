@@ -106,6 +106,25 @@ def run_review(
             status="skip",
             notes=["no diff against the review base"],
         )
+    if (config.review_provider or "").lower() == "github-copilot":
+        from quality_gates.github_comment import request_copilot_review
+
+        note = (
+            request_copilot_review()
+            if post
+            else "GitHub Copilot review will be requested when this result is posted"
+        )
+        return GateResult(
+            name="review",
+            status="pass"
+            if note.startswith(("requested", "GitHub Copilot review will"))
+            else "skip",
+            notes=[
+                note,
+                "GitHub performs the AI review asynchronously; Sheriff gates remain authoritative.",
+            ],
+            evidence={"provider": "github-copilot", "asynchronous": True},
+        )
 
     skip_globs = config.review_skip_globs
     diff, skipped_paths = filter_diff(diff, skip_globs)
@@ -504,8 +523,8 @@ def render_review(
     if provider == "heuristic" and not summary:
         lines.append(
             '_No LLM key configured (or `quality.review.mode = "heuristic"` / '
-            "offline). Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. GitHub Models "
-            "was retired in July 2026 and is not used. Heuristic flags, "
+            "offline). Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, or use "
+            '`provider = "github-copilot"` on GitHub. Heuristic flags, '
             "impact/audit context, and `.quality/rules` still run._"
         )
     lines.extend(

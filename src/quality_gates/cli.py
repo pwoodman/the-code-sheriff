@@ -124,6 +124,12 @@ def _add_onboard_args(
         default=False,
         help="enable GitHub repo auto-merge so green Sheriff PRs can land",
     )
+    parser.add_argument(
+        "--ai",
+        choices=["auto", "github-copilot"],
+        default="auto",
+        help="AI provider for setup (github-copilot uses GitHub's native reviewer)",
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -175,6 +181,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     packages_p.add_argument("--base", default=None)
 
     sub.add_parser("dry", help="copy-paste / duplication scan")
+    sub.add_parser("dead", help="find unused Python code")
     sub.add_parser(
         "security",
         help="secrets, SCA, SAST, IaC misconfig, SBOM (gitleaks/osv/semgrep/trivy/checkov)",
@@ -758,6 +765,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "dry":
         result = gate_runners.run_dry(root, config, languages)
         return _emit([result], root, config, args.json, ["dry"])
+    if args.command == "dead":
+        result = gate_runners.run_dead(root, config, languages)
+        return _emit([result], root, config, args.json, ["dead"])
     if args.command == "sbom":
         from quality_gates.sbom import write_sbom
 
@@ -909,6 +919,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             elif gate == "dry":
                 item = gate_runners.run_dry(root, config, languages)
+            elif gate == "dead":
+                item = gate_runners.run_dead(root, config, languages)
             elif gate == "security":
                 item = gate_runners.run_security(root, config, languages)
             elif gate == "compile":
@@ -1432,6 +1444,7 @@ def _onboard(root: Path, args: argparse.Namespace) -> int:
         hooks=bool(getattr(args, "hooks", False)),
         agents=bool(getattr(args, "agents", False)),
         auto_merge=bool(getattr(args, "auto_merge", False)),
+        review_provider=getattr(args, "ai", "auto"),
     )
     if getattr(args, "run", False):
         print("Running first gates and writing a baseline...")
@@ -1442,9 +1455,13 @@ def _onboard(root: Path, args: argparse.Namespace) -> int:
         elif base_code != 0:
             code = base_code
     if args.command == "setup":
+        print("\nThe Code Sheriff is ready.")
+        print("Next:")
+        print("  1. Review the generated files.")
+        print("  2. Commit them to the repository.")
+        print("  3. Open a pull request to see the check run.")
         print(
-            "Commit quality.toml, .github/workflows/quality.yml, "
-            "and .quality-baseline.json"
+            "Files: quality.toml, .github/workflows/quality.yml, .quality-baseline.json"
         )
         if getattr(args, "hooks", False):
             print("Include .pre-commit-config.yaml if it was just written.")
@@ -1458,7 +1475,10 @@ def _onboard(root: Path, args: argparse.Namespace) -> int:
             )
         if getattr(args, "auto_merge", False):
             print("GitHub auto-merge: land PRs when `quality certify` is ready.")
-        print("GitHub App is optional: quality github-app register")
+        print(
+            "Need to troubleshoot? Run `quality doctor` or "
+            "`quality report` after the first check."
+        )
     else:
         print("Next: quality run --skip review && quality baseline")
     if args.command == "setup" and getattr(args, "app", False):

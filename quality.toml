@@ -7,7 +7,7 @@ languages = ["auto"]
 
 # Gates that fail CI when they report errors. review never fails the
 # build unless you add it here — it posts findings as a PR comment.
-fail_on = ["format", "lint", "regex", "packages", "dry", "security", "compile", "contract", "impact", "test", "coverage", "audit", "ui", "version", "merge"]
+fail_on = ["format", "lint", "regex", "packages", "dry", "dead", "security", "compile", "contract", "impact", "test", "coverage", "audit", "ui", "version", "merge"]
 
 # pr-only | always | never
 ai_review = "pr-only"
@@ -146,7 +146,8 @@ ignore = [
 dialect = "ansi"
 
 [quality.review]
-# openai | anthropic | auto | off  (github-models is retired; treated as heuristic)
+# openai | anthropic | github-copilot | auto | off
+# auto prefers API keys, then GitHub's native Copilot reviewer.
 provider = "auto"
 max_diff_bytes = 120000
 model = ""

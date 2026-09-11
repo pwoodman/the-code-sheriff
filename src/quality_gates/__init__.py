@@ -1,4 +1,4 @@
-"""Multi-language quality gates: format, lint, DRY, security, compile, coverage, audit, UI, and AI review."""
+"""Multi-language quality gates: format, lint, dead code, DRY, security, compile, coverage, audit, UI, and AI review."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ GATES = (
     "regex",
     "packages",
     "dry",
+    "dead",
     "security",
     "compile",
     "contract",

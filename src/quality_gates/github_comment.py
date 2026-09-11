@@ -317,6 +317,28 @@ def _creds() -> tuple[str, str, str] | None:
     return token, repo, pr
 
 
+def request_copilot_review() -> str:
+    """Ask GitHub's native Copilot reviewer to review the current pull request."""
+    creds = _creds()
+    if creds is None:
+        return (
+            "skipped GitHub Copilot review (need GITHUB_TOKEN, "
+            "GITHUB_REPOSITORY, and pull request number)"
+        )
+    token, repo, pr = creds
+    status, payload = _request(
+        "POST",
+        api_url(f"/repos/{repo}/pulls/{pr}/requested_reviewers"),
+        token,
+        {"reviewers": ["copilot-pull-request-reviewer[bot]"]},
+    )
+    if 200 <= status < 300:
+        return "requested GitHub Copilot review"
+    detail = payload.get("message") if isinstance(payload, dict) else ""
+    suffix = f": {detail}" if detail else ""
+    return f"GitHub Copilot review request failed (HTTP {status}{suffix})"
+
+
 def _request(
     method: str, url: str, token: str, payload: dict[str, Any] | None = None
 ) -> tuple[int, Any]:

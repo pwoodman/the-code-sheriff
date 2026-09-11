@@ -18,6 +18,9 @@ lint:
 dry:
 	quality dry
 
+dead:
+	quality dead
+
 security:
 	quality security
 

@@ -1,0 +1,12 @@
+# quality ignore overrides
+
+[[ignore]]
+rule = "jscpd"
+path = "src/quality_gates/coverage_parse.py"
+reason = "Pre-existing duplicate; track for refactor"
+expires = "2026-12-10T02:40:41Z"
+[[ignore]]
+rule = "jscpd"
+path = "tests/test_impact.py"
+reason = "Pre-existing duplicate; track for refactor"
+expires = "2026-12-10T02:40:41Z"

@@ -76,23 +76,32 @@ def run(
     run_env = isolated_env(env) if isolated else env
     if isolated:
         bwrap = which("bwrap")
-        if bwrap:
-            argv_list = [
-                bwrap,
-                "--die-with-parent",
-                "--unshare-net",
-                "--ro-bind",
-                "/",
-                "/",
-                "--dev",
-                "/dev",
-                "--tmpfs",
-                "/tmp",
-                "--chdir",
-                str(cwd),
-                "--",
-                *argv_list,
-            ]
+        if not bwrap:
+            return RunResult(
+                argv=argv_list,
+                skipped=True,
+                skip_reason="isolated execution requires bubblewrap (bwrap)",
+                tool=Path(argv_list[0]).name,
+                exit_state="isolation-unavailable",
+                tool_error="isolated execution requires bubblewrap (bwrap)",
+                cwd=str(cwd),
+            )
+        argv_list = [
+            bwrap,
+            "--die-with-parent",
+            "--unshare-net",
+            "--ro-bind",
+            "/",
+            "/",
+            "--dev",
+            "/dev",
+            "--tmpfs",
+            "/tmp",
+            "--chdir",
+            str(cwd),
+            "--",
+            *argv_list,
+        ]
     try:
         proc = subprocess.run(
             argv_list,

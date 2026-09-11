@@ -174,6 +174,7 @@ Unit tests run on Linux, macOS, and Windows across Python 3.11–3.14 in
 fixtures cover representative ecosystem setup without adding that cost to PRs.
 
 Consumers: [`examples/CONSUMING.md`](examples/CONSUMING.md). Golden paths: [`docs/START.md`](docs/START.md). Required-check setup: [`docs/GITHUB_APP.md`](docs/GITHUB_APP.md).
+For safe beta testing against disposable open-source clones, see [`docs/BETA_TESTING.md`](docs/BETA_TESTING.md).
 
 ## Configuration
 
@@ -240,10 +241,15 @@ Project Prettier/ESLint/Ruff configs win over bundled files in `configs/`.
 Unknown keys directly under `[quality]` are rejected. Gates never install
 tools; installation is only performed by an explicit `quality doctor --install`.
 
-### AI review keys
+### AI review
 
-Heuristic review always runs. For JSON findings on the PR: `ANTHROPIC_API_KEY`
-or `OPENAI_API_KEY`. Docs, lockfiles, and generated paths skip the LLM. Typical
+GitHub Copilot is the default reviewer for GitHub users. On pull requests,
+Sheriff requests `copilot-pull-request-reviewer[bot]`; GitHub owns access,
+billing, and the asynchronous review. Direct API keys are an override:
+`ANTHROPIC_API_KEY` selects Anthropic and `OPENAI_API_KEY` selects OpenAI.
+Set `quality.review.provider = "off"` or `"heuristic"` to disable model review.
+
+Heuristic review always runs. Docs, lockfiles, and generated paths skip the LLM. Typical
 PRs use a cheap model (Haiku / GPT-4.1-mini); auth/SQL/high-fan-out diffs use
 Sonnet. Later commits on the same PR only review new hunks. Custom rules live
 in `.quality/rules/*.md`. `AGENTS.md`, `CLAUDE.md`, and `.cursor/rules` are
