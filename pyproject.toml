@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "quality-gates"
-version = "1.15.1"
+version = "1.15.2"
 description = "The Code Sheriff: polyglot quality gates for every change."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -28,8 +28,8 @@ dependencies = []
 python = ["ruff>=0.8"]
 sql = ["sqlfluff>=3.2"]
 security = ["semgrep>=1.90"]
-dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.8"]
-all = ["ruff>=0.8", "sqlfluff>=3.2", "semgrep>=1.90", "pytest>=8.0", "pytest-cov>=5.0"]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.8", "vulture>=2.11"]
+all = ["ruff>=0.8", "sqlfluff>=3.2", "semgrep>=1.90", "pytest>=8.0", "pytest-cov>=5.0", "vulture>=2.11"]
 
 [project.scripts]
 quality = "quality_gates.cli:main"

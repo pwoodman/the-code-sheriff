@@ -2,11 +2,17 @@
   "name": "the-code-sheriff",
   "displayName": "The Code Sheriff",
   "description": "Surface The Code Sheriff diagnostics from .quality-reports/diagnostics.json",
-  "version": "1.15.1",
+  "version": "1.15.2",
   "publisher": "the-code-sheriff",
-  "engines": { "vscode": "^1.90.0" },
-  "categories": ["Linters"],
-  "activationEvents": ["onStartupFinished"],
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Linters"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./extension.js",
   "contributes": {
     "commands": [

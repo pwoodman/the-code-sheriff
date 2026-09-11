@@ -73,7 +73,12 @@ def run_advanced(
     )
     if auth_reason:
         return blocked_gate_result(gate, auth_reason)
-    result = run(command, cwd=root, timeout=int(section.get("timeout", 600)))
+    result = run(
+        command,
+        cwd=root,
+        timeout=int(section.get("timeout", 600)),
+        isolated=True,
+    )
     return fail_or_pass(
         gate,
         findings,

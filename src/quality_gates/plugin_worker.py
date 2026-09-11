@@ -65,7 +65,10 @@ def run_in_subprocess(
         ],
         cwd=context.root,
         timeout=120,
+        isolated=True,
     )
+    if result.skipped:
+        raise RuntimeError(result.skip_reason or "isolated plugin worker unavailable")
     if result.returncode != 0:
         raise RuntimeError(result.stderr or result.stdout or "plugin worker failed")
     data = json.loads(result.stdout or "{}")

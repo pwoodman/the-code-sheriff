@@ -32,6 +32,7 @@ def test_consumer_defaults_are_adopt_and_local() -> None:
     assert 'policy = "adopt"' in text
     assert 'mode = "local"' in text
     assert "The Code Sheriff" in text
+    assert 'provider = "auto"' in text
     assert "security" in text
     assert 'github_gates = ["format", "lint", "regex", "packages", "security"' in text
     assert "require_for_source = true" in text
@@ -83,6 +84,17 @@ def test_setup_tries_required_check(tmp_path: Path, monkeypatch, capsys) -> None
     assert init_repo(tmp_path, require_check=True) == 0
     assert "required The Code Sheriff" in capsys.readouterr().out
     assert (tmp_path / "quality.toml").is_file()
+
+
+def test_setup_prints_a_clear_next_step(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setattr("quality_gates.onboard.resolve_pin", lambda *a, **k: PIN)
+
+    assert main(["--root", str(tmp_path), "setup", "--no-require-check"]) == 0
+
+    output = capsys.readouterr().out
+    assert "The Code Sheriff is ready." in output
+    assert "Open a pull request" in output
+    assert "quality doctor" in output
 
 
 def test_github_repo_from_ssh_remote(tmp_path: Path) -> None:

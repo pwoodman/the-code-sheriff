@@ -1,10 +1,10 @@
-"""Multi-language quality gates: format, lint, DRY, security, compile, coverage, audit, UI, and AI review."""
+"""Multi-language quality gates: format, lint, dead code, DRY, security, compile, coverage, audit, UI, and AI review."""
 
 from __future__ import annotations
 
 from quality_gates.registry import ALL_LANGUAGES as ALL_LANGUAGES
 
-__version__ = "1.15.1"
+__version__ = "1.15.2"
 
 GATES = (
     "format",
@@ -12,6 +12,7 @@ GATES = (
     "regex",
     "packages",
     "dry",
+    "dead",
     "security",
     "compile",
     "contract",

@@ -102,7 +102,7 @@ diff --git a/tests/test_app.py b/tests/test_app.py
     assert [item.rule for item in findings if item.rule == "unsafe-api"] == []
 
 
-def test_auto_provider_ignores_retired_github_models(monkeypatch) -> None:
+def test_auto_provider_defaults_to_github_copilot_without_api_keys(monkeypatch) -> None:
     from quality_gates.review.llm import resolve_client
 
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
@@ -111,6 +111,35 @@ def test_auto_provider_ignores_retired_github_models(monkeypatch) -> None:
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     assert resolve_client(QualityConfig()) is None
     assert resolve_client(QualityConfig(review_provider="github-models")) is None
+
+
+def test_api_keys_override_github_copilot_default(monkeypatch) -> None:
+    from quality_gates.review.llm import resolve_client
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    client = resolve_client(QualityConfig())
+    assert client is not None
+    assert client.name == "openai"
+
+
+def test_request_copilot_review_uses_github_reviewer(monkeypatch) -> None:
+    from quality_gates.github_comment import request_copilot_review
+
+    monkeypatch.setenv("GITHUB_TOKEN", "token")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "acme/repo")
+    monkeypatch.setenv("QUALITY_PR_NUMBER", "7")
+    calls = []
+    monkeypatch.setattr(
+        "quality_gates.github_comment._request",
+        lambda method, url, token, payload: (
+            calls.append((method, url, payload)) or (201, {})
+        ),
+    )
+
+    assert request_copilot_review() == "requested GitHub Copilot review"
+    assert calls[0][0] == "POST"
+    assert calls[0][2] == {"reviewers": ["copilot-pull-request-reviewer[bot]"]}
 
 
 def test_auto_provider_uses_current_anthropic_model(monkeypatch) -> None:

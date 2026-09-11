@@ -1,5 +1,10 @@
 # Changelog
 
+
+## 1.15.2
+
+- patch release.
+
 ## 1.15.1
 
 - Cover the 100-item GitHub-native reviewer checklist. Matrix:

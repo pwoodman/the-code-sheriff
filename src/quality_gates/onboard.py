@@ -22,7 +22,7 @@ _GITHUB_REPO = re.compile(
 )
 
 
-def consumer_toml(policy: str = "adopt") -> str:
+def consumer_toml(policy: str = "adopt", review_provider: str = "auto") -> str:
     return f"""# The Code Sheriff defaults. Every key is optional.
 # policy=adopt grandfathers existing issues after `quality baseline`.
 
@@ -31,7 +31,7 @@ languages = ["auto"]
 policy = "{policy}"
 baseline = ".quality-baseline.json"
 comment_on_pr = true
-fail_on = ["format", "lint", "regex", "packages", "dry", "security", "compile", "contract", "impact", "test", "coverage", "audit", "ui", "version", "merge"]
+fail_on = ["format", "lint", "regex", "packages", "dry", "dead", "security", "compile", "contract", "impact", "test", "coverage", "audit", "ui", "version", "merge"]
 ai_review = "pr-only"
 
 [quality.ci]
@@ -78,7 +78,7 @@ prefer_project_tools = true
 prefer_project_tools = true
 
 [quality.review]
-provider = "auto"
+provider = "{review_provider}"
 inline_comments = true
 check_run = true
 incremental = true
@@ -422,6 +422,7 @@ def init_repo(
     hooks: bool = False,
     agents: bool = False,
     auto_merge: bool = False,
+    review_provider: str = "auto",
 ) -> int:
     source_repo = resolve_source(org, source)
     resolved = resolve_pin(source_repo, pin)
@@ -429,7 +430,9 @@ def init_repo(
 
     config_path = root / "quality.toml"
     if force or not config_path.exists():
-        config_path.write_text(consumer_toml(policy), encoding="utf-8")
+        config_path.write_text(
+            consumer_toml(policy, review_provider=review_provider), encoding="utf-8"
+        )
         notes.append(f"wrote {config_path} (policy={policy})")
     else:
         notes.append(f"kept existing {config_path}")
