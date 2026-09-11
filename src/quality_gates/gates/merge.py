@@ -226,16 +226,29 @@ def _verify_merged(
             )
         impact_result = run_impact(dest, config, base=theirs)
         if impact_result.status == "fail":
+            extra = untracked_names(root)
+            hint = (
+                f" {len(extra)} untracked file(s) are missing from the merge "
+                "preview — `git add` new modules so merge-tree can import them."
+                if extra
+                else ""
+            )
             findings.append(
                 Finding(
                     gate="merge",
                     rule="semantic-conflict",
                     message=(
                         f"clean Git merge vs {theirs}, but impact fails on the "
-                        "merged tree (broken imports or unvalidated consumers)"
+                        "merged tree (broken imports or unvalidated consumers)."
+                        f"{hint}"
                     ),
                     severity="error",
                     verify=f"git fetch --prune && git rebase {theirs} && quality impact",
+                    suggestion=(
+                        "Stage new modules with `git add`, then re-run `quality merge`."
+                        if extra
+                        else "Update or test every consumer the impact graph named."
+                    ),
                 )
             )
         if getattr(config, "merge_verify_tests", False):

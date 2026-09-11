@@ -5,7 +5,9 @@ in AI-generated code: security, API authorization, architecture, incomplete
 implementations, persistence, performance hints, frontend, UX, and supply chain.
 
 The catalog lives in `src/quality_gates/audit/catalog.py` (ids 1–120). This page
-does not copy the checklist.
+does not copy the checklist. Check 48 (missing abstraction) is a **craft**
+detector: Python control-flow nested five or more levels. See
+[`CRAFT.md`](CRAFT.md).
 
 ## What “finding” means
 

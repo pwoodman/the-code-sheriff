@@ -7,14 +7,17 @@ alwaysApply: true
 
 # The Code Sheriff
 
-Chat is not proof. After edits, loop until the oracle is green:
+Chat is not proof. After edits, loop until the oracle is green and
+`certificate.ready` is true:
 
-1. `quality oracle --run --prompt` (or MCP `quality_run` then `quality_oracle`)
-2. Fix every remaining blocker (`quality_finding_context` / `quality_apply_fix`)
-3. Re-run until `green` is true
-4. If `quality merge` reports textual-conflict, rebase onto the base branch
-5. Unresolved GitHub review comments (Greptile, BugBot, humans) are remaining work — apply suggestion patches
-6. Only then commit or open a PR
+1. `quality fix` (format / safe lint autofix / finding patches)
+2. `quality oracle --run --prompt` (or MCP `quality_run` then `quality_oracle`)
+3. Do **only** the playbook `next` action (`quality_finding_context` / `quality_apply_fix`)
+4. Re-run until `green` is true and `certificate.auto_merge` is `ready`
+5. If `quality merge` reports textual-conflict, rebase onto the base branch
+6. Unresolved GitHub review comments are remaining work
+7. Only then commit, open a PR, or auto-merge
 
-Custom standards: `.quality/rules/*.md`. `AGENTS.md`, `CLAUDE.md`, and
-`.cursor/rules` are enforced as review rules automatically.
+Custom standards: `.quality/rules/*.md`. `AGENTS.md`, `CLAUDE.md`,
+`.github/copilot-instructions.md`, and `.cursor/rules` are enforced as review
+rules automatically.

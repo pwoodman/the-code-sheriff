@@ -58,6 +58,11 @@ def _to_finding(item: AuditFinding, blocking: bool) -> Finding:
         path=item.path,
         line=item.line,
         rule=f"audit-{item.check_id}",
+        reason=item.why,
+        suggestion=item.fix,
+        snippet=item.evidence,
+        confidence=item.confidence,
+        verify="quality audit",
     )
 
 

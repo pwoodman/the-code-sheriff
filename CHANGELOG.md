@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.15.0
+## 1.15.1
 
 - Cover the 100-item GitHub-native reviewer checklist. Matrix:
   `standards/REVIEWER_COVERAGE.md` and `quality eval` methodology in
@@ -19,6 +19,20 @@
 - BYOK providers (Azure, Bedrock, Gemini, OpenRouter, OpenAI-compatible),
   cost caps, report retention, SARIF ingest, local `quality serve` API,
   outcome webhooks, and a Terraform module.
+- Clean-code craft checks on the diff and in audit (check 48): swallowed
+  exceptions, bare `except:`, repeated unnamed literals, long functions, and
+  nests five or more levels deep. Thresholds are evidence-backed, not 4-line
+  dogma. Default review rule: `.quality/rules/clean-code.md`.
+- Oracle returns a **playbook** (one Next action, autofix first) and a
+  **merge certificate**. `quality certify` / MCP `quality_certify` is the
+  auto-merge signal: `auto_merge: ready` only when every required gate is
+  green and no review threads remain.
+- `quality fix` (MCP `quality_fix`) applies format `--write`, `ruff --fix`,
+  and finding patches. `quality apply --id` applies one patch. Agents should
+  autofix before hand-editing.
+- Setup writes Copilot / VS Code / Gemini / Claude instruction files plus the
+  clean-code rule. `quality setup --auto-merge` enables GitHub repo auto-merge
+  so a required Sheriff check can land the PR.
 
 ## 1.14.0
 

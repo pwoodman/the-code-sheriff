@@ -61,6 +61,8 @@ require_downstream = true
 [quality.merge]
 verify = "auto"
 siblings = false
+# quality setup --auto-merge enables GitHub repo auto-merge. Land PRs when
+# `quality certify` reports auto_merge=ready and The Code Sheriff is required.
 
 [quality.comments]
 in_oracle = true
@@ -419,6 +421,7 @@ def init_repo(
     force: bool = False,
     hooks: bool = False,
     agents: bool = False,
+    auto_merge: bool = False,
 ) -> int:
     source_repo = resolve_source(org, source)
     resolved = resolve_pin(source_repo, pin)
@@ -462,6 +465,14 @@ def init_repo(
         from quality_gates.agent_loop import write_agent_integrations
 
         notes.extend(write_agent_integrations(root, force=force))
+    else:
+        rule = root / ".quality" / "rules" / "clean-code.md"
+        if force or not rule.is_file():
+            from quality_gates.agent_loop import CLEAN_CODE_RULE
+
+            rule.parent.mkdir(parents=True, exist_ok=True)
+            rule.write_text(CLEAN_CODE_RULE, encoding="utf-8")
+            notes.append(f"wrote {rule}")
 
     for line in notes:
         print(line)
@@ -472,6 +483,33 @@ def init_repo(
         )
     if require_check:
         print(enable_required_check(root))
+    if auto_merge:
+        print(enable_repo_auto_merge(root))
     if hooks:
         print(install_git_hooks(root))
     return 0
+
+
+def enable_repo_auto_merge(root: Path) -> str:
+    """Turn on GitHub's allow_auto_merge so green required checks can land."""
+    if shutil.which("gh") is None:
+        return (
+            "skipped auto-merge (install GitHub CLI, then: "
+            "gh api repos/OWNER/REPO --method PATCH -f allow_auto_merge=true)"
+        )
+    repo = github_repo_from_remote(root)
+    owner_repo = f"{repo[0]}/{repo[1]}" if repo is not None else _gh_repo_slug(root)
+    if not owner_repo:
+        return "skipped auto-merge (no GitHub remote)"
+    code, body = _gh_write(
+        ["api", "--method", "PATCH", f"repos/{owner_repo}", "--input", "-"],
+        json.dumps({"allow_auto_merge": True}),
+        root,
+    )
+    if 200 <= code < 300:
+        return (
+            f"enabled auto-merge on {owner_repo}. Require The Code Sheriff, "
+            "then land PRs when `quality certify` is ready."
+        )
+    message = body.get("message") if isinstance(body, dict) else body
+    return f"could not enable auto-merge (HTTP {code}: {message})"

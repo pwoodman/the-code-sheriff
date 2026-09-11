@@ -121,8 +121,14 @@ def write_diagnostics(digest: QualityDigest, directory: Path) -> Path:
             "path": finding.path,
             "line": finding.line or 1,
             "column": finding.column or 1,
-            "message": finding.message,
+            "message": (
+                finding.message
+                + (f" — {finding.suggestion}" if finding.suggestion else "")
+            ),
             "rule": finding.rule,
+            "reason": finding.reason,
+            "suggestion": finding.suggestion,
+            "verify": finding.verify,
         }
         for finding in digest.issues()
         if finding.path
@@ -372,7 +378,7 @@ def _recommendations(
                 "P0",
                 "Reformat the tree",
                 "Format findings fail the job until the files match the project style.",
-                "quality format --write",
+                "quality fix",
             )
         elif result.name == "lint":
             add(

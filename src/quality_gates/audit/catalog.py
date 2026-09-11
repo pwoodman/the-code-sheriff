@@ -62,7 +62,8 @@ def _c(
 
 # detector:
 #   pattern / authz / cycles / lockfile / actions / ci_perms / god_file
-#   observe / runtime — runtime is never a confirmed defect without evidence
+#   dead_code / craft / observe / runtime — runtime is never a confirmed
+#   defect without evidence. craft is AST/lexical clean-code evidence.
 CHECKS: tuple[Check, ...] = (
     _c(
         1,
@@ -195,7 +196,21 @@ CHECKS: tuple[Check, ...] = (
     _c(45, "Circular Dependencies", "HIGH", CAT_ARCH, "cycles"),
     _c(46, "Incorrect Separation of Concerns", "HIGH", CAT_ARCH, "pattern", "frontend"),
     _c(47, "Excessive Abstraction", "HIGH", CAT_ARCH, "runtime"),
-    _c(48, "Missing Abstraction Where Needed", "HIGH", CAT_ARCH, "runtime"),
+    _c(
+        48,
+        "Missing Abstraction Where Needed",
+        "HIGH",
+        CAT_ARCH,
+        "craft",
+        why=(
+            "Deeply nested conditionals hide the real decision. AI-generated "
+            "code often inlines discount/auth/validation trees instead of a named helper."
+        ),
+        fix=(
+            "Extract the inner nest into a function whose name is the why "
+            "(get_discount_rate, is_eligible). Keep the caller flat."
+        ),
+    ),
     _c(49, "Architecture Inconsistent With Repository", "HIGH", CAT_ARCH, "runtime"),
     _c(50, "Dependency Direction Violations", "HIGH", CAT_ARCH, "pattern", "frontend"),
     _c(51, "Placeholder Implementations Marked Complete", "HIGH", CAT_AI, "pattern"),
